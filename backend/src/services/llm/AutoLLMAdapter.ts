@@ -8,6 +8,14 @@
  * 4. 任一渠道调用成功即结束；失败则自动 fallback 到下一个
  * 5. 所有渠道均失败时降级到 MockLLMAdapter 保底输出
  *
+ * 上下文截断：
+ * - 使用简单字符数估算 token（1 token ≈ 4 字符，中文 ≈ 2 字符/token）
+ * - 保留 system message 全文 + 尽可能多的最新消息
+ * - 默认 context budget = maxTokens * CONTEXT_MULTIPLIER（可配置）
+ *
+ * Skills 注入：
+ * - 调用前查询 agent_skills 表，将已绑定且启用的技能描述追加到 system prompt
+ *
  * 调用格式：OpenAI Chat Completions API（兼容 DeepSeek / Qwen / Azure 等）
  */
 
@@ -42,7 +50,141 @@ interface AgentConfig {
   topP?: number;
   frequencyPenalty?: number;
   presencePenalty?: number;
+  // 用户私有 Token
+  tokenProvider?: string;
+  tokenApiKey?: string;
+  tokenBaseUrl?: string;
+  // 输出格式 & 能力边界
+  outputFormat?: string;
+  boundary?: string;
+  // 对话记忆轮数（0 = 不限）
+  memoryTurns?: number;
+  // 简单温度快捷覆盖（null 表示使用模型默认）
+  temperatureOverride?: number | null;
 }
+
+// ─── Context window budget ────────────────────────────────────────────────────
+// How many "response tokens" to multiply by to get the context budget.
+// e.g. maxTokens=4096, CONTEXT_MULTIPLIER=3 → contextBudget ≈ 12 288 tokens for the prompt.
+// This leaves room for the model output.
+const CONTEXT_MULTIPLIER = 3;
+
+/**
+ * Estimate token count for a string.
+ * Heuristic: ASCII chars ≈ 0.25 token/char; CJK chars ≈ 0.5 token/char.
+ * Accurate within ~20 % for mixed Chinese/English text — good enough for budget control.
+ */
+function estimateTokens(text: string): number {
+  let tokens = 0;
+  for (let i = 0; i < text.length; i++) {
+    const code = text.charCodeAt(i);
+    // CJK Unified Ideographs + common CJK blocks
+    if (
+      (code >= 0x4e00 && code <= 0x9fff) ||
+      (code >= 0x3400 && code <= 0x4dbf) ||
+      (code >= 0xf900 && code <= 0xfaff) ||
+      (code >= 0x3000 && code <= 0x303f) ||  // CJK symbols
+      (code >= 0xff00 && code <= 0xffef)     // fullwidth forms
+    ) {
+      tokens += 0.5; // ~2 CJK chars per token
+    } else {
+      tokens += 0.25; // ~4 ASCII chars per token
+    }
+  }
+  return Math.ceil(tokens);
+}
+
+/**
+ * Truncate messages to fit within the context budget (token count).
+ *
+ * Strategy:
+ *  1. Always keep system message at full length.
+ *  2. Always keep the last (most recent) user message.
+ *  3. Fill in older messages from newest → oldest until budget is exhausted.
+ *
+ * @param systemPrompt  The system prompt string (counted separately).
+ * @param messages      The full conversation history (user/assistant turns).
+ * @param maxTokens     The model's max_tokens (response budget).
+ * @returns             Truncated messages array.
+ */
+function truncateMessages(
+  systemPrompt: string,
+  messages: Array<{ role: string; content: string }>,
+  maxTokens: number
+): Array<{ role: string; content: string }> {
+  const contextBudget = maxTokens * CONTEXT_MULTIPLIER;
+  const systemTokens = estimateTokens(systemPrompt);
+  let remaining = contextBudget - systemTokens - maxTokens; // reserve space for response
+
+  if (remaining <= 0) {
+    // System prompt alone eats most of the budget — just pass last user message
+    const last = messages[messages.length - 1];
+    return last ? [last] : [];
+  }
+
+  // Walk from newest to oldest, accumulating messages that fit
+  const kept: Array<{ role: string; content: string }> = [];
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const msg = messages[i];
+    const cost = estimateTokens(msg.content) + 4; // ~4 tokens overhead per message
+    if (remaining - cost < 0 && kept.length > 0) {
+      // Would overflow, but we already have at least 1 message — stop here
+      break;
+    }
+    kept.unshift(msg);
+    remaining -= cost;
+    if (remaining <= 0) break;
+  }
+
+  if (kept.length === 0 && messages.length > 0) {
+    // Always keep at least the last message to avoid empty requests
+    kept.push(messages[messages.length - 1]);
+  }
+
+  const dropped = messages.length - kept.length;
+  if (dropped > 0) {
+    console.log(`[AutoLLMAdapter] Context truncated: dropped ${dropped} oldest message(s) to fit ~${contextBudget} token budget`);
+  }
+
+  return kept;
+}
+
+// ─── Skills injection ─────────────────────────────────────────────────────────
+
+/**
+ * Load enabled skills bound to an agent and return a formatted prompt block.
+ * Returns empty string if agent has no bound/enabled skills.
+ */
+function loadAgentSkillsPrompt(agentId: string): string {
+  try {
+    const db = getDb();
+    const result = db.exec(
+      `SELECT s.name, s.description, s.category
+       FROM skills s
+       INNER JOIN agent_skills a ON a.skill_id = s.id
+       WHERE a.agent_id = ? AND s.enabled = 1
+       ORDER BY a.bound_at ASC`,
+      [agentId]
+    );
+    if (!result.length || !result[0].values.length) return "";
+
+    const cols = result[0].columns;
+    const skills = result[0].values.map((row) => {
+      const obj: any = {};
+      cols.forEach((c, i) => (obj[c] = row[i]));
+      return obj;
+    });
+
+    const lines = skills.map(
+      (s: any) => `- 【${s.name}】（${s.category}）：${s.description}`
+    );
+    return `\n\n## 可用技能\n你拥有以下技能，可在回答中酌情说明或使用：\n${lines.join("\n")}`;
+  } catch {
+    return "";
+  }
+}
+
+// ─── Provider model map ───────────────────────────────────────────────────────
 
 // OpenAI-compatible models that work with the standard /chat/completions endpoint
 const PROVIDER_MODEL_MAP: Record<string, string> = {
@@ -53,6 +195,10 @@ const PROVIDER_MODEL_MAP: Record<string, string> = {
   azure: "gpt-4o",
   mistral: "mistral-large-latest",
   google: "gemini-1.5-pro",
+  // 豆包 / 火山方舟
+  doubao: "doubao-pro-32k-241215",
+  volc: "doubao-pro-32k-241215",
+  ark: "doubao-pro-32k-241215",
 };
 
 // Providers that use non-OpenAI format (need special handling)
@@ -91,12 +237,54 @@ function buildSystemPrompt(agent: AgentConfig): string {
   if (agent.writingStyle) parts.push(`写作风格：${agent.writingStyle}`);
   if (agent.expertise?.length) parts.push(`专业领域：${agent.expertise.join("、")}`);
   parts.push(`你的名字是 ${agent.name}，请始终以第一人称回复。`);
+
+  // 输出格式要求
+  if (agent.outputFormat && agent.outputFormat !== "纯文本") {
+    const fmtMap: Record<string, string> = {
+      "代码优先":
+        "回复时优先以代码块展示实现，代码后补充简要说明。",
+      "预览+完整代码":
+        `回答涉及代码时，必须严格按以下结构输出，不得省略任何部分：
+
+【格式规范】
+1. 先用 <!-- PREVIEW_START --> 和 <!-- PREVIEW_END --> 包裹"预览说明"区块，内容包括：功能描述、使用方式、运行效果说明（如有 HTML/UI 可描述视觉效果）。
+2. 再用 <!-- CODE_START --> 和 <!-- CODE_END --> 包裹完整可运行代码块，代码必须完整，不得省略任何部分。
+
+【示例格式】
+<!-- PREVIEW_START -->
+这是一个实现 XX 功能的组件，运行后会显示 XX 效果，点击按钮可以 XX。
+<!-- PREVIEW_END -->
+
+<!-- CODE_START -->
+\`\`\`语言
+完整代码...
+\`\`\`
+<!-- CODE_END -->
+
+【重要】：如果回复不涉及代码，则正常回复即可，不需要使用上述标记。`,
+      "结构化JSON":
+        "所有回复以合法 JSON 格式输出，键名使用英文 camelCase。",
+    };
+    const fmtHint = fmtMap[agent.outputFormat] ?? `输出格式：${agent.outputFormat}`;
+    parts.push(`## 输出格式要求\n${fmtHint}`);
+  }
+
+  // 能力边界
+  if (agent.boundary?.trim()) {
+    parts.push(`## 能力边界\n以下事项你不应处理，如用户要求请礼貌拒绝并说明原因：\n${agent.boundary.trim()}`);
+  }
+
+  // 注入该智能体已绑定且启用的技能描述
+  const skillsPrompt = loadAgentSkillsPrompt(agent.id);
+  if (skillsPrompt) parts.push(skillsPrompt);
+
   return parts.join("\n\n");
 }
 
 /**
  * 调用 OpenAI-compatible streaming API
- * 返回 Promise<true> 表示成功，抛出 Error 表示失败
+ * 返回 Promise<number> 表示本次调用实际消耗的 token 数（来自 usage 字段，无则返回 0）
+ * 抛出 Error 表示调用失败
  */
 function callOpenAIStream(
   baseUrl: string,
@@ -111,15 +299,17 @@ function callOpenAIStream(
   frequencyPenalty: number,
   presencePenalty: number,
   onChunk: (chunk: string) => void,
-  onComplete: () => void,
+  onComplete: (tokenCount: number) => void,
   signal: AbortController
-): Promise<void> {
+): Promise<number> {
   return new Promise((resolve, reject) => {
     const url = new URL(`${baseUrl.replace(/\/$/, "")}/chat/completions`);
     const body = JSON.stringify({
       model: modelId,
       messages: [{ role: "system", content: systemPrompt }, ...messages],
       stream: true,
+      // stream_options.include_usage: 请求服务端在流末尾返回 usage 块（OpenAI / DeepSeek 等支持）
+      stream_options: { include_usage: true },
       temperature,
       max_tokens: maxTokens,
       top_p: topP,
@@ -161,6 +351,9 @@ function callOpenAIStream(
       }
 
       let buffer = "";
+      // 累计实际 token 用量（从 SSE usage 块中读取）
+      let totalTokens = 0;
+
       res.on("data", (data: Buffer) => {
         buffer += data.toString();
         const lines = buffer.split("\n");
@@ -172,8 +365,14 @@ function callOpenAIStream(
           if (!trimmed.startsWith("data: ")) continue;
           try {
             const json = JSON.parse(trimmed.slice(6));
+            // 正常 chunk：提取文本内容
             const delta = json.choices?.[0]?.delta?.content;
             if (delta) onChunk(delta);
+            // usage 块（通常在最后一个 SSE 帧，choices 为空时携带）：
+            // OpenAI 格式：{ usage: { prompt_tokens, completion_tokens, total_tokens } }
+            if (json.usage?.total_tokens) {
+              totalTokens = json.usage.total_tokens;
+            }
           } catch {
             // ignore malformed SSE lines
           }
@@ -181,8 +380,15 @@ function callOpenAIStream(
       });
 
       res.on("end", () => {
-        onComplete();
-        resolve();
+        // 如果服务端没有返回 usage（部分兼容 API 不支持 stream_options），
+        // 降级为本地 estimateTokens 估算（system + 所有历史 + 回复，近似值）
+        if (totalTokens === 0) {
+          const systemTokens = estimateTokens(systemPrompt);
+          const historyTokens = messages.reduce((s, m) => s + estimateTokens(m.content) + 4, 0);
+          totalTokens = systemTokens + historyTokens; // 不含回复（流式输出无法事后统计 chunk）
+        }
+        onComplete(totalTokens);
+        resolve(totalTokens);
       });
 
       res.on("error", reject);
@@ -207,22 +413,83 @@ export class AutoLLMAdapter implements ILLMAdapter {
     agentConfig: AgentConfig,
     messages: Array<{ role: string; content: string }>,
     onChunk: (chunk: string) => void,
-    onComplete: () => void,
+    onComplete: (tokenCount: number) => void,
     onError: (err: Error) => void
   ): Promise<void> {
+    const systemPrompt = buildSystemPrompt(agentConfig);
+    // temperatureOverride 优先于 agentConfig.temperature（来自 CODE 弹窗的 customTemp）
+    const temperature =
+      agentConfig.temperatureOverride != null
+        ? agentConfig.temperatureOverride
+        : (agentConfig.temperature ?? 0.7);
+    const maxTokens = agentConfig.maxTokens ?? 4096;
+    const topP = agentConfig.topP ?? 1;
+    const frequencyPenalty = agentConfig.frequencyPenalty ?? 0;
+    const presencePenalty = agentConfig.presencePenalty ?? 0;
+
+    // ── 上下文截断：将过长的历史消息裁剪到 token 预算内 ──────────────────
+    // 若配置了 memoryTurns（> 0），先按轮数截断（1 轮 = 1 user + 1 assistant）；
+    // 再按 token budget 截断（两者取更严格的那个）。
+    let msgsToTruncate = messages;
+    const memTurns = agentConfig.memoryTurns ?? 0;
+    if (memTurns > 0) {
+      // 1 轮 = 1 user + 1 assistant，共 2 条
+      // 但 history 末尾通常是当前用户消息（尚无 assistant 回复），所以实际条数是 memTurns*2 + 1
+      // 为保证末尾 user 消息始终被保留，取后 memTurns*2+1 条，再做对齐修正
+      const maxMsgs = memTurns * 2 + 1;
+      if (msgsToTruncate.length > maxMsgs) {
+        msgsToTruncate = msgsToTruncate.slice(-maxMsgs);
+        console.log(`[AutoLLMAdapter] Memory turns limit: keeping last ${memTurns} turns (${maxMsgs} messages)`);
+      }
+      // 确保截断后第一条是 user 消息（若开头是 assistant 则去掉，避免 role 顺序异常）
+      if (msgsToTruncate.length > 0 && msgsToTruncate[0].role !== "user") {
+        msgsToTruncate = msgsToTruncate.slice(1);
+        console.log("[AutoLLMAdapter] Dropped leading assistant message after memory-turns truncation");
+      }
+    }
+    const truncated = truncateMessages(systemPrompt, msgsToTruncate, maxTokens);
+
+    // ── 优先：使用 agent 自己配置的私有 Key ──────────────────────────
+    const privateKey = agentConfig.tokenApiKey?.trim();
+    if (privateKey) {
+      const provider = agentConfig.tokenProvider || "custom";
+      const isDoubao = ["doubao", "volc", "ark"].includes(provider.toLowerCase());
+
+      // 确定模型 ID：优先用 agent 选的具名模型，其次用 provider 默认模型
+      let modelId =
+        (agentConfig.modelName && agentConfig.modelName !== "Auto" && agentConfig.modelName !== "auto")
+          ? agentConfig.modelName
+          : PROVIDER_MODEL_MAP[provider.toLowerCase()] || "doubao-pro-32k-241215";
+
+      const baseUrl =
+        agentConfig.tokenBaseUrl?.trim() ||
+        (provider.toLowerCase() === "doubao" || provider.toLowerCase() === "ark"
+          ? "https://ark.cn-beijing.volces.com/api/v3"
+          : "https://api.openai.com/v1");
+
+      const controller = new AbortController();
+      try {
+        console.log(`[Auto] Using agent private key: provider=${provider} model=${modelId} url=${baseUrl}`);
+        const tokenCount = await callOpenAIStream(
+          baseUrl, privateKey, "Bearer", modelId,
+          systemPrompt, truncated,
+          temperature, maxTokens, topP, frequencyPenalty, presencePenalty,
+          onChunk, onComplete, controller
+        );
+        console.log(`[Auto] Success via agent private key (${provider}/${modelId}), tokens=${tokenCount}`);
+        return;
+      } catch (err: any) {
+        console.warn(`[Auto] Agent private key failed: ${err.message}, falling back to global channels...`);
+      }
+    }
+
+    // ── 降级：从全局 token_channels 表读取渠道 ──────────────────────
     const channels = loadChannels();
 
     if (!channels.length) {
       console.log("[Auto] No token channels configured, falling back to mock");
       return mockFallback.generateStream(agentConfig, messages, onChunk, onComplete, onError);
     }
-
-    const systemPrompt = buildSystemPrompt(agentConfig);
-    const temperature = agentConfig.temperature ?? 0.7;
-    const maxTokens = agentConfig.maxTokens ?? 4096;
-    const topP = agentConfig.topP ?? 1;
-    const frequencyPenalty = agentConfig.frequencyPenalty ?? 0;
-    const presencePenalty = agentConfig.presencePenalty ?? 0;
 
     // Try each channel in priority order
     for (const channel of channels) {
@@ -241,13 +508,13 @@ export class AutoLLMAdapter implements ILLMAdapter {
         console.log(
           `[Auto] Trying channel: ${channel.provider} / ${modelId} @ ${baseUrl}`
         );
-        await callOpenAIStream(
+        const tokenCount = await callOpenAIStream(
           baseUrl,
           channel.apiKey,
           channel.authType,
           modelId,
           systemPrompt,
-          messages,
+          truncated,
           temperature,
           maxTokens,
           topP,
@@ -257,7 +524,7 @@ export class AutoLLMAdapter implements ILLMAdapter {
           onComplete,
           controller
         );
-        console.log(`[Auto] Success via ${channel.provider} / ${modelId}`);
+        console.log(`[Auto] Success via ${channel.provider} / ${modelId}, tokens=${tokenCount}`);
         return; // success — stop trying
       } catch (err: any) {
         console.warn(

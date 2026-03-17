@@ -20,6 +20,19 @@ export interface Agent {
   topP: number;
   frequencyPenalty: number;
   presencePenalty: number;
+  // 用户配置的私有 Token 接入
+  tokenProvider: string;
+  tokenApiKey: string;
+  tokenBaseUrl: string;
+  // 输出格式 & 能力边界
+  outputFormat: string;
+  boundary: string;
+  // 对话记忆轮数（0 = 不限）
+  memoryTurns: number;
+  // 简单温度快捷覆盖（null 表示使用 CODE 渠道模型默认值）
+  temperatureOverride: number | null;
+  // Token 用量统计：累计消耗 token 总数
+  tokenUsed: number;
   createdAt: string;
 }
 
@@ -40,6 +53,14 @@ function rowToAgent(obj: any): Agent {
     topP: obj.top_p ?? 1,
     frequencyPenalty: obj.frequency_penalty ?? 0,
     presencePenalty: obj.presence_penalty ?? 0,
+    tokenProvider: obj.token_provider || "",
+    tokenApiKey: obj.token_api_key || "",
+    tokenBaseUrl: obj.token_base_url || "",
+    outputFormat: obj.output_format || "纯文本",
+    boundary: obj.boundary || "",
+    memoryTurns: obj.memory_turns ?? 0,
+    temperatureOverride: obj.temperature_override ?? null,
+    tokenUsed: obj.token_used ?? 0,
     createdAt: obj.created_at,
   };
 }
@@ -74,19 +95,26 @@ export const AgentService = {
     const now = new Date().toISOString();
     db.run(
       `INSERT INTO agents (id, name, color, system_prompt, writing_style, expertise, description, status,
-        model_name, model_provider, temperature, max_tokens, top_p, frequency_penalty, presence_penalty, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        model_name, model_provider, temperature, max_tokens, top_p, frequency_penalty, presence_penalty,
+        token_provider, token_api_key, token_base_url,
+        output_format, boundary, memory_turns, temperature_override,
+        created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         id, data.name, data.color, data.systemPrompt, data.writingStyle,
         JSON.stringify(data.expertise), data.description || "", data.status || "idle",
         data.modelName || "", data.modelProvider || "",
         data.temperature ?? 0.7, data.maxTokens ?? 4096,
         data.topP ?? 1, data.frequencyPenalty ?? 0, data.presencePenalty ?? 0,
+        data.tokenProvider || "", data.tokenApiKey || "", data.tokenBaseUrl || "",
+        data.outputFormat || "纯文本", data.boundary || "",
+        data.memoryTurns ?? 0, data.temperatureOverride ?? null,
         now,
       ]
     );
     saveDb();
-    return { id, ...data, description: data.description || "", status: data.status || "idle", createdAt: now };
+    // 从数据库重新读取，确保返回的对象字段与 rowToAgent 完全一致（含默认值）
+    return this.getById(id)!;
   },
 
   update(id: string, data: Partial<Omit<Agent, "id" | "createdAt">>): Agent | null {
@@ -96,7 +124,9 @@ export const AgentService = {
     const updated = { ...existing, ...data };
     db.run(
       `UPDATE agents SET name=?, color=?, system_prompt=?, writing_style=?, expertise=?, description=?, status=?,
-        model_name=?, model_provider=?, temperature=?, max_tokens=?, top_p=?, frequency_penalty=?, presence_penalty=?
+        model_name=?, model_provider=?, temperature=?, max_tokens=?, top_p=?, frequency_penalty=?, presence_penalty=?,
+        token_provider=?, token_api_key=?, token_base_url=?,
+        output_format=?, boundary=?, memory_turns=?, temperature_override=?
        WHERE id=?`,
       [
         updated.name, updated.color, updated.systemPrompt, updated.writingStyle,
@@ -104,6 +134,9 @@ export const AgentService = {
         updated.modelName || "", updated.modelProvider || "",
         updated.temperature ?? 0.7, updated.maxTokens ?? 4096,
         updated.topP ?? 1, updated.frequencyPenalty ?? 0, updated.presencePenalty ?? 0,
+        updated.tokenProvider || "", updated.tokenApiKey || "", updated.tokenBaseUrl || "",
+        updated.outputFormat || "纯文本", updated.boundary || "",
+        updated.memoryTurns ?? 0, updated.temperatureOverride ?? null,
         id,
       ]
     );
@@ -118,11 +151,22 @@ export const AgentService = {
     return true;
   },
 
+  /**
+   * 将本次调用消耗的 token 累加到 agents.token_used
+   * 幂等安全：delta <= 0 时直接跳过
+   */
+  addTokenUsed(agentId: string, delta: number): void {
+    if (delta <= 0) return;
+    const db = getDb();
+    db.run(`UPDATE agents SET token_used = token_used + ? WHERE id = ?`, [delta, agentId]);
+    saveDb();
+  },
+
   async generateStream(
     agentId: string,
     messages: Array<{ role: string; content: string }>,
     onChunk: (chunk: string) => void,
-    onComplete: () => void,
+    onComplete: (tokenCount: number) => void,
     onError: (err: Error) => void
   ) {
     const agent = this.getById(agentId);
@@ -144,6 +188,16 @@ export const AgentService = {
       topP: agent.topP,
       frequencyPenalty: agent.frequencyPenalty,
       presencePenalty: agent.presencePenalty,
+      // 用户配置的私有 Token — 优先使用
+      tokenProvider: agent.tokenProvider,
+      tokenApiKey: agent.tokenApiKey,
+      tokenBaseUrl: agent.tokenBaseUrl,
+      // 输出格式 & 能力边界
+      outputFormat: agent.outputFormat,
+      boundary: agent.boundary,
+      // 记忆轮数 & 温度覆盖
+      memoryTurns: agent.memoryTurns,
+      temperatureOverride: agent.temperatureOverride,
     };
 
     // 路由策略：

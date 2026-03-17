@@ -823,8 +823,23 @@ function TaskCard({
   onEditNavigate?: (t: Task) => void;
 }) {
   const navigate = useNavigate();
+  const { updateTask: updateTaskStore } = useTaskStore();
   const [hovered, setHovered] = useState(false);
+  const [isEditingTitle, setIsEditingTitle] = useState(false);
+  const [editingTitle, setEditingTitle] = useState(task.title);
   const p = PRIORITY_MAP[task.priority];
+
+  async function saveTitle() {
+    const trimmed = editingTitle.trim();
+    if (!trimmed || trimmed === task.title) {
+      setIsEditingTitle(false);
+      setEditingTitle(task.title);
+      return;
+    }
+    // 对于任务，直接更新前端 store（当前无后端任务 API）
+    updateTaskStore(task.id, { title: trimmed });
+    setIsEditingTitle(false);
+  }
 
   return (
     <div
@@ -871,9 +886,54 @@ function TaskCard({
         })}
         style={{ flex: 1, minWidth: 0, cursor: 'pointer' }}
       >
-        {/* 标题行 */}
+        {/* 标题行（支持双击编辑） */}
         <div style={{ fontSize: 14, fontWeight: 600, color: '#333', display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-          {task.title}
+          {isEditingTitle ? (
+            <input
+              autoFocus
+              value={editingTitle}
+              onChange={e => setEditingTitle(e.target.value)}
+              onBlur={saveTitle}
+              onKeyDown={e => {
+                if (e.key === 'Enter') saveTitle();
+                if (e.key === 'Escape') {
+                  setIsEditingTitle(false);
+                  setEditingTitle(task.title);
+                }
+              }}
+              onClick={e => e.stopPropagation()}
+              style={{
+                flex: 1,
+                fontSize: 14,
+                fontWeight: 600,
+                color: '#333',
+                border: '1.5px solid #3b82f6',
+                borderRadius: 6,
+                padding: '4px 8px',
+                outline: 'none',
+                fontFamily: '\"Microsoft YaHei\",\"Segoe UI\",sans-serif',
+              }}
+            />
+          ) : (
+            <span
+              onDoubleClick={() => setIsEditingTitle(true)}
+              style={{
+                flex: 1,
+                cursor: 'pointer',
+                padding: '2px 4px',
+                borderRadius: 4,
+                transition: 'background 0.12s',
+              }}
+              onMouseEnter={e => {
+                if (!isEditingTitle) (e.currentTarget as HTMLSpanElement).style.background = '#f0f0f0';
+              }}
+              onMouseLeave={e => {
+                (e.currentTarget as HTMLSpanElement).style.background = 'transparent';
+              }}
+            >
+              {task.title}
+            </span>
+          )}
           <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 4, background: p.bg, color: p.color, fontWeight: 400 }}>{p.label}</span>
           {task.source === 'chat' && (
             <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 4, background: '#ede9fe', color: '#7c3aed', fontWeight: 400 }}>对话生成</span>
@@ -1014,8 +1074,36 @@ function ProjectCard({
   onEditNavigate?: (p: KanbanProject) => void;
 }) {
   const navigate = useNavigate();
+  const { updateProject: updateKanbanProject } = useProjectKanbanStore();
   const [hovered, setHovered] = useState(false);
+  const [isEditingTitle, setIsEditingTitle] = useState(false);
+  const [editingTitle, setEditingTitle] = useState(project.title);
   const p = PRIORITY_MAP[project.priority ?? 'low'];
+
+  async function saveTitle() {
+    const trimmed = editingTitle.trim();
+    if (!trimmed || trimmed === project.title) {
+      setIsEditingTitle(false);
+      setEditingTitle(project.title);
+      return;
+    }
+    try {
+      // 调用后端 API 更新
+      const { projectsApi } = await import('@/api/projects');
+      await projectsApi.update(project.id, { title: trimmed });
+      // 更新前端 kanban store
+      updateKanbanProject(project.id, { title: trimmed });
+      setIsEditingTitle(false);
+    } catch (err: any) {
+      if (err.response?.status === 403) {
+        showToast('只有创建人可以修改项目名称', 'error');
+      } else {
+        showToast('修改项目名称失败', 'error');
+      }
+      setEditingTitle(project.title);
+      setIsEditingTitle(false);
+    }
+  }
 
   return (
     <div
@@ -1062,10 +1150,55 @@ function ProjectCard({
         })}
         style={{ flex: 1, minWidth: 0, cursor: 'pointer' }}
       >
-        {/* 标题行：项目名 + 优先级 */}
+        {/* 标题行：项目名 + 优先级（支持双击编辑） */}
         <div style={{ fontSize: 14, fontWeight: 600, color: '#333', display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-          {project.title}
-          <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 4, background: p.bg, color: p.color, fontWeight: 400 }}>{p.label}</span>
+          {isEditingTitle ? (
+            <input
+              autoFocus
+              value={editingTitle}
+              onChange={e => setEditingTitle(e.target.value)}
+              onBlur={saveTitle}
+              onKeyDown={e => {
+                if (e.key === 'Enter') saveTitle();
+                if (e.key === 'Escape') {
+                  setIsEditingTitle(false);
+                  setEditingTitle(project.title);
+                }
+              }}
+              onClick={e => e.stopPropagation()}
+              style={{
+                flex: 1,
+                fontSize: 14,
+                fontWeight: 600,
+                color: '#333',
+                border: '1.5px solid #3b82f6',
+                borderRadius: 6,
+                padding: '4px 8px',
+                outline: 'none',
+                fontFamily: '\"Microsoft YaHei\",\"Segoe UI\",sans-serif',
+              }}
+            />
+          ) : (
+            <span
+              onDoubleClick={() => setIsEditingTitle(true)}
+              style={{
+                flex: 1,
+                cursor: 'pointer',
+                padding: '2px 4px',
+                borderRadius: 4,
+                transition: 'background 0.12s',
+              }}
+              onMouseEnter={e => {
+                if (!isEditingTitle) (e.currentTarget as HTMLSpanElement).style.background = '#f0f0f0';
+              }}
+              onMouseLeave={e => {
+                (e.currentTarget as HTMLSpanElement).style.background = 'transparent';
+              }}
+            >
+              {project.title}
+            </span>
+          )}
+          <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 4, background: p.bg, color: p.color, fontWeight: 400, flexShrink: 0 }}>{p.label}</span>
         </div>
 
         {/* 描述 */}
@@ -1257,15 +1390,26 @@ export function AgentKanban() {
       }
 
       const allKanban = [...projects.progress, ...projects.done];
+
+      /**
+       * 将后端 updatedAt（ISO 时间字符串）转为可读的相对时间展示
+       * 例如：刚刚 / 5分钟前 / 2小时前 / 3天前
+       */
+      function formatUpdatedAt(isoStr: string | undefined): string {
+        if (!isoStr) return '刚刚';
+        const diff = Date.now() - new Date(isoStr).getTime();
+        const mins = Math.floor(diff / 60000);
+        if (mins < 2) return '刚刚';
+        if (mins < 60) return `${mins}分钟前`;
+        const hours = Math.floor(mins / 60);
+        if (hours < 24) return `${hours}小时前`;
+        const days = Math.floor(hours / 24);
+        if (days < 7) return `${days}天前`;
+        const weeks = Math.floor(days / 7);
+        return `${weeks}周前`;
+      }
+
       backendProjects.forEach(bp => {
-        // 只同步用户真实创建的项目（排除 mock 数据 p1~p5）
-        const alreadyInKanban = allKanban.find(
-          kp => kp.id === bp.id || kp.title === bp.title
-        );
-        if (alreadyInKanban) {
-          // 已有则静默更新 title/description（不覆盖 agents/progress 等前端管理的字段）
-          return;
-        }
         // 从 workflow_nodes 里推导参与智能体列表（使用最新 freshAgents 反查）
         const agentIds = [...new Set((bp.workflowNodes ?? []).flatMap(n => n.agentIds))];
         const agentsInNodes = agentIds
@@ -1273,8 +1417,33 @@ export function AgentKanban() {
           .filter(Boolean)
           .map(a => ({ name: a!.name, color: a!.color ?? '#6366f1' }));
         const firstAgent = agentsInNodes[0] ?? { name: '策划助手', color: '#6366f1' };
+        const dueDate = bp.endTime ? bp.endTime.slice(0, 10).replace(/-/g, '/').slice(5) : '';
+        const updatedAt = formatUpdatedAt(bp.updatedAt);
 
-        // 新建项目补充到 kanban store（使用后端真实 id）
+        const alreadyInKanban = allKanban.find(
+          kp => kp.id === bp.id || kp.title === bp.title
+        );
+        if (alreadyInKanban) {
+          // 已有项目：同步后端最新的 title/description/tags/priority/dueDate/agents/updatedAt
+          // 不覆盖 progress（进度由用户在前端手动管理）
+          updateKanbanProject(alreadyInKanban.id, {
+            id: bp.id,                    // 确保 ID 与后端一致（修复临时 proj_xxx 遗留问题）
+            title: bp.title,
+            description: bp.description ?? '',
+            tags: bp.tags ?? [],
+            priority: bp.priority ?? 'low',
+            dueDate,
+            updatedAt,
+            agent: firstAgent.name,
+            agentColor: firstAgent.color,
+            agents: agentsInNodes.length > 0 ? agentsInNodes : [firstAgent],
+            taskCount: (bp.workflowNodes ?? []).length,
+            memberCount: agentsInNodes.length || 1,
+          });
+          return;
+        }
+        // 新项目：写入 kanban store（使用后端真实 id，根据 status 放入对应列）
+        const targetCol = bp.status === 'archived' ? 'done' : 'progress';
         addProject({
           id: bp.id,
           title: bp.title,
@@ -1285,11 +1454,11 @@ export function AgentKanban() {
           agentColor: firstAgent.color,
           agents: agentsInNodes.length > 0 ? agentsInNodes : [firstAgent],
           progress: 0,
-          dueDate: bp.endTime ? bp.endTime.slice(0, 10).replace(/-/g, '/').slice(5) : '',
-          updatedAt: '刚刚',
+          dueDate,
+          updatedAt,
           taskCount: (bp.workflowNodes ?? []).length,
           memberCount: agentsInNodes.length || 1,
-        }, 'progress');
+        }, targetCol);
       });
     })();
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1592,7 +1761,18 @@ function StatusKanban({ col, searchText }: { col: Column; searchText: string }) 
           project={editProject.project}
           col={editProject.col}
           onClose={() => setEditProject(null)}
-          onMove={(id, from, to) => { storeMoveProject(id, from, to); setEditProject(null); }}
+          onMove={async (id, from, to) => {
+            // Step 1：更新前端 store（立即生效）
+            storeMoveProject(id, from, to);
+            // Step 2：同步 status 到后端（active = 进行中, archived = 已完成）
+            const newStatus = to === 'done' ? 'archived' : 'active';
+            try {
+              await projectsApi.update(id, { status: newStatus } as any);
+            } catch {
+              // 后端不可用时静默，前端状态已更新不回滚
+            }
+            setEditProject(null);
+          }}
         />
       )}
     </>

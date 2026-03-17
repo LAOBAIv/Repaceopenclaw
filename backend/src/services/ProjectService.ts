@@ -22,6 +22,7 @@ export interface Project {
   endTime: string;
   decisionMaker: string;
   workflowNodes: WorkflowNode[];
+  createdBy: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -51,6 +52,7 @@ const rowToProject = (obj: any): Project => ({
   endTime: obj.end_time || "",
   decisionMaker: obj.decision_maker || "",
   workflowNodes: JSON.parse(obj.workflow_nodes || "[]"),
+  createdBy: obj.created_by || null,
   createdAt: obj.created_at,
   updatedAt: obj.updated_at,
 });
@@ -96,35 +98,40 @@ export const ProjectService = {
     title: string;
     description: string;
     tags: string[];
+    status?: "active" | "archived";
     goal?: string;
     priority?: "high" | "mid" | "low";
     startTime?: string;
     endTime?: string;
     decisionMaker?: string;
     workflowNodes?: WorkflowNode[];
+    createdBy?: string;
   }): Project {
     const db = getDb();
     const id = uuidv4();
     const now = new Date().toISOString();
+    const status = data.status ?? "active";
     db.run(
-      `INSERT INTO projects (id, title, description, tags, status, goal, priority, start_time, end_time, decision_maker, workflow_nodes, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      `INSERT INTO projects (id, title, description, tags, status, goal, priority, start_time, end_time, decision_maker, workflow_nodes, created_by, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [
-        id, data.title, data.description, JSON.stringify(data.tags), "active",
+        id, data.title, data.description, JSON.stringify(data.tags), status,
         data.goal || "", data.priority || "mid",
         data.startTime || "", data.endTime || "",
         data.decisionMaker || "",
         JSON.stringify(data.workflowNodes || []),
+        data.createdBy || null,
         now, now,
       ]
     );
     saveDb();
     return {
       id, title: data.title, description: data.description, tags: data.tags,
-      status: "active",
+      status,
       goal: data.goal || "", priority: data.priority || "mid",
       startTime: data.startTime || "", endTime: data.endTime || "",
       decisionMaker: data.decisionMaker || "",
       workflowNodes: data.workflowNodes || [],
+      createdBy: data.createdBy || null,
       createdAt: now, updatedAt: now,
     };
   },
@@ -140,6 +147,7 @@ export const ProjectService = {
     endTime: string;
     decisionMaker: string;
     workflowNodes: WorkflowNode[];
+    createdBy: string;
   }>): Project | null {
     const db = getDb();
     const existing = this.getById(id);
@@ -147,13 +155,14 @@ export const ProjectService = {
     const updated = { ...existing, ...data };
     const now = new Date().toISOString();
     db.run(
-      `UPDATE projects SET title=?, description=?, tags=?, status=?, goal=?, priority=?, start_time=?, end_time=?, decision_maker=?, workflow_nodes=?, updated_at=? WHERE id=?`,
+      `UPDATE projects SET title=?, description=?, tags=?, status=?, goal=?, priority=?, start_time=?, end_time=?, decision_maker=?, workflow_nodes=?, created_by=?, updated_at=? WHERE id=?`,
       [
         updated.title, updated.description, JSON.stringify(updated.tags), updated.status,
         updated.goal, updated.priority,
         updated.startTime, updated.endTime,
         updated.decisionMaker,
         JSON.stringify(updated.workflowNodes),
+        updated.createdBy || null,
         now, id,
       ]
     );

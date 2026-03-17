@@ -54,6 +54,7 @@ function createTables(db: Database) {
       top_p REAL NOT NULL DEFAULT 1,
       frequency_penalty REAL NOT NULL DEFAULT 0,
       presence_penalty REAL NOT NULL DEFAULT 0,
+      token_used INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL
     )
   `);
@@ -68,6 +69,18 @@ function createTables(db: Database) {
   try { db.run("ALTER TABLE agents ADD COLUMN top_p REAL NOT NULL DEFAULT 1"); } catch {}
   try { db.run("ALTER TABLE agents ADD COLUMN frequency_penalty REAL NOT NULL DEFAULT 0"); } catch {}
   try { db.run("ALTER TABLE agents ADD COLUMN presence_penalty REAL NOT NULL DEFAULT 0"); } catch {}
+  // Token 接入字段：用户为该智能体配置的私有 API Key
+  try { db.run("ALTER TABLE agents ADD COLUMN token_provider TEXT NOT NULL DEFAULT ''"); } catch {}
+  try { db.run("ALTER TABLE agents ADD COLUMN token_api_key TEXT NOT NULL DEFAULT ''"); } catch {}
+  try { db.run("ALTER TABLE agents ADD COLUMN token_base_url TEXT NOT NULL DEFAULT ''"); } catch {}
+  // 输出格式 & 能力边界（2026-03 新增）
+  try { db.run("ALTER TABLE agents ADD COLUMN output_format TEXT NOT NULL DEFAULT '纯文本'"); } catch {}
+  try { db.run("ALTER TABLE agents ADD COLUMN boundary TEXT NOT NULL DEFAULT ''"); } catch {}
+  // 对话记忆轮数（0 = 不限）；temperature_override 为简单温度快捷覆盖（空字符串表示使用模型默认）
+  try { db.run("ALTER TABLE agents ADD COLUMN memory_turns INTEGER NOT NULL DEFAULT 0"); } catch {}
+  try { db.run("ALTER TABLE agents ADD COLUMN temperature_override REAL DEFAULT NULL"); } catch {}
+  // Token 用量统计：累计该智能体消耗的 token 总数（每次 agent 回复后累加）
+  try { db.run("ALTER TABLE agents ADD COLUMN token_used INTEGER NOT NULL DEFAULT 0"); } catch {}
 
   // Token channels: stores API keys for each LLM provider
   db.run(`
@@ -98,6 +111,7 @@ function createTables(db: Database) {
       end_time TEXT NOT NULL DEFAULT '',
       decision_maker TEXT NOT NULL DEFAULT '',
       workflow_nodes TEXT NOT NULL DEFAULT '[]',
+      created_by TEXT,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     )
@@ -110,6 +124,7 @@ function createTables(db: Database) {
   try { db.run("ALTER TABLE projects ADD COLUMN end_time TEXT NOT NULL DEFAULT ''"); } catch {}
   try { db.run("ALTER TABLE projects ADD COLUMN decision_maker TEXT NOT NULL DEFAULT ''"); } catch {}
   try { db.run("ALTER TABLE projects ADD COLUMN workflow_nodes TEXT NOT NULL DEFAULT '[]'"); } catch {}
+  try { db.run("ALTER TABLE projects ADD COLUMN created_by TEXT"); } catch {}
 
   db.run(`
     CREATE TABLE IF NOT EXISTS tasks (
@@ -126,12 +141,14 @@ function createTables(db: Database) {
       comment_count INTEGER NOT NULL DEFAULT 0,
       file_count INTEGER NOT NULL DEFAULT 0,
       sort_order INTEGER NOT NULL DEFAULT 0,
+      created_by TEXT,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     )
   `);
-  // Migrate: add agent_id to existing tasks table (idempotent)
+  // Migrate: add agent_id and created_by to existing tasks table (idempotent)
   try { db.run("ALTER TABLE tasks ADD COLUMN agent_id TEXT NOT NULL DEFAULT ''"); } catch {}
+  try { db.run("ALTER TABLE tasks ADD COLUMN created_by TEXT"); } catch {}
 
   db.run(`
     CREATE TABLE IF NOT EXISTS documents (
@@ -162,11 +179,53 @@ function createTables(db: Database) {
     CREATE TABLE IF NOT EXISTS conversations (
       id TEXT PRIMARY KEY,
       project_id TEXT,
-      agent_id TEXT NOT NULL,
+      task_id TEXT UNIQUE,
       title TEXT NOT NULL DEFAULT 'New Conversation',
-      created_at TEXT NOT NULL
+      created_by TEXT,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE SET NULL,
+      FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE SET NULL
     )
   `);
+  // Migrate: add task_id and created_by columns (idempotent)
+  try { db.run("ALTER TABLE conversations ADD COLUMN task_id TEXT UNIQUE"); } catch {}
+  try { db.run("ALTER TABLE conversations ADD COLUMN created_by TEXT"); } catch {}
+  // Migrate: drop old agent_id column (SQLite does not support DROP COLUMN before 3.35;
+  // we simply ignore it — the column stays but is no longer used)
+  // New designs read agent list from conversation_agents table instead.
+
+  // conversation_agents: 一个会话可包含多个智能体（多对多关联）
+  db.run(`
+    CREATE TABLE IF NOT EXISTS conversation_agents (
+      conversation_id TEXT NOT NULL,
+      agent_id TEXT NOT NULL,
+      joined_at TEXT NOT NULL,
+      PRIMARY KEY (conversation_id, agent_id),
+      FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE,
+      FOREIGN KEY (agent_id) REFERENCES agents(id) ON DELETE CASCADE
+    )
+  `);
+
+  // Migrate: populate conversation_agents from existing conversations.agent_id (idempotent)
+  try {
+    const existing = db.exec(`
+      SELECT c.id as conv_id, c.agent_id, c.created_at
+      FROM conversations c
+      WHERE c.agent_id IS NOT NULL AND c.agent_id != ''
+        AND NOT EXISTS (
+          SELECT 1 FROM conversation_agents ca WHERE ca.conversation_id = c.id
+        )
+    `);
+    if (existing.length && existing[0].values.length) {
+      for (const row of existing[0].values) {
+        const [convId, agentId, createdAt] = row as string[];
+        db.run(
+          `INSERT OR IGNORE INTO conversation_agents (conversation_id, agent_id, joined_at) VALUES (?,?,?)`,
+          [convId, agentId, createdAt]
+        );
+      }
+    }
+  } catch { /* 旧库无 agent_id 列时静默跳过 */ }
 
   db.run(`
     CREATE TABLE IF NOT EXISTS messages (
@@ -175,10 +234,28 @@ function createTables(db: Database) {
       role TEXT NOT NULL,
       content TEXT NOT NULL,
       agent_id TEXT,
+      token_count INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL,
       FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
     )
   `);
+  // Migrate: add token_count to existing messages table (idempotent)
+  try { db.run("ALTER TABLE messages ADD COLUMN token_count INTEGER NOT NULL DEFAULT 0"); } catch {}
+
+  // ── Bot Channels（飞书 / 企业微信 / 钉钉 Bot 接入）───────────────────────────
+  db.run(`
+    CREATE TABLE IF NOT EXISTS bot_channels (
+      id TEXT PRIMARY KEY,
+      channel_type TEXT NOT NULL,
+      bot_id TEXT NOT NULL DEFAULT '',
+      secret TEXT NOT NULL DEFAULT '',
+      enabled INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    )
+  `);
+  // unique index: one row per channel_type
+  db.run(`CREATE UNIQUE INDEX IF NOT EXISTS bot_channels_type ON bot_channels(channel_type)`);
 
   // ── Skills ──────────────────────────────────────────────────────────────────
   db.run(`
@@ -204,6 +281,22 @@ function createTables(db: Database) {
       PRIMARY KEY (agent_id, skill_id),
       FOREIGN KEY (agent_id) REFERENCES agents(id) ON DELETE CASCADE,
       FOREIGN KEY (skill_id) REFERENCES skills(id) ON DELETE CASCADE
+    )
+  `);
+
+  // ── Users ────────────────────────────────────────────────────────────────────
+  db.run(`
+    CREATE TABLE IF NOT EXISTS users (
+      id TEXT PRIMARY KEY,
+      username TEXT NOT NULL UNIQUE,
+      email TEXT NOT NULL UNIQUE,
+      password_hash TEXT NOT NULL,
+      role TEXT NOT NULL DEFAULT 'user',
+      status TEXT NOT NULL DEFAULT 'active',
+      avatar TEXT NOT NULL DEFAULT '',
+      last_login_at TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
     )
   `);
 

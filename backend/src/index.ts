@@ -7,12 +7,15 @@ import projectRoutes from "./routes/projects";
 import conversationRoutes from "./routes/conversations";
 import taskRoutes from "./routes/tasks";
 import tokenChannelRoutes from "./routes/tokenChannels";
+import botChannelRoutes from "./routes/botChannels";
 import searchRoutes from "./routes/search";
 import exportImportRoutes from "./routes/exportImport";
 import skillRoutes from "./routes/skills";
 import pluginRoutes from "./routes/plugins";
 import { errorHandler } from "./middleware/errorHandler";
 import { setupWebSocket } from "./ws/wsHandler";
+import authRoutes from "./routes/auth";
+import openaiCompatRoutes from "./routes/openaiCompat";
 
 const PORT = process.env.PORT || 3001;
 
@@ -30,17 +33,24 @@ async function main() {
   });
 
   // API routes
+  app.use("/api/auth", authRoutes);
   app.use("/api/agents", agentRoutes);
   app.use("/api/projects", projectRoutes);
   app.use("/api/conversations", conversationRoutes);
   app.use("/api/tasks", taskRoutes);
   app.use("/api/token-channels", tokenChannelRoutes);
+  app.use("/api/bot-channels", botChannelRoutes);
   app.use("/api/search", searchRoutes);
   // GET /api/export = full data export; POST /api/export or POST /api/import = data import
   app.use("/api/export", exportImportRoutes);
   app.use("/api/import", exportImportRoutes);
   app.use("/api/skills", skillRoutes);
   app.use("/api/plugins", pluginRoutes);
+
+  // OpenAI 兼容对外接口（供 OpenClaw / Claude Code / OpenCode 等工具接入）
+  // GET  /v1/models
+  // POST /v1/chat/completions
+  app.use("/v1", openaiCompatRoutes);
 
   // Error handler
   app.use(errorHandler);

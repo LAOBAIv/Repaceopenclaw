@@ -31,7 +31,7 @@ export class MockLLMAdapter implements ILLMAdapter {
     },
     messages: Array<{ role: string; content: string }>,
     onChunk: (chunk: string) => void,
-    onComplete: () => void,
+    onComplete: (tokenCount: number) => void,
     onError: (err: Error) => void
   ): Promise<void> {
     const prefix =
@@ -48,7 +48,9 @@ export class MockLLMAdapter implements ILLMAdapter {
     return new Promise((resolve) => {
       const send = () => {
         if (i >= fullResponse.length) {
-          onComplete();
+          // Mock: 估算本次输出的 token 数（简单按字符数 / 2 粗估）
+          const mockTokens = Math.ceil(fullResponse.length / 2);
+          onComplete(mockTokens);
           resolve();
           return;
         }

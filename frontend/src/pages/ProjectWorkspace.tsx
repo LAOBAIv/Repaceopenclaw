@@ -5,6 +5,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { useProjectStore } from '@/stores/projectStore';
 import { useConversationStore } from '@/stores/conversationStore';
 import { useAgentStore } from '@/stores/agentStore';
+import { MessageBubble } from '@/components/conversation/MessageBubble';
 import { useTaskStore } from '@/stores/taskStore';
 import { useProjectKanbanStore, type ProjectPriority } from '@/stores/projectKanbanStore';
 import { showToast } from '@/components/Toast';
@@ -1727,6 +1728,37 @@ function TabPanel({
   /** 从项目中移出一个智能体（不降级）回调 */
   onRemoveAgent?: (removedAgentName: string) => void;
 }) {
+  /* ── 消息渠道列表（飞书/企业微信/钉钉 Bot 接入状态）从后端动态读取 ── */
+  type BotChannelStatus = { name: string; channelType: ChannelType; status: string; color: string };
+  const [channelList, setChannelList] = useState<BotChannelStatus[]>([
+    { name: '飞书',   channelType: 'feishu',   status: '未连接', color: '#9ca3af' },
+    { name: '企业微信', channelType: 'wecom',  status: '未连接', color: '#9ca3af' },
+    { name: '钉钉',   channelType: 'dingtalk', status: '未连接', color: '#9ca3af' },
+  ]);
+  const [showChannelConfigFor, setShowChannelConfigFor] = useState<ChannelType | null>(null);
+
+  // 仅在消息渠道 Tab 激活时拉取后端已配置的 Bot 渠道列表
+  useEffect(() => {
+    if (tab !== '消息渠道') return;
+    fetch('/api/bot-channels')
+      .then(r => r.ok ? r.json() : null)
+      .then((json: { data: Array<{ channelType: string; botId: string; enabled: boolean }> } | null) => {
+        if (!json?.data) return;
+        const typeMap: Record<string, boolean> = {};
+        json.data.forEach(ch => { typeMap[ch.channelType] = ch.enabled && !!ch.botId; });
+        setChannelList(prev => prev.map(ch => ({
+          ...ch,
+          status: typeMap[ch.channelType] ? '已连接' : '未连接',
+          color: typeMap[ch.channelType] ? '#22c55e' : '#9ca3af',
+        })));
+      })
+      .catch(() => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab]);
+
+  // CHANNEL_LIST 兼容性别名（渲染时使用 channelList）
+  const CHANNEL_LIST = channelList;
+
   /* 文件快传状态 */
   const [uploadedFiles, setUploadedFiles] = useState<{ name: string; size: string; type: string }[]>([]);
   const [dragOver, setDragOver] = useState(false);
@@ -1838,15 +1870,41 @@ function TabPanel({
                   <span style={{ fontWeight: 500 }}>{ch.name}</span>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <span style={badgeStyle(ch.color)}>{ch.status}</span>
-                    <button style={{
-                      fontSize: 12, padding: '4px 14px', borderRadius: 6,
-                      border: '1.5px solid #e5e7eb', background: '#fff',
-                      cursor: 'pointer', color: '#374151',
-                      fontFamily: '"Microsoft YaHei","Segoe UI",sans-serif',
-                    }}>连接</button>
+                    <button
+                      onClick={() => setShowChannelConfigFor(ch.channelType)}
+                      style={{
+                        fontSize: 12, padding: '4px 14px', borderRadius: 6,
+                        border: '1.5px solid #e5e7eb', background: '#fff',
+                        cursor: 'pointer', color: '#374151',
+                        fontFamily: '"Microsoft YaHei","Segoe UI",sans-serif',
+                      }}
+                    >{ch.status === '已连接' ? '编辑' : '连接'}</button>
                   </div>
                 </div>
               ))}
+              {/* 在 TabPanel 内部弹出对应渠道的 Bot 配置弹窗 */}
+              {showChannelConfigFor && (
+                <ChannelConfigModal
+                  initialChannel={showChannelConfigFor}
+                  onClose={() => {
+                    setShowChannelConfigFor(null);
+                    // 关闭后重新拉取状态
+                    fetch('/api/bot-channels')
+                      .then(r => r.ok ? r.json() : null)
+                      .then((json: { data: Array<{ channelType: string; botId: string; enabled: boolean }> } | null) => {
+                        if (!json?.data) return;
+                        const typeMap: Record<string, boolean> = {};
+                        json.data.forEach(c => { typeMap[c.channelType] = c.enabled && !!c.botId; });
+                        setChannelList(prev => prev.map(c => ({
+                          ...c,
+                          status: typeMap[c.channelType] ? '已连接' : '未连接',
+                          color: typeMap[c.channelType] ? '#22c55e' : '#9ca3af',
+                        })));
+                      })
+                      .catch(() => {});
+                  }}
+                />
+              )}
             </div>
           )}
 
@@ -2185,13 +2243,43 @@ const CHANNEL_TABS: { key: ChannelType; label: string; icon: string }[] = [
   { key: 'dingtalk', label: '钉钉',   icon: '📎' },
 ];
 
-function ChannelConfigModal({ onClose }: { onClose: () => void }) {
-  const [channel, setChannel] = useState<ChannelType>('feishu');
+function ChannelConfigModal({ onClose, initialChannel = 'feishu' }: { onClose: () => void; initialChannel?: ChannelType }) {
+  const [channel, setChannel] = useState<ChannelType>(initialChannel);
   const [botId, setBotId]     = useState('');
   const [secret, setSecret]   = useState('');
   const [showSecret, setShowSecret] = useState(false);
   const [errors, setErrors]   = useState<{ botId?: string; secret?: string }>({});
   const [saved, setSaved]     = useState(false);
+  const [saving, setSaving]   = useState(false);
+  // 缓存各渠道已加载的配置，避免切换时重复请求
+  const [configCache, setConfigCache] = useState<Record<string, { botId: string; secret: string }>>({});
+
+  /** 从后端加载指定渠道的已有配置 */
+  async function loadChannelConfig(channelType: ChannelType) {
+    // 如果缓存里已有，直接用
+    if (configCache[channelType] !== undefined) {
+      setBotId(configCache[channelType].botId);
+      setSecret(configCache[channelType].secret);
+      return;
+    }
+    try {
+      const res = await fetch(`/api/bot-channels/${channelType}`);
+      const json = await res.json();
+      const data = json.data;
+      const cfg = { botId: data?.botId ?? '', secret: data?.secret ?? '' };
+      setConfigCache(prev => ({ ...prev, [channelType]: cfg }));
+      setBotId(cfg.botId);
+      setSecret(cfg.secret);
+    } catch {
+      setBotId(''); setSecret('');
+    }
+  }
+
+  // 初始化时加载默认渠道的配置
+  useEffect(() => {
+    loadChannelConfig(initialChannel);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   function validate() {
     const e: { botId?: string; secret?: string } = {};
@@ -2201,17 +2289,31 @@ function ChannelConfigModal({ onClose }: { onClose: () => void }) {
     return Object.keys(e).length === 0;
   }
 
-  function handleConfirm() {
+  async function handleConfirm() {
     if (!validate()) return;
-    setSaved(true);
-    setTimeout(() => { setSaved(false); onClose(); }, 1200);
+    setSaving(true);
+    try {
+      await fetch('/api/bot-channels', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ channelType: channel, botId: botId.trim(), secret: secret.trim(), enabled: true }),
+      });
+      // 更新缓存
+      setConfigCache(prev => ({ ...prev, [channel]: { botId: botId.trim(), secret: secret.trim() } }));
+      setSaved(true);
+      setTimeout(() => { setSaved(false); onClose(); }, 1200);
+    } catch {
+      setErrors({ botId: '保存失败，请稍后重试' });
+    } finally {
+      setSaving(false);
+    }
   }
 
-  /* 切换渠道时清空表单 */
+  /* 切换渠道时加载对应渠道的配置 */
   function switchChannel(c: ChannelType) {
     setChannel(c);
-    setBotId(''); setSecret('');
     setErrors({});
+    loadChannelConfig(c);
   }
 
   const channelLabels: Record<ChannelType, string> = {
@@ -2530,12 +2632,14 @@ function ChannelConfigModal({ onClose }: { onClose: () => void }) {
           {/* 确定：紫色实底，hover 加深，保存后变绿 */}
           <button
             onClick={handleConfirm}
+            disabled={saving}
             style={{
               height: 40, padding: '0 28px', fontSize: 14, borderRadius: 8,
               border: 'none',
               background: saved ? '#22c55e' : '#6366f1',
-              cursor: 'pointer', color: '#fff', fontWeight: 600,
+              cursor: saving ? 'not-allowed' : 'pointer', color: '#fff', fontWeight: 600,
               fontFamily: '"Microsoft YaHei","Segoe UI",sans-serif',
+              opacity: saving ? 0.75 : 1,
               transition: 'background 0.15s, box-shadow 0.15s',
               boxShadow: saved ? '0 2px 8px rgba(34,197,94,0.25)' : '0 2px 8px rgba(99,102,241,0.25)',
               display: 'inline-flex', alignItems: 'center', gap: 6,
@@ -2553,7 +2657,7 @@ function ChannelConfigModal({ onClose }: { onClose: () => void }) {
                 : '0 2px 8px rgba(99,102,241,0.25)';
             }}
           >
-            {saved ? (
+            {saving ? '保存中...' : saved ? (
               <>
                 <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
                   <path d="M2.5 7L5.5 10L11.5 4" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
@@ -2599,16 +2703,30 @@ export function ProjectWorkspace() {
   // ── 持久化项目上下文到 sessionStorage，刷新后可恢复 ──
   // 有新的 navState 时写入；刷新后 navState 为 null 时从 sessionStorage 读取
   const SESSION_KEY = 'workspace_project_ctx';
-  type ProjectCtx = { projectName?: string; projectId?: string; taskId?: string; agentNames?: string[] };
+  type ProjectCtx = {
+    projectName?: string;
+    projectId?: string;
+    taskId?: string;
+    agentNames?: string[];
+    /** 项目已降级为任务：true 时刷新后 isProjectMode=false */
+    isDegraded?: boolean;
+    /** 降级后继承的标签（刷新恢复用） */
+    degradedTags?: string[];
+    /** 降级后继承的优先级（刷新恢复用） */
+    degradedPriority?: string | null;
+    /** 降级后保留的单个智能体名称（刷新恢复用） */
+    degradedAgentName?: string;
+  };
 
   const resolvedCtx = ((): ProjectCtx => {
     if (navState?.projectName || navState?.projectId || navState?.taskId) {
-      // 有新跳转数据，写入 sessionStorage
+      // 有新跳转数据：重置降级标志并写入 sessionStorage
       const ctx: ProjectCtx = {
         projectName: navState.projectName,
         projectId: navState.projectId,
         taskId: navState.taskId,
         agentNames: navState.agentNames,
+        isDegraded: false,
       };
       try { sessionStorage.setItem(SESSION_KEY, JSON.stringify(ctx)); } catch {}
       return ctx;
@@ -2636,7 +2754,10 @@ export function ProjectWorkspace() {
 
   /* ── Store 接入 ─────────────────────────────────────────── */
   const { currentProject, projects, fetchProjects } = useProjectStore();
-  const { openPanels, openPanel, sendMessage, connect, closePanel, wsConnected, dismissBanner } = useConversationStore();
+  const {
+    openPanels, openPanel, sendMessage, connect, closePanel, wsConnected, dismissBanner,
+    sessionTabs, activeTabId, createSessionTab, switchSessionTab, closeSessionTab, bindPanelToTab,
+  } = useConversationStore();
   const { agents, fetchAgents } = useAgentStore();
   const { addTaskFromChat, tasks, updateTask } = useTaskStore();
   const { projects: kanbanProjects, updateProject: updateKanbanProject, addProject: addKanbanProject } = useProjectKanbanStore();
@@ -2650,12 +2771,23 @@ export function ProjectWorkspace() {
   const [activePanelId, setActivePanelId] = useState<string | null>(null);
   /** 协作流程节点（提升到顶层，防止 TabPanel 关闭时丢失） */
   const [collabNodes, setCollabNodes] = useState<FlowNode[]>(() => [makeFlowNode(0)]);
-  /** 当前是否为项目模式（可动态升级/降级）—— 刷新后从 sessionStorage 恢复 */
-  const [isProjectMode, setIsProjectMode] = useState<boolean>(() => !!(incomingProjectId && !incomingTaskId));
+  /**
+   * 当前是否为项目模式（可动态升级/降级）—— 刷新后从 sessionStorage 恢复。
+   * 若 sessionStorage 里记录了 isDegraded=true，说明用户在本次会话中已将项目降级为任务，
+   * 刷新后应维持任务模式，而不是根据 incomingProjectId 重新变回项目模式。
+   */
+  const [isProjectMode, setIsProjectMode] = useState<boolean>(() => {
+    if (resolvedCtx.isDegraded) return false;
+    return !!(incomingProjectId && !incomingTaskId);
+  });
   /** 当前参与会话的智能体名称列表（项目模式下可增删，任务模式下只有1个） */
-  const [participatingAgentNames, setParticipatingAgentNames] = useState<string[]>(
-    () => incomingAgentNames ?? []
-  );
+  const [participatingAgentNames, setParticipatingAgentNames] = useState<string[]>(() => {
+    // 降级状态：恢复降级时保留的单个智能体
+    if (resolvedCtx.isDegraded && resolvedCtx.degradedAgentName) {
+      return [resolvedCtx.degradedAgentName];
+    }
+    return incomingAgentNames ?? [];
+  });
   /**
    * ⚠️ 降级任务数据 —— 请勿删除此 state，否则降级后标签/优先级会全部丢失！
    *
@@ -2677,15 +2809,27 @@ export function ProjectWorkspace() {
   const [degradedTaskData, setDegradedTaskData] = useState<{
     tags: string[];
     priority: ProjectPriority | null;
-  } | null>(null);
+  } | null>(() => {
+    // 刷新后从 sessionStorage 恢复降级数据
+    if (resolvedCtx.isDegraded) {
+      return {
+        tags: resolvedCtx.degradedTags ?? [],
+        priority: (resolvedCtx.degradedPriority as ProjectPriority | null) ?? null,
+      };
+    }
+    return null;
+  });
 
   /** 顶部优先级下拉是否展开 */
   const [showPriorityDropdown, setShowPriorityDropdown] = useState(false);
   const priorityDropdownRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  /** 已自动建任务的 panelId 集合，避免同一会话重复创建 */
-  const createdTaskPanels = useRef<Set<string>>(new Set());
+  // ── 防重说明 ────────────────────────────────────────────────────────────────
+  // addTaskFromChat 内部已做幂等校验：task.id = conversationId（panelId），
+  // 若 taskStore 中已存在同 id 的任务则直接跳过，不重复插入。
+  // 因此 ProjectWorkspace 不再需要维护任何防重集合（内存或 localStorage）。
+  // ────────────────────────────────────────────────────────────────────────────
 
   /** 浏览器网络是否在线 */
   const [isOnline, setIsOnline] = useState(() => navigator.onLine);
@@ -2709,6 +2853,51 @@ export function ProjectWorkspace() {
     offline: { label: '离线',   bg: '#fef2f2', color: '#b91c1c', border: '#fecaca', dotColor: '#ef4444' },
     busy:    { label: '忙碌',   bg: '#fffbeb', color: '#b45309', border: '#fde68a', dotColor: '#f59e0b' },
   };
+
+  /* ── openPanels 变化时自动同步 sessionTabs ─────────────────── */
+  useEffect(() => {
+    const store = useConversationStore.getState();
+    const { sessionTabs: tabs } = store;
+    openPanels.forEach((panel) => {
+      // 若 panel 尚未绑定任何 Tab，自动创建一个并绑定
+      const bound = tabs.find((t) => t.panelId === panel.id);
+      if (!bound) {
+        const tabId = `tab-${panel.id}`;
+        // 检查是否已有此 tabId（避免重复）
+        if (!tabs.find((t) => t.id === tabId)) {
+          const newTab = {
+            id: tabId,
+            title: panel.agentName,
+            panelId: panel.id,
+            color: panel.agentColor,
+            isStreaming: panel.isStreaming,
+          };
+          useConversationStore.setState((s) => ({
+            sessionTabs: s.sessionTabs.find((t) => t.id === tabId)
+              ? s.sessionTabs
+              : [...s.sessionTabs, newTab],
+            activeTabId: s.activeTabId ?? tabId,
+          }));
+        }
+      } else {
+        // 同步 streaming 状态
+        useConversationStore.setState((s) => ({
+          sessionTabs: s.sessionTabs.map((t) =>
+            t.id === bound.id ? { ...t, isStreaming: panel.isStreaming, title: panel.agentName, color: panel.agentColor } : t
+          ),
+        }));
+      }
+    });
+  }, [openPanels]);
+
+  /* ── 根据当前激活 Tab 同步 activePanelId ─────────────────── */
+  useEffect(() => {
+    if (!activeTabId) return;
+    const tab = sessionTabs.find((t) => t.id === activeTabId);
+    if (tab?.panelId && tab.panelId !== activePanelId) {
+      setActivePanelId(tab.panelId);
+    }
+  }, [activeTabId, sessionTabs]);
 
   /* ── 取当前工作台的会话 panel（按 activePanelId 查找，兜底取第一个） ── */
   const activePanel = (activePanelId ? openPanels.find(p => p.id === activePanelId) : null) ?? openPanels[0] ?? null;
@@ -2930,10 +3119,27 @@ export function ProjectWorkspace() {
      * 是从项目跳转的），导致 matchedTask=null，currentTags/currentPriority 会丢失。
      * 通过初始化 degradedTaskData，让降级后的任务模式有数据源可读写。
      */
+    const degradedTags = matchedKanbanProject?.tags ?? [];
+    const degradedPriority = matchedKanbanProject?.priority ?? null;
+
     setDegradedTaskData({
-      tags: matchedKanbanProject?.tags ?? [],
-      priority: matchedKanbanProject?.priority ?? null,
+      tags: degradedTags,
+      priority: degradedPriority,
     });
+
+    // 同步写入 sessionStorage，刷新后可恢复降级状态
+    try {
+      const saved = sessionStorage.getItem(SESSION_KEY);
+      const ctx = saved ? JSON.parse(saved) : {};
+      sessionStorage.setItem(SESSION_KEY, JSON.stringify({
+        ...ctx,
+        isDegraded: true,
+        degradedTags,
+        degradedPriority,
+        degradedAgentName: keptAgentName,
+      }));
+    } catch { /* ignore */ }
+
     setParticipatingAgentNames([keptAgentName]);
     setIsProjectMode(false);
     // 关闭非保留智能体的所有 Panel
@@ -3048,27 +3254,38 @@ export function ProjectWorkspace() {
       // 没有 panel：用第一个可用智能体自动开启一个会话
       const defaultAgent = agents[0];
       if (defaultAgent) {
+        // 取当前激活 Tab id（若有），在新建 panel 后自动绑定
+        const currentTabId = useConversationStore.getState().activeTabId;
         await openPanel({
           agentId: defaultAgent.id,
           agentName: defaultAgent.name,
           agentColor: defaultAgent.color,
           projectId: currentProject?.id,
+          tabId: currentTabId ?? undefined,
         });
         const freshPanel = useConversationStore.getState().openPanels[0];
         if (freshPanel) {
           sendMessage(freshPanel.id, text);
           panelId = freshPanel.id;
+          setActivePanelId(freshPanel.id);
         }
         agentName = defaultAgent.name;
         agentColor = defaultAgent.color ?? '#9ca3af';
       }
     }
 
-    // 每个会话只自动建一次任务（第一条消息触发）
-    if (panelId && !createdTaskPanels.current.has(panelId)) {
-      createdTaskPanels.current.add(panelId);
+    // 自动为对话建任务：task.id = panelId（conversationId），addTaskFromChat 内部幂等，
+    // 同一 conversationId 已存在则静默跳过，无需外部防重集合
+    if (panelId) {
+      // 任务标题：优先用项目名（来自跳转上下文），其次用"与 AgentName 的对话"
+      const ctxTitle = resolvedCtx.projectName
+        || (resolvedCtx.taskId ? (() => {
+            const allTasks = [...(tasks['progress'] ?? []), ...(tasks['done'] ?? [])];
+            return allTasks.find(t => t.id === resolvedCtx.taskId)?.title;
+          })() : undefined);
+      const taskTitle = ctxTitle || `与 ${agentName || '智能体'} 的对话`;
       addTaskFromChat({
-        title: text,
+        title: taskTitle,
         agentName: agentName || '智能体',
         agentColor,
         panelId,
@@ -3132,6 +3349,46 @@ export function ProjectWorkspace() {
         .welcome-area {
           flex: 1; min-height: 0; background: #ffffff; overflow-y: auto;
         }
+        /* ── 会话 Tab 栏 ── */
+        .session-tab-bar {
+          display: flex; align-items: center; gap: 0;
+          padding: 0 16px; border-bottom: 1px solid #ebedf0;
+          background: #f5f7fa; flex-shrink: 0; overflow-x: auto;
+          scrollbar-width: none;
+        }
+        .session-tab-bar::-webkit-scrollbar { display: none; }
+        .session-tab {
+          display: inline-flex; align-items: center; gap: 6px;
+          padding: 8px 14px; font-size: 12.5px; cursor: pointer;
+          border: none; background: none; color: #8c8f9a;
+          border-bottom: 2px solid transparent; white-space: nowrap;
+          font-family: "Microsoft YaHei","Segoe UI",sans-serif;
+          transition: color 0.15s, border-color 0.15s, background 0.15s;
+          flex-shrink: 0; position: relative;
+        }
+        .session-tab:hover { color: #1890ff; background: #e6f4ff; }
+        .session-tab.active {
+          color: #1890ff; border-bottom-color: #1890ff;
+          background: #ffffff; font-weight: 600;
+        }
+        .session-tab .tab-dot {
+          width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0;
+        }
+        .session-tab .tab-close {
+          width: 16px; height: 16px; border-radius: 50%;
+          display: inline-flex; align-items: center; justify-content: center;
+          color: #c0c4ce; font-size: 11px; line-height: 1;
+          cursor: pointer; transition: background 0.15s, color 0.15s;
+          background: none; border: none; padding: 0; margin-left: 2px;
+        }
+        .session-tab .tab-close:hover { background: #fde8e8; color: #ef4444; }
+        .session-tab-add {
+          display: inline-flex; align-items: center; justify-content: center;
+          width: 28px; height: 28px; border-radius: 6px; border: none;
+          background: none; cursor: pointer; color: #8c8f9a; font-size: 18px; line-height: 1;
+          transition: background 0.15s, color 0.15s; flex-shrink: 0; margin-left: 4px;
+        }
+        .session-tab-add:hover { background: #e6f4ff; color: #1890ff; }
         .function-tabs {
           display: flex; gap: 8px; padding: 10px 20px; flex-wrap: wrap;
           border-bottom: 1px solid #ebedf0; flex-shrink: 0; background: #fafbfc;
@@ -3395,6 +3652,70 @@ export function ProjectWorkspace() {
             </div>
           )}
 
+          {/* ══════════ 会话 Tab 栏 ══════════ */}
+          <div className="session-tab-bar">
+            {sessionTabs.map((tab) => {
+              const isActive = tab.id === activeTabId;
+              return (
+                <button
+                  key={tab.id}
+                  className={`session-tab${isActive ? ' active' : ''}`}
+                  onClick={() => {
+                    switchSessionTab(tab.id);
+                    if (tab.panelId) setActivePanelId(tab.panelId);
+                  }}
+                  title={tab.title}
+                >
+                  {/* 颜色圆点 */}
+                  {tab.color && (
+                    <span
+                      className="tab-dot"
+                      style={{
+                        background: tab.color,
+                        boxShadow: tab.isStreaming ? `0 0 0 2px ${tab.color}44` : 'none',
+                        animation: tab.isStreaming ? 'pulse 1.2s infinite' : 'none',
+                      }}
+                    />
+                  )}
+                  <span style={{ maxWidth: 100, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {tab.title}
+                  </span>
+                  {/* 关闭按钮（只有多于 1 个 Tab 时才显示） */}
+                  {sessionTabs.length > 1 && (
+                    <button
+                      className="tab-close"
+                      title="关闭会话"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        closeSessionTab(tab.id);
+                        if (tab.panelId) closePanel(tab.panelId);
+                        // 切换 activePanelId 到下一个 tab
+                        const remaining = sessionTabs.filter((t) => t.id !== tab.id);
+                        const nextTab = remaining[0];
+                        setActivePanelId(nextTab?.panelId ?? null);
+                      }}
+                    >
+                      ×
+                    </button>
+                  )}
+                </button>
+              );
+            })}
+            {/* 新建会话按钮 */}
+            <button
+              className="session-tab-add"
+              title="新建会话"
+              onClick={() => {
+                // 新建 Tab，并从 openPanels 里挑一个未绑定的 panel，或等用户发消息时自动绑定
+                const tabId = createSessionTab();
+                // 如果当前有 openPanels，选择第一个未绑定的 panel（新会话中无 panel，等待用户选 agent）
+                setActivePanelId(null);
+              }}
+            >
+              +
+            </button>
+          </div>
+
           {/* ══════════ 对话工作台 ══════════ */}
 
           {/* 协作任务启动 Banner（仅前端，可关闭，不存入对话历史） */}
@@ -3432,37 +3753,57 @@ export function ProjectWorkspace() {
           )}
 
           {/* 2. 消息展示区 */}
-          <div className="welcome-area" style={{ padding: messages.length ? '16px 24px' : 0 }}>
-            {messages.length === 0 && (
-              <div style={{
-                height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                flexDirection: 'column', gap: 8, color: '#c0c4ce',
-              }}>
-                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-                  <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
-                </svg>
-                <span style={{ fontSize: 13 }}>输入消息与智能体开始对话</span>
-              </div>
-            )}
-            {messages.map((msg) => (
-              <div key={msg.id} style={{
-                display: 'flex',
-                justifyContent: msg.role === 'user' ? 'flex-end' : 'flex-start',
-                marginBottom: 10,
-              }}>
-                <div style={{
-                  maxWidth: '72%', padding: '8px 14px',
-                  borderRadius: msg.role === 'user' ? '12px 12px 2px 12px' : '12px 12px 12px 2px',
-                  background: msg.role === 'user' ? '#2a3b4d' : '#f3f4f6',
-                  color: msg.role === 'user' ? '#fff' : '#1a202c',
-                  fontSize: 13, lineHeight: 1.6,
-                }}>
-                  {msg.content || <span style={{ opacity: 0.4 }}>●●●</span>}
-                </div>
-              </div>
-            ))}
+          {(() => {
+            const activeSessionTab = sessionTabs.find(t => t.id === activeTabId);
+            const isEmptyTab = activeSessionTab && !activeSessionTab.panelId;
+            return (
+              <div className="welcome-area" style={{ padding: messages.length ? '16px 24px' : 0 }}>
+                {isEmptyTab ? (
+                  /* ── 空 Tab：引导用户开始新会话 ── */
+                  <div style={{
+                    height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    flexDirection: 'column', gap: 12, color: '#c0c4ce',
+                  }}>
+                    <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.3">
+                      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                      <line x1="12" y1="8" x2="12" y2="16" strokeWidth="1.8"/><line x1="8" y1="12" x2="16" y2="12" strokeWidth="1.8"/>
+                    </svg>
+                    <span style={{ fontSize: 14, fontWeight: 600, color: '#a0a3ab' }}>新会话</span>
+                    <span style={{ fontSize: 12, color: '#c0c4ce', textAlign: 'center', lineHeight: 1.7 }}>
+                      在下方输入消息，或在右侧选择智能体<br/>即可开始一段全新的对话
+                    </span>
+                  </div>
+                ) : messages.length === 0 ? (
+                  <div style={{
+                    height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    flexDirection: 'column', gap: 8, color: '#c0c4ce',
+                  }}>
+                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                    </svg>
+                    <span style={{ fontSize: 13 }}>输入消息与智能体开始对话</span>
+                  </div>
+                ) : null}
+                {messages.map((msg) => {
+                  const msgAgent = msg.agentId
+                    ? agents.find(a => a.id === msg.agentId)
+                    : activePanel
+                      ? agents.find(a => a.id === activePanel.agentId)
+                      : undefined;
+                  return (
+                    <MessageBubble
+                      key={msg.id}
+                      message={msg}
+                      agentName={msgAgent?.name ?? activePanel?.agentName}
+                      agentColor={msgAgent?.color ?? activePanel?.agentColor ?? '#6366f1'}
+                      outputFormat={msgAgent?.outputFormat}
+                    />
+                  );
+                })}
             <div ref={messagesEndRef} />
           </div>
+            );
+          })()}
 
           {/* 3. 功能标签栏 */}
           <div className="function-tabs">
@@ -3545,8 +3886,12 @@ export function ProjectWorkspace() {
             const existing = openPanels.find(p => p.agentId === agentId);
             if (existing) {
               setActivePanelId(existing.id);
+              // 找到绑定此 panel 的 Tab 并激活
+              const boundTab = useConversationStore.getState().sessionTabs.find(t => t.panelId === existing.id);
+              if (boundTab) switchSessionTab(boundTab.id);
             } else {
-              await openPanel({ agentId, agentName, agentColor, projectId: currentProject?.id, initialMessage });
+              const currentTabId = useConversationStore.getState().activeTabId;
+              await openPanel({ agentId, agentName, agentColor, projectId: currentProject?.id, initialMessage, tabId: currentTabId ?? undefined });
               // 新建后取最新 panel
               const fresh = useConversationStore.getState().openPanels.find(p => p.agentId === agentId);
               if (fresh) setActivePanelId(fresh.id);

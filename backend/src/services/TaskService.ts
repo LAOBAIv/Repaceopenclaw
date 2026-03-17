@@ -19,6 +19,7 @@ export interface Task {
   commentCount: number;
   fileCount: number;
   sortOrder: number;
+  createdBy: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -48,6 +49,7 @@ const rowToTask = (obj: any): Task => ({
   commentCount: obj.comment_count || 0,
   fileCount: obj.file_count || 0,
   sortOrder: obj.sort_order || 0,
+  createdBy: obj.created_by || null,
   createdAt: obj.created_at,
   updatedAt: obj.updated_at,
 });
@@ -87,6 +89,7 @@ export const TaskService = {
     agentColor?: string;
     agentId?: string;
     dueDate?: string;
+    createdBy?: string;
   }): Task {
     const db = getDb();
     const id = uuidv4();
@@ -97,8 +100,8 @@ export const TaskService = {
     const sortOrder = (orderRows[0]?.m ?? -1) + 1;
 
     db.run(
-      `INSERT INTO tasks (id, title, description, column_id, priority, tags, agent, agent_color, agent_id, due_date, comment_count, file_count, sort_order, created_at, updated_at)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      `INSERT INTO tasks (id, title, description, column_id, priority, tags, agent, agent_color, agent_id, due_date, comment_count, file_count, sort_order, created_by, created_at, updated_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [
         id,
         data.title,
@@ -112,6 +115,7 @@ export const TaskService = {
         data.dueDate || "",
         0, 0,
         sortOrder,
+        data.createdBy || null,
         now, now,
       ]
     );
@@ -124,7 +128,7 @@ export const TaskService = {
       agentId: data.agentId || "",
       dueDate: data.dueDate || "",
       commentCount: 0, fileCount: 0,
-      sortOrder, createdAt: now, updatedAt: now,
+      sortOrder, createdBy: data.createdBy || null, createdAt: now, updatedAt: now,
     };
   },
 
@@ -141,6 +145,7 @@ export const TaskService = {
     commentCount: number;
     fileCount: number;
     sortOrder: number;
+    createdBy: string;
   }>): Task | null {
     const db = getDb();
     const existing = this.getById(id);
@@ -148,11 +153,12 @@ export const TaskService = {
     const updated = { ...existing, ...data };
     const now = new Date().toISOString();
     db.run(
-      `UPDATE tasks SET title=?, description=?, column_id=?, priority=?, tags=?, agent=?, agent_color=?, agent_id=?, due_date=?, comment_count=?, file_count=?, sort_order=?, updated_at=? WHERE id=?`,
+      `UPDATE tasks SET title=?, description=?, column_id=?, priority=?, tags=?, agent=?, agent_color=?, agent_id=?, due_date=?, comment_count=?, file_count=?, sort_order=?, created_by=?, updated_at=? WHERE id=?`,
       [
         updated.title, updated.description, updated.columnId, updated.priority,
         JSON.stringify(updated.tags), updated.agent, updated.agentColor, updated.agentId,
         updated.dueDate, updated.commentCount, updated.fileCount, updated.sortOrder,
+        updated.createdBy || null,
         now, id,
       ]
     );

@@ -7,6 +7,8 @@ interface MultiPanelContainerProps {
   onSend: (panelId: string, content: string) => void;
   onClose: (panelId: string) => void;
   onInsertToEditor?: (content: string) => void;
+  /** agentId -> outputFormat 映射，用于传递给每个面板的消息渲染 */
+  outputFormatMap?: Record<string, string>;
 }
 
 export function MultiPanelContainer({
@@ -15,6 +17,7 @@ export function MultiPanelContainer({
   onSend,
   onClose,
   onInsertToEditor,
+  outputFormatMap,
 }: MultiPanelContainerProps) {
   const count = panels.length;
 
@@ -35,9 +38,11 @@ export function MultiPanelContainer({
             onSend={onSend}
             onClose={onClose}
             onInsertToDoc={onInsertToEditor}
+            outputFormat={outputFormatMap?.[panel.agentId]}
           />
         </div>
       ))}
     </div>
   );
 }
+

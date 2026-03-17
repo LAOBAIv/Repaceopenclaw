@@ -16,12 +16,14 @@ const TaskCreateSchema = z.object({
   agentColor: z.string().default("#6366F1"),
   agentId: z.string().default(""),
   dueDate: z.string().default(""),
+  createdBy: z.string().optional(),
 });
 
 const TaskUpdateSchema = TaskCreateSchema.partial().extend({
   sortOrder: z.number().optional(),
   commentCount: z.number().optional(),
   fileCount: z.number().optional(),
+  createdBy: z.string().optional(),
 });
 
 const ReorderSchema = z.object({
@@ -71,9 +73,22 @@ router.post("/", (req: Request, res: Response) => {
 router.put("/:id", (req: Request, res: Response) => {
   const parsed = TaskUpdateSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
-  const task = TaskService.update(req.params.id, parsed.data as any);
+  
+  // 权限检查：只有创建人可以修改任务名称
+  const task = TaskService.getById(req.params.id);
   if (!task) return res.status(404).json({ error: "Task not found" });
-  res.json({ data: task });
+  
+  const currentUserId = (req as any).user?.id;
+  const isCreator = !task.createdBy || task.createdBy === currentUserId;
+  
+  // 如果修改了 title 且不是创建人，拒绝
+  if (parsed.data.title && !isCreator) {
+    return res.status(403).json({ error: "只有创建人可以修改任务名称" });
+  }
+  
+  const updated = TaskService.update(req.params.id, parsed.data as any);
+  if (!updated) return res.status(404).json({ error: "Task not found" });
+  res.json({ data: updated });
 });
 
 /** DELETE /api/tasks/:id */

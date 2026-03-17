@@ -4,130 +4,153 @@ import { PlusCircle, X, Check, ChevronDown, Code2, KeyRound, Eye, EyeOff, Copy, 
 import { useAgentStore } from '@/stores/agentStore';
 import { DEFAULT_AGENTS } from '@/data/defaultAgents';
 import { showToast } from '@/components/Toast';
+import apiClient from '@/api/client';
 
-/* ─── 技能选项 ─────────────────────────────────────────────── */
-const SKILL_OPTIONS = [
-  { name: '代码生成',   category: '开发工具', desc: '自动生成多语言代码片段，支持 React、Python、SQL 等。' },
-  { name: '数据分析',   category: '数据处理', desc: '统计分析结构化数据，自动生成图表与报告。' },
-  { name: '文本创作',   category: '内容生产', desc: '生成营销文案、产品描述，支持多种风格调节。' },
-  { name: '智能问答',   category: '交互能力', desc: '意图识别与 FAQ 自动匹配，快速响应用户咨询。' },
-  { name: '工具调用',   category: '集成能力', desc: '通过 Function Calling 调用外部 API 与系统工具。' },
-  { name: '多模态处理', category: '感知能力', desc: '支持图片识别、语音输入等多模态输入。' },
-  { name: '自定义技能', category: '扩展能力', desc: '通过插件机制接入自定义工具或业务逻辑。' },
-];
+/* ─── 后端技能类型 ─────────────────────────────────────────── */
+interface BackendSkill {
+  id: string;
+  name: string;
+  description: string;
+  category: string;
+  type: 'builtin' | 'custom';
+  enabled: boolean;
+}
 
 const STYLE_TAGS  = ['极简简洁', '详细全面', '口语化', '正式专业'];
 const OUTPUT_TAGS = ['纯文本', '代码优先', '预览+完整代码', '结构化JSON'];
 
-/* ─── CODE 模型预设列表 ───────────────────────────────────── */
+/* ─── CODE 渠道 + 模型预设 ────────────────────────────────── */
 interface CodeModel {
-  id: string;
-  name: string;
-  provider: string;
-  desc: string;
+  id: string;        // 实际调用的模型 ID（如 doubao-pro-32k-241215）
+  name: string;      // 显示名称
   contextWindow: string;
   maxTokens: number;
   temperature: number;
   topP: number;
   frequencyPenalty: number;
   presencePenalty: number;
-  badge?: string;   // 可选角标：推荐 / 新 / 高性能
+  badge?: string;
+  desc?: string;
 }
 
-const CODE_MODEL_PRESETS: CodeModel[] = [
+interface CodeChannel {
+  id: string;        // 对应 Token 渠道 id（如 'doubao'、'openai'）
+  name: string;      // 渠道显示名称（如 '火山方舟'）
+  provider: string;  // 厂商（如 '字节跳动'）
+  badge?: string;
+  desc: string;
+  baseUrl: string;
+  authType: 'Bearer' | 'ApiKey' | 'Basic';
+  keyLabel?: string;
+  keyPlaceholder?: string;
+  models: CodeModel[];
+}
+
+const CODE_CHANNELS: CodeChannel[] = [
   {
-    /**
-     * Auto 模式：由平台根据任务复杂度自动选择最合适的模型。
-     * 默认选中此项，用户无需手动指定模型即可获得最佳效果。
-     * 参数均为平台推荐默认值，用户可在参数调节区覆盖。
-     */
-    id: 'auto',
-    name: 'Auto',
+    id: '__platform__',
+    name: '平台预设',
     provider: 'WorkBuddy',
     badge: '默认',
-    desc: '由平台智能调度，根据任务类型自动选择最适合的代码模型，无需手动配置。',
-    contextWindow: '自动',
-    maxTokens: 8192,
-    temperature: 0.2,
-    topP: 0.95,
-    frequencyPenalty: 0,
-    presencePenalty: 0,
+    desc: '由平台智能调度，无需填写 API Key，开箱即用。',
+    baseUrl: '',
+    authType: 'Bearer',
+    models: [
+      { id: 'auto', name: 'Auto（智能调度）', contextWindow: '自动', maxTokens: 8192, temperature: 0.2, topP: 0.95, frequencyPenalty: 0, presencePenalty: 0, badge: '推荐', desc: '平台自动选择最合适的模型' },
+    ],
   },
   {
-    id: 'deepseek-coder-v2',
-    name: 'DeepSeek-Coder-V2',
-    provider: 'DeepSeek',
+    id: 'doubao',
+    name: '火山方舟（豆包）',
+    provider: '字节跳动',
     badge: '推荐',
-    desc: '专为代码优化的混合专家模型，支持 338 种编程语言，代码补全与调试能力出色。',
-    contextWindow: '128K',
-    maxTokens: 8192,
-    temperature: 0.2,
-    topP: 0.95,
-    frequencyPenalty: 0,
-    presencePenalty: 0,
+    desc: '字节跳动豆包系列，国内访问快，性价比高。',
+    baseUrl: 'https://ark.cn-beijing.volces.com/api/v3',
+    authType: 'Bearer',
+    keyLabel: 'API Key',
+    keyPlaceholder: '火山方舟 API Key（控制台「API Key 管理」页面获取）',
+    models: [
+      { id: 'doubao-pro-32k-241215',      name: 'Doubao-Pro-32K',      contextWindow: '32K',  maxTokens: 4096, temperature: 0.7, topP: 0.9,  frequencyPenalty: 0, presencePenalty: 0, badge: '推荐', desc: '均衡能力，主力首选' },
+      { id: 'doubao-pro-128k-241215',     name: 'Doubao-Pro-128K',     contextWindow: '128K', maxTokens: 4096, temperature: 0.7, topP: 0.9,  frequencyPenalty: 0, presencePenalty: 0, desc: '超长上下文，适合大文档' },
+      { id: 'doubao-pro-4k-241215',       name: 'Doubao-Pro-4K',       contextWindow: '4K',   maxTokens: 2048, temperature: 0.7, topP: 0.9,  frequencyPenalty: 0, presencePenalty: 0, desc: '短对话，速度快成本低' },
+      { id: 'doubao-lite-32k-241215',     name: 'Doubao-Lite-32K',     contextWindow: '32K',  maxTokens: 4096, temperature: 0.7, topP: 0.9,  frequencyPenalty: 0, presencePenalty: 0, desc: '轻量版，极低成本' },
+      { id: 'doubao-lite-128k-241215',    name: 'Doubao-Lite-128K',    contextWindow: '128K', maxTokens: 4096, temperature: 0.7, topP: 0.9,  frequencyPenalty: 0, presencePenalty: 0, desc: '轻量版超长上下文' },
+      { id: 'doubao-1-5-pro-32k-250115',  name: 'Doubao-1.5-Pro-32K',  contextWindow: '32K',  maxTokens: 8192, temperature: 0.7, topP: 0.95, frequencyPenalty: 0, presencePenalty: 0, badge: '新', desc: '新一代 Pro，能力更强' },
+      { id: 'doubao-1-5-pro-128k-250115', name: 'Doubao-1.5-Pro-128K', contextWindow: '128K', maxTokens: 8192, temperature: 0.7, topP: 0.95, frequencyPenalty: 0, presencePenalty: 0, badge: '新', desc: '新一代 Pro 超长上下文' },
+      { id: 'doubao-1-5-lite-32k-250115', name: 'Doubao-1.5-Lite-32K', contextWindow: '32K',  maxTokens: 4096, temperature: 0.7, topP: 0.95, frequencyPenalty: 0, presencePenalty: 0, badge: '新', desc: '新一代轻量版' },
+    ],
   },
   {
-    id: 'gpt-4o',
-    name: 'GPT-4o',
+    id: 'openai',
+    name: 'OpenAI',
     provider: 'OpenAI',
-    badge: '高性能',
-    desc: '多模态旗舰模型，代码理解与生成能力强，支持函数调用与 JSON 模式。',
-    contextWindow: '128K',
-    maxTokens: 4096,
-    temperature: 0.3,
-    topP: 1,
-    frequencyPenalty: 0,
-    presencePenalty: 0,
+    badge: '通用',
+    desc: '官方 OpenAI 接入，支持 GPT-4o 等旗舰模型。',
+    baseUrl: 'https://api.openai.com/v1',
+    authType: 'Bearer',
+    keyPlaceholder: 'sk-xxxxxxxxxxxxxxxxxxxxxxxx',
+    models: [
+      { id: 'gpt-4o',            name: 'GPT-4o',            contextWindow: '128K', maxTokens: 4096, temperature: 0.3, topP: 1,    frequencyPenalty: 0, presencePenalty: 0, badge: '高性能', desc: '多模态旗舰，代码能力强' },
+      { id: 'gpt-4o-mini',       name: 'GPT-4o Mini',       contextWindow: '128K', maxTokens: 4096, temperature: 0.3, topP: 1,    frequencyPenalty: 0, presencePenalty: 0, desc: '轻量版，速度快成本低' },
+      { id: 'gpt-4-turbo',       name: 'GPT-4 Turbo',       contextWindow: '128K', maxTokens: 4096, temperature: 0.3, topP: 1,    frequencyPenalty: 0, presencePenalty: 0, desc: '上一代旗舰，稳定可靠' },
+      { id: 'o1',                name: 'o1',                contextWindow: '128K', maxTokens: 8192, temperature: 1,   topP: 1,    frequencyPenalty: 0, presencePenalty: 0, badge: '推荐', desc: '深度推理模型，适合复杂问题' },
+      { id: 'o1-mini',           name: 'o1-mini',           contextWindow: '128K', maxTokens: 4096, temperature: 1,   topP: 1,    frequencyPenalty: 0, presencePenalty: 0, desc: '轻量推理模型' },
+    ],
   },
   {
-    id: 'claude-3-5-sonnet',
-    name: 'Claude 3.5 Sonnet',
+    id: 'deepseek',
+    name: 'DeepSeek',
+    provider: 'DeepSeek',
+    desc: '高性价比大模型，兼容 OpenAI SDK，代码生成能力出色。',
+    baseUrl: 'https://api.deepseek.com/v1',
+    authType: 'Bearer',
+    keyPlaceholder: 'sk-xxxxxxxxxxxxxxxxxxxxxxxx',
+    models: [
+      { id: 'deepseek-chat',     name: 'DeepSeek-V3',       contextWindow: '64K',  maxTokens: 8192, temperature: 0.7, topP: 0.95, frequencyPenalty: 0, presencePenalty: 0, badge: '推荐', desc: '综合能力强，性价比极高' },
+      { id: 'deepseek-reasoner', name: 'DeepSeek-R1',       contextWindow: '64K',  maxTokens: 8192, temperature: 0.7, topP: 0.95, frequencyPenalty: 0, presencePenalty: 0, badge: '新', desc: '推理增强版，适合数学/代码' },
+      { id: 'deepseek-coder',    name: 'DeepSeek-Coder',    contextWindow: '16K',  maxTokens: 4096, temperature: 0.2, topP: 0.95, frequencyPenalty: 0, presencePenalty: 0, desc: '代码专用版' },
+    ],
+  },
+  {
+    id: 'qwen',
+    name: '通义千问（阿里云）',
+    provider: '阿里云',
+    desc: '阿里云百炼平台，支持 Qwen 系列，国内访问稳定。',
+    baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+    authType: 'Bearer',
+    keyPlaceholder: 'sk-xxxxxxxxxxxxxxxxxxxxxxxx（阿里云百炼控制台获取）',
+    models: [
+      { id: 'qwen-max',          name: 'Qwen-Max',          contextWindow: '32K',  maxTokens: 8192, temperature: 0.7, topP: 0.95, frequencyPenalty: 0, presencePenalty: 0, badge: '推荐', desc: '旗舰版，综合能力最强' },
+      { id: 'qwen-plus',         name: 'Qwen-Plus',         contextWindow: '128K', maxTokens: 8192, temperature: 0.7, topP: 0.95, frequencyPenalty: 0, presencePenalty: 0, desc: '均衡版，速度与能力平衡' },
+      { id: 'qwen-turbo',        name: 'Qwen-Turbo',        contextWindow: '128K', maxTokens: 4096, temperature: 0.7, topP: 0.95, frequencyPenalty: 0, presencePenalty: 0, desc: '轻量版，速度最快' },
+      { id: 'qwen2.5-coder-32b-instruct', name: 'Qwen2.5-Coder-32B', contextWindow: '32K', maxTokens: 4096, temperature: 0.2, topP: 0.95, frequencyPenalty: 0.1, presencePenalty: 0, badge: '新', desc: '代码专用，中文注释友好' },
+    ],
+  },
+  {
+    id: 'anthropic',
+    name: 'Anthropic（Claude）',
     provider: 'Anthropic',
     badge: '推荐',
-    desc: '擅长长上下文代码理解与重构，在工程类任务中推理准确，输出稳定。',
-    contextWindow: '200K',
-    maxTokens: 8192,
-    temperature: 0.25,
-    topP: 0.9,
-    frequencyPenalty: 0,
-    presencePenalty: 0,
+    desc: '擅长长上下文理解与代码重构，推理准确，输出稳定。',
+    baseUrl: 'https://api.anthropic.com/v1',
+    authType: 'ApiKey',
+    keyPlaceholder: 'sk-ant-xxxxxxxxxxxxxxxx',
+    models: [
+      { id: 'claude-3-5-sonnet-20241022', name: 'Claude 3.5 Sonnet', contextWindow: '200K', maxTokens: 8192, temperature: 0.25, topP: 0.9, frequencyPenalty: 0, presencePenalty: 0, badge: '推荐', desc: '旗舰版，代码与推理能力极强' },
+      { id: 'claude-3-5-haiku-20241022',  name: 'Claude 3.5 Haiku',  contextWindow: '200K', maxTokens: 4096, temperature: 0.25, topP: 0.9, frequencyPenalty: 0, presencePenalty: 0, desc: '轻量版，速度快' },
+      { id: 'claude-3-opus-20240229',     name: 'Claude 3 Opus',     contextWindow: '200K', maxTokens: 4096, temperature: 0.25, topP: 0.9, frequencyPenalty: 0, presencePenalty: 0, desc: '上一代旗舰，推理最深' },
+    ],
   },
   {
-    id: 'qwen2.5-coder-32b',
-    name: 'Qwen2.5-Coder-32B',
-    provider: '阿里云',
-    badge: '新',
-    desc: '通义千问代码专用版，中文注释友好，支持代码补全、Bug 修复、单测生成。',
-    contextWindow: '32K',
-    maxTokens: 4096,
-    temperature: 0.2,
-    topP: 0.95,
-    frequencyPenalty: 0.1,
-    presencePenalty: 0,
-  },
-  {
-    id: 'codestral-latest',
-    name: 'Codestral',
-    provider: 'Mistral',
-    desc: '轻量高速代码模型，适合低延迟实时补全场景，支持 80+ 编程语言。',
-    contextWindow: '32K',
-    maxTokens: 4096,
-    temperature: 0.15,
-    topP: 0.95,
-    frequencyPenalty: 0,
-    presencePenalty: 0,
-  },
-  {
-    id: 'gemini-1.5-pro',
-    name: 'Gemini 1.5 Pro',
-    provider: 'Google',
-    desc: '超长上下文支持，适合整库代码理解与大型项目重构。',
-    contextWindow: '1M',
-    maxTokens: 8192,
-    temperature: 0.3,
-    topP: 0.95,
-    frequencyPenalty: 0,
-    presencePenalty: 0,
+    id: 'custom',
+    name: '自定义接入',
+    provider: '自定义',
+    desc: '手动填写 Base URL 与 API Key，适用于私有部署或第三方代理。',
+    baseUrl: '',
+    authType: 'Bearer',
+    models: [
+      { id: 'custom', name: '自定义模型', contextWindow: '-', maxTokens: 4096, temperature: 0.7, topP: 0.95, frequencyPenalty: 0, presencePenalty: 0, desc: '手动指定模型 ID' },
+    ],
   },
 ];
 
@@ -136,84 +159,33 @@ const BADGE_COLOR: Record<string, { bg: string; color: string }> = {
   推荐:  { bg: '#e6f4ff', color: '#1677ff' },
   高性能: { bg: '#fff7e6', color: '#d48806' },
   新:    { bg: '#f6ffed', color: '#389e0d' },
+  默认:  { bg: '#f0f0f0', color: '#666' },
+  后台:  { bg: '#fff0f6', color: '#c41d7f' },   // 后台配置渠道专用标签颜色（粉紫色）
 };
 
-/* ─── Token 接入渠道预设 ──────────────────────────────────── */
-interface TokenChannel {
-  id: string;
-  name: string;
-  provider: string;
-  baseUrl: string;
-  authType: 'Bearer' | 'ApiKey' | 'Basic';
-  desc: string;
-  badge?: string;
-  docsUrl?: string;
-}
+// 平台预设渠道标识（无需用户填 Key）
+export const PLATFORM_PRESET_CHANNEL_ID = '__platform__';
 
-const TOKEN_CHANNELS: TokenChannel[] = [
-  {
-    id: 'openai',
-    name: 'OpenAI API',
-    provider: 'OpenAI',
-    badge: '通用',
-    baseUrl: 'https://api.openai.com/v1',
-    authType: 'Bearer',
-    desc: '官方 OpenAI 接入，支持 GPT-4o、GPT-4 Turbo 等，需 sk- 开头的 API Key。',
-    docsUrl: 'https://platform.openai.com/docs',
-  },
-  {
-    id: 'deepseek',
-    name: 'DeepSeek API',
-    provider: 'DeepSeek',
-    badge: '推荐',
-    baseUrl: 'https://api.deepseek.com/v1',
-    authType: 'Bearer',
-    desc: '高性价比大模型接口，兼容 OpenAI SDK，适合代码生成与推理任务。',
-    docsUrl: 'https://platform.deepseek.com/docs',
-  },
-  {
-    id: 'qwen',
-    name: '通义千问 API',
-    provider: '阿里云',
-    baseUrl: 'https://dashscope.aliyuncs.com/api/v1',
-    authType: 'ApiKey',
-    desc: '阿里云百炼平台接入，支持 Qwen 系列及多模态模型，国内访问稳定。',
-    docsUrl: 'https://help.aliyun.com/zh/dashscope',
-  },
-  {
-    id: 'anthropic',
-    name: 'Anthropic API',
-    provider: 'Anthropic',
-    baseUrl: 'https://api.anthropic.com/v1',
-    authType: 'ApiKey',
-    desc: '接入 Claude 系列模型，长上下文处理能力强，适合文档理解与复杂推理。',
-    docsUrl: 'https://docs.anthropic.com',
-  },
-  {
-    id: 'azure-openai',
-    name: 'Azure OpenAI',
-    provider: 'Microsoft',
-    badge: '企业级',
-    baseUrl: 'https://{resource}.openai.azure.com',
-    authType: 'ApiKey',
-    desc: '微软 Azure 托管的 OpenAI 服务，支持私有部署与合规要求，企业首选。',
-    docsUrl: 'https://learn.microsoft.com/azure/ai-services/openai',
-  },
-  {
-    id: 'custom',
-    name: '自定义接入',
-    provider: '自定义',
-    baseUrl: '',
-    authType: 'Bearer',
-    desc: '手动填写 Base URL 与 Token，适用于私有化部署或第三方代理服务。',
-  },
-];
+/* ─── Token 本地缓存（按渠道 ID 存取，跨智能体复用） ─── */
+const TOKEN_CACHE_PREFIX = 'wb_token_';
+interface TokenCache { apiKey: string; baseUrl: string; }
+function saveTokenCache(channelId: string, data: TokenCache) {
+  try { localStorage.setItem(TOKEN_CACHE_PREFIX + channelId, JSON.stringify(data)); } catch { /* ignore */ }
+}
+function loadTokenCache(channelId: string): TokenCache | null {
+  try {
+    const raw = localStorage.getItem(TOKEN_CACHE_PREFIX + channelId);
+    return raw ? (JSON.parse(raw) as TokenCache) : null;
+  } catch { return null; }
+}
 
 const AUTH_TYPE_LABEL: Record<string, string> = {
   Bearer: 'Bearer Token',
   ApiKey: 'API Key',
   Basic:  'Basic Auth',
 };
+
+
 
 /* ═══════════════════════════════════════════════════════════ */
 export function AgentCreate() {
@@ -228,6 +200,118 @@ export function AgentCreate() {
   const projectDesc   = searchParams.get('projectDesc') ?? '';
   const projectTags   = searchParams.get('projectTags') ?? '';
 
+  /**
+   * 动态渠道列表：以 CODE_CHANNELS 为基础，启动时从后台 /api/token-channels
+   * 拉取已配置渠道，将后台独有的渠道（provider 不在静态列表中的）追加进去，
+   * 同时将已有渠道中后台配置了 apiKey 的打上「已配置」标记，供 UI 提示。
+   */
+  const [dynamicChannels, setDynamicChannels] = useState<CodeChannel[]>(CODE_CHANNELS);
+
+  useEffect(() => {
+    fetch('/api/token-channels')
+      .then(r => r.ok ? r.json() : null)
+      .then((json: { data: Array<{ id: string; provider: string; modelName: string; baseUrl: string; apiKey: string; authType: string; enabled: boolean; priority: number }> } | null) => {
+        if (!json?.data?.length) return;
+        // 只取启用的渠道
+        const backendChannels = json.data.filter(c => c.enabled);
+        if (!backendChannels.length) return;
+
+        setDynamicChannels(prev => {
+          const merged = [...prev];
+          for (const bc of backendChannels) {
+            // 检查静态列表中是否已有同 provider 的渠道
+            const existingIdx = merged.findIndex(
+              ch => ch.id === bc.provider || ch.id.toLowerCase() === bc.provider.toLowerCase()
+            );
+            if (existingIdx !== -1) {
+              // 已有渠道：若后台配置了 Key 且有 baseUrl，追加一个「后台配置」子模型条目
+              const existing = merged[existingIdx];
+              // 若后台的模型 ID 与静态预设中不一致，动态追加该模型
+              if (bc.modelName && !existing.models.some(m => m.id === bc.modelName)) {
+                merged[existingIdx] = {
+                  ...existing,
+                  models: [
+                    ...existing.models,
+                    {
+                      id: bc.modelName,
+                      name: `${bc.modelName}（后台配置）`,
+                      contextWindow: '-',
+                      maxTokens: 4096,
+                      temperature: 0.7,
+                      topP: 0.95,
+                      frequencyPenalty: 0,
+                      presencePenalty: 0,
+                      badge: '后台',
+                      desc: `后台管理员配置的模型（${bc.provider}）`,
+                    },
+                  ],
+                };
+              }
+            } else {
+              // 后台独有渠道（管理员自定义的）：整体追加为新渠道
+              merged.push({
+                id: bc.provider,
+                name: bc.provider,           // 显示名称用 provider 字段
+                provider: bc.provider,
+                badge: '后台',
+                desc: `由管理员在后台配置的渠道（${bc.baseUrl || 'OpenAI 兼容格式'}）`,
+                baseUrl: bc.baseUrl,
+                authType: (bc.authType as 'Bearer' | 'ApiKey' | 'Basic') || 'Bearer',
+                keyLabel: 'API Key',
+                keyPlaceholder: '使用后台配置的 Key（如需覆盖请重新填写）',
+                models: bc.modelName
+                  ? [
+                      {
+                        id: bc.modelName,
+                        name: bc.modelName,
+                        contextWindow: '-',
+                        maxTokens: 4096,
+                        temperature: 0.7,
+                        topP: 0.95,
+                        frequencyPenalty: 0,
+                        presencePenalty: 0,
+                        badge: '后台',
+                        desc: `后台管理员配置的模型`,
+                      },
+                    ]
+                  : [
+                      {
+                        id: 'auto',
+                        name: 'Auto（后台调度）',
+                        contextWindow: '-',
+                        maxTokens: 4096,
+                        temperature: 0.7,
+                        topP: 0.95,
+                        frequencyPenalty: 0,
+                        presencePenalty: 0,
+                        desc: `使用后台配置的默认模型`,
+                      },
+                    ],
+              });
+            }
+
+            // ── 将后台已配置的 API Key 写入本地缓存 ──
+            // 仅在本地还没有这个渠道缓存时写入，避免覆盖用户手动填写的 Key
+            if (bc.apiKey) {
+              const cacheKey = TOKEN_CACHE_PREFIX + bc.provider;
+              if (!localStorage.getItem(cacheKey)) {
+                try {
+                  localStorage.setItem(cacheKey, JSON.stringify({
+                    apiKey: bc.apiKey,
+                    baseUrl: bc.baseUrl || '',
+                  }));
+                } catch { /* ignore */ }
+              }
+            }
+          }
+          return merged;
+        });
+      })
+      .catch(() => { /* 后端不可用时静默忽略，使用静态列表 */ });
+  // 仅挂载时执行一次
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const { getAgentById, fetchAgents, createAgent, updateAgent, agents } = useAgentStore();
 
   const [name, setName]         = useState('');
@@ -237,8 +321,10 @@ export function AgentCreate() {
   const [description, setDescription] = useState('');
   const [boundary, setBoundary]     = useState('');
   const [outputFmt, setOutputFmt]   = useState('纯文本');
-  const [memory, setMemory]     = useState('');
-  const [temp, setTemp]         = useState('');
+  // memoryTurns：对话记忆轮数（0 = 不限），对应 DB memory_turns
+  const [memoryTurns, setMemoryTurns] = useState('');
+  // tempOverride：简单温度快捷覆盖，若填写则优先于 CODE 渠道弹窗里的 customTemp
+  const [tempOverride, setTempOverride] = useState('');
   const [saving, setSaving]     = useState(false);
 
   /* ── 辅助：按 id 查找智能体（store + 默认预设双兜底） ─── */
@@ -250,36 +336,60 @@ export function AgentCreate() {
   function fillForm(agent: ReturnType<typeof findAgent>) {
     if (!agent) return;
     setName(agent.name);
-    setRole(agent.writingStyle ?? '');
+    // systemPrompt → 角色设定文本框（role state）
+    setRole(agent.systemPrompt ?? '');
+    // writingStyle → 语言风格标签（style state）；若值不在预设标签中则保留原值
+    setStyle(agent.writingStyle ?? '极简简洁');
     setSkills(agent.expertise ?? []);
     setDescription(agent.description ?? '');
-    setBoundary('');
-    setMemory(agent.systemPrompt ?? '');
+    setBoundary((agent as any).boundary ?? '');
+    setOutputFmt((agent as any).outputFormat ?? '纯文本');
+    setMemoryTurns((agent as any).memoryTurns != null && (agent as any).memoryTurns !== 0 ? String((agent as any).memoryTurns) : '');
+    const to = (agent as any).temperatureOverride;
+    setTempOverride(to != null ? String(to) : '');
 
     // 回填模型参数
     if (agent.modelName) {
-      const restored: CodeModel = {
-        id: agent.modelName,
-        name: agent.modelName,
-        provider: agent.modelProvider ?? '',
-        desc: '',
+      // 从 dynamicChannels（含后台配置渠道）中找到匹配的渠道
+      const matchedChannel = dynamicChannels.find(ch =>
+        ch.provider === (agent.modelProvider ?? '') || ch.models.some(m => m.id === agent.modelName)
+      ) ?? dynamicChannels[0];
+      // matchedModel 仅用于 UI 展示（name/badge/desc），实际参数值取 agent 数据库保存的值
+      const matchedModelPreset = matchedChannel.models.find(m => m.id === agent.modelName);
+      const matchedModel: CodeModel = matchedModelPreset ?? {
+        id: agent.modelName!,
+        name: agent.modelName!,
         contextWindow: '',
         maxTokens: agent.maxTokens ?? 4096,
-        temperature: agent.temperature ?? 0.3,
+        temperature: agent.temperature ?? 0.7,
         topP: agent.topP ?? 1,
         frequencyPenalty: agent.frequencyPenalty ?? 0,
         presencePenalty: agent.presencePenalty ?? 0,
       };
-      setSelectedModel(restored);
-      setCustomMaxTokens(String(restored.maxTokens));
-      setCustomTemp(String(restored.temperature));
-      setCustomTopP(String(restored.topP));
-      setCustomFreqPenalty(String(restored.frequencyPenalty));
-      setCustomPresPenalty(String(restored.presencePenalty));
+      setSelectedChannel(matchedChannel);
+      setSelectedModel(matchedModel);
+      // 优先使用数据库保存的参数值，而不是模型预设默认值
+      setCustomMaxTokens(agent.maxTokens != null ? String(agent.maxTokens) : String(matchedModel.maxTokens));
+      setCustomTemp(agent.temperature != null ? String(agent.temperature) : String(matchedModel.temperature));
+      setCustomTopP(agent.topP != null ? String(agent.topP) : String(matchedModel.topP));
+      setCustomFreqPenalty(agent.frequencyPenalty != null ? String(agent.frequencyPenalty) : String(matchedModel.frequencyPenalty));
+      setCustomPresPenalty(agent.presencePenalty != null ? String(agent.presencePenalty) : String(matchedModel.presencePenalty));
     } else {
-      setSelectedModel(null);
+      setSelectedChannel(dynamicChannels[0]);
+      setSelectedModel(dynamicChannels[0].models[0]);
       setCustomMaxTokens(''); setCustomTemp(''); setCustomTopP('');
       setCustomFreqPenalty(''); setCustomPresPenalty('');
+    }
+
+    // 回填 Token 接入字段（从数据库保存的 tokenProvider/tokenApiKey/tokenBaseUrl）
+    const savedTokenProvider = (agent as any).tokenProvider ?? '';
+    const savedTokenApiKey   = (agent as any).tokenApiKey   ?? '';
+    const savedTokenBaseUrl  = (agent as any).tokenBaseUrl  ?? '';
+    if (savedTokenProvider && savedTokenApiKey) {
+      setTokenValue(savedTokenApiKey);
+      setCustomBaseUrl(savedTokenBaseUrl);
+      // 同时写入本地缓存，使渠道切换时能自动回填
+      saveTokenCache(savedTokenProvider, { apiKey: savedTokenApiKey, baseUrl: savedTokenBaseUrl });
     }
   }
 
@@ -296,6 +406,24 @@ export function AgentCreate() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editId]);
 
+  /* ── 编辑模式：加载已绑定技能 ID ─────────────────────── */
+  useEffect(() => {
+    if (!isEdit || !editId) return;
+    // 同时加载技能列表和已绑定技能
+    Promise.all([
+      apiClient.get('/skills').catch(() => ({ data: { data: [] } })),
+      apiClient.get(`/skills/agent/${editId}`).catch(() => ({ data: { data: [] } })),
+    ]).then(([allRes, boundRes]) => {
+      const allSkills: BackendSkill[] = allRes.data.data ?? [];
+      const boundSkills: BackendSkill[] = boundRes.data.data ?? [];
+      setBackendSkills(allSkills.filter((s: BackendSkill) => s.enabled));
+      if (boundSkills.length > 0) {
+        setSkills(boundSkills.map((s: BackendSkill) => s.id));
+      }
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editId]);
+
   /* ── fetchAgents 完成后再次尝试预填（针对后端智能体） ─── */
   useEffect(() => {
     if (!isEdit || !editId) return;
@@ -304,7 +432,7 @@ export function AgentCreate() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [agents]);
 
-  /* ── 从项目跳转过来：预填项目资料到系统提示（memory）字段 ─── */
+  /* ── 从项目跳转过来：预填项目资料到角色设定字段 ─── */
   useEffect(() => {
     if (!fromProject || isEdit) return;
     const lines: string[] = [];
@@ -312,7 +440,7 @@ export function AgentCreate() {
     if (projectDesc)  lines.push(`项目描述：${projectDesc}`);
     if (projectTags)  lines.push(`项目标签：${projectTags}`);
     if (lines.length > 0) {
-      setMemory(
+      setRole(
         `你是负责以下项目的专属智能体，请围绕项目目标提供帮助。\n\n${lines.join('\n')}`
       );
     }
@@ -322,28 +450,56 @@ export function AgentCreate() {
   /* ── 技能弹窗 ─────────────────────────────────────────── */
   const [skillModalOpen, setSkillModalOpen] = useState(false);
   const [tempSkills, setTempSkills]         = useState<string[]>([]);
+  // 后端真实技能列表（id → BackendSkill）
+  const [backendSkills, setBackendSkills]   = useState<BackendSkill[]>([]);
+  const [skillsLoading, setSkillsLoading]   = useState(false);
 
-  function openSkillModal() { setTempSkills([...skills]); setSkillModalOpen(true); }
+  // 加载真实技能列表
+  async function loadBackendSkills() {
+    if (backendSkills.length > 0) return; // 已加载过
+    setSkillsLoading(true);
+    try {
+      const res = await apiClient.get('/skills');
+      setBackendSkills((res.data.data as BackendSkill[]).filter(s => s.enabled));
+    } catch {
+      // 加载失败不阻断流程
+    } finally {
+      setSkillsLoading(false);
+    }
+  }
+
+  function openSkillModal() {
+    setTempSkills([...skills]);
+    setSkillModalOpen(true);
+    loadBackendSkills();
+  }
   function closeSkillModal() { setSkillModalOpen(false); }
   function confirmSkillModal() { setSkills([...tempSkills]); setSkillModalOpen(false); }
-  function toggleTempSkill(n: string) {
-    setTempSkills(prev => prev.includes(n) ? prev.filter(x => x !== n) : [...prev, n]);
+  function toggleTempSkill(id: string) {
+    setTempSkills(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
   }
-  function removeSkill(n: string) { setSkills(prev => prev.filter(x => x !== n)); }
+  function removeSkill(id: string) { setSkills(prev => prev.filter(x => x !== id)); }
+
+  // 根据 id 获取技能显示名
+  function skillDisplayName(id: string): string {
+    const found = backendSkills.find(s => s.id === id);
+    return found ? found.name : id;
+  }
 
   /* ── Token 接入弹窗 ───────────────────────────────────── */
   const [tokenModalOpen, setTokenModalOpen]   = useState(false);
-  const [tokenChannel, setTokenChannel]       = useState<TokenChannel | null>(null);
-  const [tempChannel, setTempChannel]         = useState<TokenChannel | null>(null);
-  const [tokenValue, setTokenValue]           = useState('');
+  const [tokenValue, setTokenValue]           = useState(() => loadTokenCache(CODE_CHANNELS[0].id)?.apiKey  ?? '');
   const [tempTokenValue, setTempTokenValue]   = useState('');
-  const [customBaseUrl, setCustomBaseUrl]     = useState('');
+  const [customBaseUrl, setCustomBaseUrl]     = useState(() => loadTokenCache(CODE_CHANNELS[0].id)?.baseUrl ?? '');
   const [tempCustomUrl, setTempCustomUrl]     = useState('');
   const [showToken, setShowToken]             = useState(false);
   const [copied, setCopied]                   = useState(false);
+  // Token 弹窗中选择的模型（从当前渠道的 models 里选）
+  const [tempTokenModel, setTempTokenModel]   = useState<CodeModel | null>(null);
 
   function openTokenModal() {
-    setTempChannel(tokenChannel);
+    // 直接使用 CODE 渠道中已选的模型作为初始值
+    setTempTokenModel(selectedModel);
     setTempTokenValue(tokenValue);
     setTempCustomUrl(customBaseUrl);
     setShowToken(false);
@@ -351,28 +507,47 @@ export function AgentCreate() {
   }
   function closeTokenModal() { setTokenModalOpen(false); }
   function confirmTokenModal() {
-    if (!tempChannel) return;
-    const resolvedUrl = tempChannel.id === 'custom' ? tempCustomUrl : tempChannel.baseUrl;
-    setTokenChannel(tempChannel);
+    if (!selectedChannel) return;
+    // 平台预设：直接确认，不需要 Key
+    if (selectedChannel.id === PLATFORM_PRESET_CHANNEL_ID) {
+      setTokenValue('');
+      setCustomBaseUrl('');
+      setTokenModalOpen(false);
+      return;
+    }
+    const resolvedUrl = selectedChannel.id === 'custom' ? tempCustomUrl : selectedChannel.baseUrl;
     setTokenValue(tempTokenValue);
     setCustomBaseUrl(resolvedUrl);
+    // 写入本地缓存，下次同渠道自动回填
+    saveTokenCache(selectedChannel.id, { apiKey: tempTokenValue, baseUrl: resolvedUrl });
+    // 同步 Token 弹窗中选择的模型回 CODE 渠道选中模型
+    if (tempTokenModel) {
+      setSelectedModel({
+        ...tempTokenModel,
+        maxTokens:        Number(customMaxTokens) || tempTokenModel.maxTokens,
+        temperature:      Number(customTemp)       ?? tempTokenModel.temperature,
+        topP:             Number(customTopP)        ?? tempTokenModel.topP,
+        frequencyPenalty: Number(customFreqPenalty) ?? tempTokenModel.frequencyPenalty,
+        presencePenalty:  Number(customPresPenalty) ?? tempTokenModel.presencePenalty,
+      });
+    }
     setTokenModalOpen(false);
 
-    // 持久化到后端，供 Auto 模型路由使用
+    // 持久化到后端
     if (tempTokenValue.trim()) {
       fetch('/api/token-channels', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          provider: tempChannel.id,
-          modelName: '',
+          provider: selectedChannel.id,
+          modelName: tempTokenModel?.id || '',
           baseUrl: resolvedUrl,
           apiKey: tempTokenValue.trim(),
-          authType: tempChannel.authType,
+          authType: selectedChannel.authType,
           enabled: true,
           priority: 0,
         }),
-      }).catch(() => {}); // 静默失败，不影响 UI
+      }).catch(() => {});
     }
   }
   function handleCopyToken() {
@@ -382,18 +557,20 @@ export function AgentCreate() {
     setTimeout(() => setCopied(false), 1800);
   }
 
-  /* ── CODE 模型弹窗 ────────────────────────────────────── */
-  const [codeModelOpen, setCodeModelOpen]   = useState(false);
-  /**
-   * 默认选中 Auto 模型（CODE_MODEL_PRESETS[0]）。
-   * Auto 模式由平台智能调度，用户不必手动选择具体模型也能正常工作。
-   */
-  const [selectedModel, setSelectedModel]   = useState<CodeModel | null>(
-    () => CODE_MODEL_PRESETS[0] // Auto
+  /* ── CODE 渠道弹窗 ────────────────────────────────────── */
+  const [codeModelOpen, setCodeModelOpen]     = useState(false);
+  // 当前已选渠道（默认平台预设）
+  const [selectedChannel, setSelectedChannel] = useState<CodeChannel>(
+    () => CODE_CHANNELS[0]
   );
-  const [tempModel, setTempModel]           = useState<CodeModel | null>(null);
+  const [tempChannel, setTempChannel]         = useState<CodeChannel>(CODE_CHANNELS[0]);
+  // 当前已选模型
+  const [selectedModel, setSelectedModel]     = useState<CodeModel | null>(
+    () => CODE_CHANNELS[0].models[0]
+  );
+  const [tempModel, setTempModel]             = useState<CodeModel | null>(null);
 
-  // 弹窗内自定义参数（可在预设基础上二次调整）
+  // 弹窗内自定义参数
   const [customMaxTokens, setCustomMaxTokens]         = useState('');
   const [customTemp, setCustomTemp]                   = useState('');
   const [customTopP, setCustomTopP]                   = useState('');
@@ -401,8 +578,8 @@ export function AgentCreate() {
   const [customPresPenalty, setCustomPresPenalty]     = useState('');
 
   function openCodeModal() {
-    // 已有选中模型则回显；否则默认填入 Auto 模型参数
-    const initModel = selectedModel ?? CODE_MODEL_PRESETS[0];
+    setTempChannel(selectedChannel);
+    const initModel = selectedModel ?? selectedChannel.models[0];
     setTempModel(initModel);
     setCustomMaxTokens(String(initModel.maxTokens));
     setCustomTemp(String(initModel.temperature));
@@ -413,6 +590,18 @@ export function AgentCreate() {
   }
 
   function closeCodeModal() { setCodeModelOpen(false); }
+
+  function selectTempChannel(ch: CodeChannel) {
+    setTempChannel(ch);
+    // 切换渠道时默认选第一个模型
+    const first = ch.models[0];
+    setTempModel(first);
+    setCustomMaxTokens(String(first.maxTokens));
+    setCustomTemp(String(first.temperature));
+    setCustomTopP(String(first.topP));
+    setCustomFreqPenalty(String(first.frequencyPenalty));
+    setCustomPresPenalty(String(first.presencePenalty));
+  }
 
   function selectPreset(m: CodeModel) {
     setTempModel(m);
@@ -425,6 +614,7 @@ export function AgentCreate() {
 
   function confirmCodeModal() {
     if (!tempModel) return;
+    setSelectedChannel(tempChannel);
     setSelectedModel({
       ...tempModel,
       maxTokens:        Number(customMaxTokens) || tempModel.maxTokens,
@@ -433,6 +623,10 @@ export function AgentCreate() {
       frequencyPenalty: Number(customFreqPenalty) ?? tempModel.frequencyPenalty,
       presencePenalty:  Number(customPresPenalty) ?? tempModel.presencePenalty,
     });
+    // 切换渠道后，从缓存自动回填对应渠道的 Token
+    const cached = loadTokenCache(tempChannel.id);
+    setTokenValue(cached?.apiKey   ?? '');
+    setCustomBaseUrl(cached?.baseUrl ?? '');
     setCodeModelOpen(false);
   }
 
@@ -444,43 +638,76 @@ export function AgentCreate() {
     if (!name.trim()) { showToast('请填写智能体名称', 'warning'); return; }
     setSaving(true);
     try {
-      // 未手动选择模型时，自动使用 auto 模型
-      const activeModel: CodeModel = selectedModel ?? {
-        id: 'auto',
-        name: 'Auto',
-        provider: 'Auto',
-        desc: '自动匹配最优模型',
-        contextWindow: '128K',
-        maxTokens: 4096,
-        temperature: 0.7,
-        topP: 1,
-        frequencyPenalty: 0,
-        presencePenalty: 0,
-      };
+      const activeModel: CodeModel = selectedModel ?? selectedChannel.models[0];
+      const isPrivateKey = selectedChannel.id !== PLATFORM_PRESET_CHANNEL_ID;
+      // temperatureOverride：快捷温度覆盖框有值时使用，否则用 CODE 弹窗里的 customTemp
+      const resolvedTemp = tempOverride !== ''
+        ? Number(tempOverride)
+        : (Number(customTemp) || activeModel.temperature);
+
       const payload = {
         name: name.trim(),
         color: '#6366f1',
-        systemPrompt: memory.trim(),
-        writingStyle: role.trim() || style,
+        // systemPrompt 来自"角色设定"文本框（role）
+        systemPrompt: role.trim(),
+        // writingStyle 来自"语言风格"标签
+        writingStyle: style,
         expertise: skills,
         description: description.trim(),
         status: 'active' as const,
-        // CODE 模型参数
-        modelName: activeModel.name,
-        modelProvider: activeModel.provider,
-        temperature: selectedModel ? (Number(customTemp) || activeModel.temperature) : activeModel.temperature,
-        maxTokens: selectedModel ? (Number(customMaxTokens) || activeModel.maxTokens) : activeModel.maxTokens,
-        topP: selectedModel ? (Number(customTopP) || activeModel.topP) : activeModel.topP,
-        frequencyPenalty: selectedModel ? (Number(customFreqPenalty) ?? activeModel.frequencyPenalty) : activeModel.frequencyPenalty,
-        presencePenalty: selectedModel ? (Number(customPresPenalty) ?? activeModel.presencePenalty) : activeModel.presencePenalty,
+        // 输出格式 & 能力边界
+        outputFormat: outputFmt,
+        boundary: boundary.trim(),
+        // 对话记忆轮数
+        memoryTurns: Number(memoryTurns) || 0,
+        // 温度覆盖（null = 使用模型默认）
+        temperatureOverride: tempOverride !== '' ? Number(tempOverride) : null,
+        // CODE 渠道 + 模型参数
+        modelName: activeModel.id,
+        modelProvider: selectedChannel.provider,
+        temperature: resolvedTemp,
+        maxTokens: Number(customMaxTokens) || activeModel.maxTokens,
+        topP: Number(customTopP) || activeModel.topP,
+        frequencyPenalty: Number(customFreqPenalty) ?? activeModel.frequencyPenalty,
+        presencePenalty: Number(customPresPenalty) ?? activeModel.presencePenalty,
+        // Token 接入
+        tokenProvider: isPrivateKey ? selectedChannel.id : '',
+        tokenApiKey: isPrivateKey ? tokenValue : '',
+        tokenBaseUrl: isPrivateKey ? customBaseUrl : '',
       };
+
+      let agentId: string;
       if (isEdit && editId && !isDefaultAgent) {
         // 普通编辑：更新已有后端记录
         await updateAgent(editId, payload);
+        agentId = editId;
+        // 先解绑所有旧技能，再绑定新的（简化处理：全量覆盖）
+        try {
+          const oldSkillsRes = await apiClient.get(`/skills/agent/${agentId}`);
+          const oldSkills: BackendSkill[] = oldSkillsRes.data.data ?? [];
+          await Promise.all(oldSkills.map(s =>
+            apiClient.delete(`/skills/${s.id}/bind`, { data: { agentId } })
+          ));
+        } catch { /* 解绑失败不阻断 */ }
       } else {
         // 新建 or 预设智能体编辑 → 另存为新智能体
-        await createAgent(payload);
+        const newAgent = await createAgent(payload);
+        agentId = newAgent.id;
       }
+
+      // 绑定选中的技能（skills 数组存的是 skillId）
+      // 只绑定真实存在于后端的 skill id（排除旧版字符串名称）
+      const validSkillIds = skills.filter(id =>
+        backendSkills.length === 0 || backendSkills.some(s => s.id === id)
+      );
+      if (validSkillIds.length > 0) {
+        await Promise.allSettled(
+          validSkillIds.map(skillId =>
+            apiClient.post(`/skills/${skillId}/bind`, { agentId })
+          )
+        );
+      }
+
       navigate('/agents');
     } catch {
       showToast(isEdit && !isDefaultAgent ? '保存失败，请重试' : '创建失败，请重试', 'error');
@@ -506,8 +733,8 @@ export function AgentCreate() {
   function blurStyle(e: React.FocusEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) {
     e.currentTarget.style.borderColor = '#d1d5db';
   }
-  const labelStyle: React.CSSProperties = { display: 'block', fontSize: 12, fontWeight: 600, color: '#374151', marginBottom: 5 };
-  const fieldStyle: React.CSSProperties = { marginBottom: 14 };
+  const labelStyle: React.CSSProperties = { display: 'block', fontSize: 12, fontWeight: 600, color: '#374151', marginBottom: 4 };
+  const fieldStyle: React.CSSProperties = { marginBottom: 10 };
 
   return (
     <>
@@ -527,10 +754,26 @@ export function AgentCreate() {
           padding: 16px 32px; border-bottom: 1px solid #e5e6eb;
           background: #ffffff; display: flex; align-items: center; gap: 10px; flex-shrink: 0;
         }
-        .ac-scroll { flex: 1; min-height: 0; overflow-y: auto; padding: 20px 28px 0; display: flex; flex-direction: column; }
-        .ac-form { flex: 1; min-height: 0; background: transparent; padding: 0; box-sizing: border-box; display: flex; flex-direction: column; }
+        .ac-scroll {
+          flex: 1; min-height: 0; overflow: hidden;
+          padding: 16px 20px 0; display: flex; flex-direction: column;
+        }
+        .ac-form {
+          flex: 1; min-height: 0; background: transparent; padding: 0;
+          box-sizing: border-box; display: flex; flex-direction: column;
+        }
+        /* 左右两栏 */
+        .ac-cols {
+          flex: 1; min-height: 0;
+          display: grid; grid-template-columns: 1fr 1fr; gap: 16px;
+          overflow: hidden;
+        }
+        .ac-col {
+          display: flex; flex-direction: column; gap: 0;
+          min-height: 0; overflow: hidden;
+        }
         .ac-footer {
-          padding: 11px 24px; border-top: 1px solid #ebebeb;
+          padding: 10px 24px; border-top: 1px solid #ebebeb;
           background: #fff; display: flex; justify-content: center; gap: 10px; flex-shrink: 0;
         }
 
@@ -572,15 +815,6 @@ export function AgentCreate() {
           font-size: 11px; padding: 1px 7px; border-radius: 4px; font-weight: 500;
         }
 
-        /* ── 标签 ── */
-        .ac-tag {
-          display: inline-flex; align-items: center;
-          padding: 3px 11px; border-radius: 20px; font-size: 12px; cursor: pointer;
-          border: 1px solid #e5e7eb; background: #fff; color: #4a5568;
-          transition: all 0.15s; user-select: none;
-        }
-        .ac-tag.active { background: #2a3b4d; border-color: #2a3b4d; color: #fff; }
-        .ac-tag:hover:not(.active) { border-color: #2a3b4d; color: #2a3b4d; }
 
         /* ── 底部按钮 ── */
         .ac-btn-cancel {
@@ -830,8 +1064,12 @@ export function AgentCreate() {
           .cm-col-models { width: 100%; border-right: none; border-bottom: 1px solid #f0f0f0; }
           .cm-params-grid { grid-template-columns: 1fr 1fr; }
         }
+        @media (max-width: 760px) {
+          .ac-cols { grid-template-columns: 1fr; overflow-y: auto; }
+          .ac-scroll { overflow-y: auto; }
+        }
         @media (max-width: 600px) {
-          .ac-scroll { padding: 20px; }
+          .ac-scroll { padding: 12px; }
           .ac-btn-cancel, .ac-btn-create { width: 100%; }
           .cm-params-grid { grid-template-columns: 1fr; }
         }
@@ -846,13 +1084,21 @@ export function AgentCreate() {
               <button className="ac-modal-close" onClick={closeSkillModal}><X size={18} /></button>
             </div>
             <div className="ac-modal-body">
-              {SKILL_OPTIONS.map(skill => {
-                const sel = tempSkills.includes(skill.name);
+              {skillsLoading ? (
+                <div style={{ textAlign: 'center', padding: '24px 0', color: '#9ca3af', fontSize: 13 }}>
+                  加载技能列表中…
+                </div>
+              ) : backendSkills.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '24px 0', color: '#9ca3af', fontSize: 13 }}>
+                  暂无可用技能，请先在「技能设置」页面创建技能
+                </div>
+              ) : backendSkills.map(skill => {
+                const sel = tempSkills.includes(skill.id);
                 return (
                   <div
-                    key={skill.name}
+                    key={skill.id}
                     className={`ac-modal-item${sel ? ' selected' : ''}`}
-                    onClick={() => toggleTempSkill(skill.name)}
+                    onClick={() => toggleTempSkill(skill.id)}
                   >
                     <div className="ac-modal-check">
                       {sel && <Check size={13} color="#fff" strokeWidth={3} />}
@@ -862,7 +1108,7 @@ export function AgentCreate() {
                         {skill.name}
                         <span className="ac-modal-item-cat">{skill.category}</span>
                       </div>
-                      <div className="ac-modal-item-desc">{skill.desc}</div>
+                      <div className="ac-modal-item-desc">{skill.description}</div>
                     </div>
                   </div>
                 );
@@ -894,48 +1140,72 @@ export function AgentCreate() {
 
             <div className="ac-modal-body" style={{ padding: 0 }}>
 
-              {/* 渠道列表 */}
-              <div className="tk-section-title">选择接入渠道</div>
-              <div className="tk-channel-list">
-                {TOKEN_CHANNELS.map(ch => {
-                  const sel = tempChannel?.id === ch.id;
-                  const bc  = ch.badge ? BADGE_COLOR[ch.badge] ?? null : null;
-                  return (
-                    <div
-                      key={ch.id}
-                      className={`tk-channel-item${sel ? ' selected' : ''}`}
-                      onClick={() => setTempChannel(ch)}
-                    >
-                      <div className="ac-modal-check" style={{ marginTop: 2 }}>
-                        {sel && <Check size={13} color="#fff" strokeWidth={3} />}
-                      </div>
-                      <div className="tk-channel-info">
-                        <div className="tk-channel-name-row">
-                          <span className="tk-channel-name">{ch.name}</span>
-                          <span className="tk-channel-provider">{ch.provider}</span>
-                          <span className="tk-channel-auth">{AUTH_TYPE_LABEL[ch.authType]}</span>
-                          {ch.badge && bc && (
-                            <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 4, fontWeight: 500, background: bc.bg, color: bc.color }}>
-                              {ch.badge}
-                            </span>
-                          )}
-                        </div>
-                        <div className="tk-channel-desc">{ch.desc}</div>
-                      </div>
+              {/* 渠道只读展示（已在 CODE 渠道中选定） */}
+              <div className="tk-section-title">接入渠道</div>
+              <div style={{ padding: '0 14px 10px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', background: '#f0f4ff', border: '1px solid #c7d7fd', borderRadius: 8 }}>
+                  <div style={{ width: 20, height: 20, borderRadius: '50%', background: '#2a3b4d', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    <Check size={12} color="#fff" strokeWidth={3} />
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: '#1e293b' }}>{selectedChannel.name}</div>
+                    <div style={{ fontSize: 11, color: '#64748b', marginTop: 1 }}>
+                      {selectedChannel.provider} · 已在 CODE 渠道中选定
                     </div>
-                  );
-                })}
+                  </div>
+                  {selectedChannel.id === PLATFORM_PRESET_CHANNEL_ID && (
+                    <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 4, background: '#dcfce7', color: '#16a34a', fontWeight: 500 }}>无需配置</span>
+                  )}
+                </div>
               </div>
 
-              {/* Token 输入区 */}
-              {tempChannel && (
+              {/* 填写 Key（平台预设无需填） */}
+              {selectedChannel.id !== PLATFORM_PRESET_CHANNEL_ID && (
                 <>
+                  <div className="tk-divider" />
+
+                  {/* 模型选择（从当前渠道的模型列表中选） */}
+                  <div className="tk-section-title">选择模型</div>
+                  <div style={{ padding: '0 14px 10px' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                      {selectedChannel.models.map(m => {
+                        const sel = tempTokenModel?.id === m.id;
+                        const bc  = m.badge ? BADGE_COLOR[m.badge] : null;
+                        return (
+                          <div
+                            key={m.id}
+                            onClick={() => setTempTokenModel(m)}
+                            style={{
+                              display: 'flex', alignItems: 'center', gap: 8, padding: '7px 10px',
+                              border: `1px solid ${sel ? '#2a3b4d' : '#e5e7eb'}`,
+                              borderRadius: 7, cursor: 'pointer',
+                              background: sel ? '#f0f4ff' : '#fff',
+                              transition: 'all 0.1s',
+                            }}
+                          >
+                            <div style={{ width: 16, height: 16, borderRadius: '50%', border: `2px solid ${sel ? '#2a3b4d' : '#d1d5db'}`, background: sel ? '#2a3b4d' : '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                              {sel && <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#fff' }} />}
+                            </div>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                                <span style={{ fontSize: 12, fontWeight: sel ? 600 : 400, color: '#1e293b' }}>{m.name}</span>
+                                {m.badge && bc && <span style={{ fontSize: 10, padding: '0 5px', borderRadius: 3, background: bc.bg, color: bc.color }}>{m.badge}</span>}
+                                <span style={{ fontSize: 10, color: '#9ca3af' }}>{m.contextWindow}</span>
+                              </div>
+                              {m.desc && <div style={{ fontSize: 11, color: '#6b7280', marginTop: 1 }}>{m.desc}</div>}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
                   <div className="tk-divider" />
                   <div className="tk-section-title">填写认证信息</div>
                   <div className="tk-input-area">
 
-                    {/* Base URL（自定义时才显示） */}
-                    {tempChannel.id === 'custom' ? (
+                    {/* Base URL（自定义渠道时才填） */}
+                    {selectedChannel.id === 'custom' && (
                       <div className="tk-input-row">
                         <label className="tk-input-label">Base URL</label>
                         <input
@@ -948,21 +1218,13 @@ export function AgentCreate() {
                           onBlur={e => e.currentTarget.style.borderColor = '#d1d5db'}
                         />
                       </div>
-                    ) : (
-                      <div className="tk-input-row">
-                        <label className="tk-input-label">Base URL（预设，只读）</label>
-                        <input
-                          type="text"
-                          readOnly
-                          style={{ padding: '7px 10px', fontSize: 12, border: '1px solid #e5e7eb', borderRadius: 7, outline: 'none', width: '100%', boxSizing: 'border-box', background: '#f9fafb', color: '#6b7280', fontFamily: '"Courier New", monospace' }}
-                          value={tempChannel.baseUrl}
-                        />
-                      </div>
                     )}
 
-                    {/* Token 输入 */}
+                    {/* API Key */}
                     <div className="tk-input-row">
-                      <label className="tk-input-label">{AUTH_TYPE_LABEL[tempChannel.authType]}</label>
+                      <label className="tk-input-label">
+                        {selectedChannel.keyLabel || AUTH_TYPE_LABEL[selectedChannel.authType]}
+                      </label>
                       <div className="tk-token-wrap">
                         <input
                           className="tk-token-input"
@@ -970,9 +1232,10 @@ export function AgentCreate() {
                           value={tempTokenValue}
                           onChange={e => setTempTokenValue(e.target.value)}
                           placeholder={
-                            tempChannel.authType === 'Bearer' ? 'sk-xxxxxxxxxxxxxxxxxxxxxxxx'
-                            : tempChannel.authType === 'ApiKey' ? '输入 API Key'
-                            : 'username:password'
+                            selectedChannel.keyPlaceholder ||
+                            (selectedChannel.authType === 'Bearer' ? 'sk-xxxxxxxxxxxxxxxxxxxxxxxx'
+                            : selectedChannel.authType === 'ApiKey' ? '输入 API Key'
+                            : 'username:password')
                           }
                           autoComplete="off"
                           spellCheck={false}
@@ -987,27 +1250,27 @@ export function AgentCreate() {
                         </div>
                       </div>
                     </div>
-
-                    {/* 文档链接 */}
-                    {tempChannel.docsUrl && (
-                      <a className="tk-docs-link" href={tempChannel.docsUrl} target="_blank" rel="noreferrer">
-                        📄 查看官方接入文档 →
-                      </a>
-                    )}
                   </div>
                 </>
+              )}
+
+              {/* 平台预设：无需配置提示 */}
+              {selectedChannel.id === PLATFORM_PRESET_CHANNEL_ID && (
+                <div style={{ padding: '20px 14px', textAlign: 'center', color: '#6b7280', fontSize: 13 }}>
+                  ✅ 使用平台预设，无需填写 API Key，直接确认即可
+                </div>
               )}
             </div>
 
             <div className="ac-modal-foot">
               <span className="ac-modal-selected-tip">
-                {tempChannel ? `已选：${tempChannel.name}` : '请选择接入渠道'}
+                {tempTokenModel ? `${selectedChannel.name} · ${tempTokenModel.name}` : selectedChannel.name}
               </span>
               <div className="ac-modal-foot-btns">
                 <button className="ac-modal-btn-cancel" onClick={closeTokenModal}>取消</button>
                 <button
                   className="ac-modal-btn-confirm"
-                  disabled={!tempChannel || !tempTokenValue.trim()}
+                  disabled={selectedChannel.id !== PLATFORM_PRESET_CHANNEL_ID && (!tempTokenValue.trim() || !tempTokenModel)}
                   onClick={confirmTokenModal}
                 >确认</button>
               </div>
@@ -1025,28 +1288,51 @@ export function AgentCreate() {
             <div className="ac-modal-head">
               <span className="ac-modal-title" style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
                 <Code2 size={16} color="#2a3b4d" />
-                选择 CODE 模型
+                选择 CODE 渠道 &amp; 模型
               </span>
               <button className="ac-modal-close" onClick={closeCodeModal}><X size={18} /></button>
             </div>
 
             <div className="ac-modal-body cm-body">
+              {/* 三列布局：渠道 | 模型列表 | 参数调节 */}
+              <div className="cm-two-cols" style={{ display: 'flex', gap: 0, height: '100%' }}>
 
-              {/*
-               * 两列布局：
-               *   左列（cm-col-models）  —— 模型列表，固定宽度，可滚动
-               *   右列（cm-col-params）  —— 参数调节区，跟随模型选中状态
-               *
-               * 两列始终并排显示，无需等选中模型后才出现右侧区域，
-               * 避免弹窗高度跳变带来的视觉抖动。
-               */}
-              <div className="cm-two-cols">
+                {/* ── 第一列：渠道列表（含后台动态渠道）── */}
+                <div style={{ width: 160, borderRight: '1px solid #f0f0f0', overflowY: 'auto', flexShrink: 0 }}>
+                  <div className="cm-section-title">接入渠道</div>
+                  {dynamicChannels.map(ch => {
+                    const sel = tempChannel.id === ch.id;
+                    const bc  = ch.badge ? BADGE_COLOR[ch.badge] : null;
+                    return (
+                      <div
+                        key={ch.id}
+                        onClick={() => selectTempChannel(ch)}
+                        style={{
+                          padding: '8px 12px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6,
+                          background: sel ? '#f0f4ff' : 'transparent',
+                          borderLeft: sel ? '3px solid #2a3b4d' : '3px solid transparent',
+                          transition: 'all 0.1s',
+                        }}
+                      >
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
+                            <span style={{ fontSize: 12, fontWeight: sel ? 600 : 400, color: sel ? '#1e293b' : '#374151' }}>{ch.name}</span>
+                            {ch.badge && bc && (
+                              <span style={{ fontSize: 10, padding: '0 5px', borderRadius: 3, background: bc.bg, color: bc.color, fontWeight: 500 }}>{ch.badge}</span>
+                            )}
+                          </div>
+                          <div style={{ fontSize: 10, color: '#9ca3af', marginTop: 1 }}>{ch.provider}</div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
 
-                {/* ── 左列：预设模型列表 ── */}
-                <div className="cm-col-models">
-                  <div className="cm-section-title">预设模型</div>
+                {/* ── 第二列：模型列表 ── */}
+                <div className="cm-col-models" style={{ flex: '0 0 220px', borderRight: '1px solid #f0f0f0' }}>
+                  <div className="cm-section-title">{tempChannel.name} 模型</div>
                   <div className="cm-preset-list">
-                    {CODE_MODEL_PRESETS.map(m => {
+                    {tempChannel.models.map(m => {
                       const sel = tempModel?.id === m.id;
                       const bc  = m.badge ? BADGE_COLOR[m.badge] : null;
                       return (
@@ -1061,16 +1347,12 @@ export function AgentCreate() {
                           <div className="cm-preset-info">
                             <div className="cm-preset-name-row">
                               <span className="cm-preset-name">{m.name}</span>
-                              <span className="cm-preset-provider">{m.provider}</span>
                               {m.badge && bc && (
-                                <span
-                                  className="cm-preset-badge"
-                                  style={{ background: bc.bg, color: bc.color }}
-                                >{m.badge}</span>
+                                <span className="cm-preset-badge" style={{ background: bc.bg, color: bc.color }}>{m.badge}</span>
                               )}
                             </div>
-                            <div className="cm-preset-ctx">上下文窗口：{m.contextWindow}</div>
-                            <div className="cm-preset-desc">{m.desc}</div>
+                            <div className="cm-preset-ctx">上下文：{m.contextWindow}</div>
+                            {m.desc && <div className="cm-preset-desc">{m.desc}</div>}
                           </div>
                         </div>
                       );
@@ -1078,86 +1360,39 @@ export function AgentCreate() {
                   </div>
                 </div>
 
-                {/* ── 右列：参数调节 ── */}
+                {/* ── 第三列：参数调节 ── */}
                 <div className="cm-col-params">
-                  <div className="cm-section-title">参数调节（基于预设可微调）</div>
+                  <div className="cm-section-title">参数调节</div>
                   {tempModel ? (
                     <div className="cm-params-grid">
-                      {/* Max Tokens */}
                       <div className="cm-param-item">
                         <label className="cm-param-label">Max Tokens</label>
-                        <input
-                          type="number" min={256} max={32768} step={256}
-                          style={numInputStyle}
-                          value={customMaxTokens}
-                          onChange={e => setCustomMaxTokens(e.target.value)}
-                          onFocus={focusStyle} onBlur={blurStyle}
-                          placeholder={String(tempModel.maxTokens)}
-                        />
+                        <input type="number" min={256} max={32768} step={256} style={numInputStyle} value={customMaxTokens} onChange={e => setCustomMaxTokens(e.target.value)} onFocus={focusStyle} onBlur={blurStyle} placeholder={String(tempModel.maxTokens)} />
                         <span className="cm-param-sub">最大输出 token 数</span>
                       </div>
-
-                      {/* Temperature */}
                       <div className="cm-param-item">
                         <label className="cm-param-label">Temperature</label>
-                        <input
-                          type="number" min={0} max={2} step={0.05}
-                          style={numInputStyle}
-                          value={customTemp}
-                          onChange={e => setCustomTemp(e.target.value)}
-                          onFocus={focusStyle} onBlur={blurStyle}
-                          placeholder={String(tempModel.temperature)}
-                        />
-                        <span className="cm-param-sub">0 = 精准确定，2 = 高度发散</span>
+                        <input type="number" min={0} max={2} step={0.05} style={numInputStyle} value={customTemp} onChange={e => setCustomTemp(e.target.value)} onFocus={focusStyle} onBlur={blurStyle} placeholder={String(tempModel.temperature)} />
+                        <span className="cm-param-sub">0 = 精准，2 = 发散</span>
                       </div>
-
-                      {/* Top P */}
                       <div className="cm-param-item">
                         <label className="cm-param-label">Top P</label>
-                        <input
-                          type="number" min={0} max={1} step={0.05}
-                          style={numInputStyle}
-                          value={customTopP}
-                          onChange={e => setCustomTopP(e.target.value)}
-                          onFocus={focusStyle} onBlur={blurStyle}
-                          placeholder={String(tempModel.topP)}
-                        />
+                        <input type="number" min={0} max={1} step={0.05} style={numInputStyle} value={customTopP} onChange={e => setCustomTopP(e.target.value)} onFocus={focusStyle} onBlur={blurStyle} placeholder={String(tempModel.topP)} />
                         <span className="cm-param-sub">核采样概率阈值</span>
                       </div>
-
-                      {/* Frequency Penalty */}
                       <div className="cm-param-item">
                         <label className="cm-param-label">Frequency Penalty</label>
-                        <input
-                          type="number" min={-2} max={2} step={0.1}
-                          style={numInputStyle}
-                          value={customFreqPenalty}
-                          onChange={e => setCustomFreqPenalty(e.target.value)}
-                          onFocus={focusStyle} onBlur={blurStyle}
-                          placeholder={String(tempModel.frequencyPenalty)}
-                        />
-                        <span className="cm-param-sub">降低重复词语出现频率</span>
+                        <input type="number" min={-2} max={2} step={0.1} style={numInputStyle} value={customFreqPenalty} onChange={e => setCustomFreqPenalty(e.target.value)} onFocus={focusStyle} onBlur={blurStyle} placeholder={String(tempModel.frequencyPenalty)} />
+                        <span className="cm-param-sub">降低重复词语频率</span>
                       </div>
-
-                      {/* Presence Penalty */}
                       <div className="cm-param-item">
                         <label className="cm-param-label">Presence Penalty</label>
-                        <input
-                          type="number" min={-2} max={2} step={0.1}
-                          style={numInputStyle}
-                          value={customPresPenalty}
-                          onChange={e => setCustomPresPenalty(e.target.value)}
-                          onFocus={focusStyle} onBlur={blurStyle}
-                          placeholder={String(tempModel.presencePenalty)}
-                        />
-                        <span className="cm-param-sub">鼓励引入新话题与词汇</span>
+                        <input type="number" min={-2} max={2} step={0.1} style={numInputStyle} value={customPresPenalty} onChange={e => setCustomPresPenalty(e.target.value)} onFocus={focusStyle} onBlur={blurStyle} placeholder={String(tempModel.presencePenalty)} />
+                        <span className="cm-param-sub">鼓励引入新话题</span>
                       </div>
                     </div>
                   ) : (
-                    /* 未选中模型时的占位提示 */
-                    <div className="cm-params-empty">
-                      <span>← 请先在左侧选择一个模型</span>
-                    </div>
+                    <div className="cm-params-empty"><span>← 请先选择一个模型</span></div>
                   )}
                 </div>
 
@@ -1166,15 +1401,11 @@ export function AgentCreate() {
 
             <div className="ac-modal-foot">
               <span className="ac-modal-selected-tip">
-                {tempModel ? `已选：${tempModel.name}` : '请选择一个模型'}
+                {tempModel ? `${tempChannel.name} · ${tempModel.name}` : '请选择渠道和模型'}
               </span>
               <div className="ac-modal-foot-btns">
                 <button className="ac-modal-btn-cancel" onClick={closeCodeModal}>取消</button>
-                <button
-                  className="ac-modal-btn-confirm"
-                  disabled={!tempModel}
-                  onClick={confirmCodeModal}
-                >确认</button>
+                <button className="ac-modal-btn-confirm" disabled={!tempModel} onClick={confirmCodeModal}>确认</button>
               </div>
             </div>
 
@@ -1203,197 +1434,201 @@ export function AgentCreate() {
 
           <div className="ac-scroll">
             <form className="ac-form" onSubmit={handleSubmit}>
+              <div className="ac-cols">
 
-              {/* 智能体名称 */}
-              <div style={fieldStyle}>
-                <label style={labelStyle}>智能体名称</label>
-                <input
-                  style={inputStyle}
-                  value={name}
-                  onChange={e => setName(e.target.value)}
-                  placeholder="例如：前端开发助手、电商客服智能体"
-                  onFocus={focusStyle} onBlur={blurStyle}
-                />
-              </div>
+                {/* ══ 左栏：基本信息 ══ */}
+                <div className="ac-col">
 
-              {/* 简介 */}
-              <div style={fieldStyle}>
-                <label style={labelStyle}>简介</label>
-                <input
-                  style={inputStyle}
-                  value={description}
-                  onChange={e => setDescription(e.target.value)}
-                  placeholder="简要描述该智能体的用途，将显示在选择弹窗中..."
-                  onFocus={focusStyle} onBlur={blurStyle}
-                />
-              </div>
-
-              {/* 角色设定 */}
-              <div style={fieldStyle}>
-                <label style={labelStyle}>角色设定</label>
-                <textarea
-                  style={{ ...inputStyle, minHeight: 100, resize: 'vertical' } as React.CSSProperties}
-                  value={role}
-                  onChange={e => setRole(e.target.value)}
-                  placeholder="定义智能体的人设和核心定位..."
-                  onFocus={focusStyle} onBlur={blurStyle}
-                />
-              </div>
-
-              {/* 语言风格 + 输出格式规范 */}
-              <div style={{ ...fieldStyle, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, alignItems: 'start' }}>
-                <div>
-                  <label style={labelStyle}>语言风格</label>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                    {STYLE_TAGS.map(tag => (
-                      <span key={tag} className={`ac-tag${style === tag ? ' active' : ''}`} onClick={() => setStyle(tag)}>
-                        {tag}
-                      </span>
-                    ))}
+                  {/* 智能体名称 */}
+                  <div style={fieldStyle}>
+                    <label style={labelStyle}>智能体名称</label>
+                    <input
+                      style={inputStyle}
+                      value={name}
+                      onChange={e => setName(e.target.value)}
+                      placeholder="例如：前端开发助手、电商客服智能体"
+                      onFocus={focusStyle} onBlur={blurStyle}
+                    />
                   </div>
-                </div>
-                <div>
-                  <label style={labelStyle}>输出格式规范</label>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                    {OUTPUT_TAGS.map(tag => (
-                      <span key={tag} className={`ac-tag${outputFmt === tag ? ' active' : ''}`} onClick={() => setOutputFmt(tag)}>
-                        {tag}
-                      </span>
-                    ))}
+
+                  {/* 简介 */}
+                  <div style={fieldStyle}>
+                    <label style={labelStyle}>简介</label>
+                    <input
+                      style={inputStyle}
+                      value={description}
+                      onChange={e => setDescription(e.target.value)}
+                      placeholder="简要描述该智能体的用途..."
+                      onFocus={focusStyle} onBlur={blurStyle}
+                    />
                   </div>
+
+                  {/* 语言风格 + 输出格式（下拉选择，紧跟简介） */}
+                  <div style={{ ...fieldStyle, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                    <div>
+                      <label style={labelStyle}>语言风格</label>
+                      <select
+                        style={{ ...inputStyle, cursor: 'pointer', appearance: 'auto' } as React.CSSProperties}
+                        value={style}
+                        onChange={e => setStyle(e.target.value)}
+                        onFocus={focusStyle} onBlur={blurStyle}
+                      >
+                        {STYLE_TAGS.map(tag => (
+                          <option key={tag} value={tag}>{tag}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label style={labelStyle}>输出格式</label>
+                      <select
+                        style={{ ...inputStyle, cursor: 'pointer', appearance: 'auto' } as React.CSSProperties}
+                        value={outputFmt}
+                        onChange={e => setOutputFmt(e.target.value)}
+                        onFocus={focusStyle} onBlur={blurStyle}
+                      >
+                        {OUTPUT_TAGS.map(tag => (
+                          <option key={tag} value={tag}>{tag}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* 角色设定 */}
+                  <div style={{ ...fieldStyle, flex: 1, display: 'flex', flexDirection: 'column' }}>
+                    <label style={labelStyle}>角色设定</label>
+                    <textarea
+                      style={{ ...inputStyle, flex: 1, resize: 'none', minHeight: 0 } as React.CSSProperties}
+                      value={role}
+                      onChange={e => setRole(e.target.value)}
+                      placeholder="定义智能体的人设和核心定位..."
+                      onFocus={focusStyle} onBlur={blurStyle}
+                    />
+                  </div>
+
                 </div>
-              </div>
 
-              {/* 核心技能 */}
-              <div style={fieldStyle}>
-                <label style={labelStyle}>核心技能</label>
-                <div className="ac-skill-trigger" onClick={openSkillModal}>
-                  {skills.length === 0
-                    ? <span className="ac-skill-placeholder">点击选择技能...</span>
-                    : skills.map(s => (
-                        <span key={s} className="ac-skill-chip">
-                          {s}
-                          <button type="button" className="ac-skill-chip-del"
-                            onClick={e => { e.stopPropagation(); removeSkill(s); }}>
-                            <X size={11} />
-                          </button>
-                        </span>
-                      ))
-                  }
-                  <span className="ac-skill-arrow"><ChevronDown size={15} /></span>
-                </div>
-              </div>
+                {/* ══ 右栏：配置参数 ══ */}
+                <div className="ac-col">
 
-              {/* ── CODE 模型参数 & Token 接入（同行两列） ── */}
-              <div style={{ ...fieldStyle, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, alignItems: 'start' }}>
+                  {/* 核心技能 */}
+                  <div style={fieldStyle}>
+                    <label style={labelStyle}>核心技能</label>
+                    <div className="ac-skill-trigger" onClick={openSkillModal}>
+                      {skills.length === 0
+                        ? <span className="ac-skill-placeholder">点击选择技能...</span>
+                        : skills.map(s => (
+                            <span key={s} className="ac-skill-chip">
+                              {skillDisplayName(s)}
+                              <button type="button" className="ac-skill-chip-del"
+                                onClick={e => { e.stopPropagation(); removeSkill(s); }}>
+                                <X size={11} />
+                              </button>
+                            </span>
+                          ))
+                      }
+                      <span className="ac-skill-arrow"><ChevronDown size={15} /></span>
+                    </div>
+                  </div>
 
-                {/* CODE 模型参数 */}
-                <div>
-                  <label style={labelStyle}>CODE 模型参数</label>
-                  <div className="ac-model-trigger" onClick={openCodeModal}>
-                    <span className="ac-model-trigger-icon"><Code2 size={16} /></span>
-                    {selectedModel ? (
-                      <div className="ac-model-trigger-info">
-                        <div className="ac-model-trigger-name" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                          {selectedModel.name}
-                          <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 4, background: '#f3f4f6', color: '#6b7280' }}>
-                            {selectedModel.provider}
-                          </span>
+                  {/* 对话记忆 & 推理温度 */}
+                  <div style={{ ...fieldStyle, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                    <div>
+                      <label style={labelStyle}>对话记忆（轮）</label>
+                      <input
+                        type="number" min={0} max={100}
+                        style={inputStyle}
+                        value={memoryTurns}
+                        onChange={e => setMemoryTurns(e.target.value)}
+                        placeholder="0 = 不限，例如：10"
+                        onFocus={focusStyle} onBlur={blurStyle}
+                      />
+                    </div>
+                    <div>
+                      <label style={labelStyle}>推理温度（覆盖）</label>
+                      <input
+                        type="number" min={0} max={2} step={0.05}
+                        style={inputStyle}
+                        value={tempOverride}
+                        onChange={e => setTempOverride(e.target.value)}
+                        placeholder="留空使用模型默认"
+                        onFocus={focusStyle} onBlur={blurStyle}
+                      />
+                    </div>
+                  </div>
+
+                  {/* CODE 渠道 + Token 接入 */}
+                  <div style={{ ...fieldStyle, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                    <div>
+                      <label style={labelStyle}>CODE 渠道</label>
+                      <div className="ac-model-trigger" onClick={openCodeModal}>
+                        <span className="ac-model-trigger-icon"><Code2 size={16} /></span>
+                        <div className="ac-model-trigger-info">
+                          <div className="ac-model-trigger-name" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                            {selectedChannel.name}
+                            <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 4, background: '#f3f4f6', color: '#6b7280' }}>
+                              {selectedChannel.provider}
+                            </span>
+                          </div>
+                          <div className="ac-model-trigger-sub">
+                            {selectedModel ? `${selectedModel.name} · ${selectedModel.maxTokens}tok` : '请选择模型'}
+                          </div>
                         </div>
-                        <div className="ac-model-trigger-sub">
-                          maxTokens: {selectedModel.maxTokens} · temp: {selectedModel.temperature}
-                        </div>
+                        <span style={{ marginLeft: 'auto', color: '#9ca3af', flexShrink: 0 }}><ChevronDown size={15} /></span>
                       </div>
-                    ) : (
-                      <span className="ac-model-trigger-placeholder">选择模型及参数...</span>
-                    )}
-                    <span style={{ marginLeft: 'auto', color: '#9ca3af', flexShrink: 0 }}><ChevronDown size={15} /></span>
-                  </div>
-                </div>
-
-                {/* Token 接入 */}
-                <div>
-                  <label style={labelStyle}>Token 接入</label>
-                  <div className="ac-token-trigger" onClick={openTokenModal}>
-                    <span className="ac-token-trigger-icon"><KeyRound size={16} /></span>
-                    {tokenChannel ? (
-                      <div className="ac-token-trigger-info">
-                        <div className="ac-token-trigger-name">
-                          {tokenChannel.name}
-                          <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 4, background: '#f0fdf4', color: '#15803d' }}>
-                            {AUTH_TYPE_LABEL[tokenChannel.authType]}
-                          </span>
-                          {tokenValue && <span className="ac-token-dot" />}
-                        </div>
-                        <div className="ac-token-trigger-sub">
-                          {tokenValue
-                            ? `${tokenValue.slice(0, 6)}${'•'.repeat(Math.min(12, tokenValue.length - 6))}  已配置`
-                            : '未填写 Token'}
-                        </div>
+                    </div>
+                    <div>
+                      <label style={labelStyle}>Token 接入</label>
+                      <div className="ac-token-trigger" onClick={openTokenModal}>
+                        <span className="ac-token-trigger-icon"><KeyRound size={16} /></span>
+                        {selectedChannel.id !== PLATFORM_PRESET_CHANNEL_ID ? (
+                          <div className="ac-token-trigger-info">
+                            <div className="ac-token-trigger-name">
+                              {selectedChannel.name}
+                              {tokenValue && <span className="ac-token-dot" />}
+                            </div>
+                            <div className="ac-token-trigger-sub">
+                              {tokenValue
+                                ? `${tokenValue.slice(0, 6)}${'•'.repeat(Math.min(10, tokenValue.length - 6))} 已配置`
+                                : '未填写 Token'}
+                            </div>
+                          </div>
+                        ) : (
+                          <span className="ac-token-trigger-placeholder">配置 API Token...</span>
+                        )}
+                        <span style={{ marginLeft: 'auto', color: '#9ca3af', flexShrink: 0 }}><ChevronDown size={15} /></span>
                       </div>
-                    ) : (
-                      <span className="ac-token-trigger-placeholder">配置 API Token...</span>
-                    )}
-                    <span style={{ marginLeft: 'auto', color: '#9ca3af', flexShrink: 0 }}><ChevronDown size={15} /></span>
+                      {selectedChannel.id !== PLATFORM_PRESET_CHANNEL_ID && tokenValue && (
+                        <button
+                          type="button"
+                          onClick={handleCopyToken}
+                          style={{
+                            marginTop: 4, display: 'flex', alignItems: 'center', gap: 4,
+                            background: 'none', border: 'none', cursor: 'pointer',
+                            fontSize: 11, color: copied ? '#15803d' : '#9ca3af', padding: 0,
+                            transition: 'color 0.15s',
+                          }}
+                        >
+                          {copied ? <CheckCheck size={12} /> : <Copy size={12} />}
+                          {copied ? 'Token 已复制' : '复制 Token'}
+                        </button>
+                      )}
+                    </div>
                   </div>
-                  {/* 已配置时显示快捷复制 */}
-                  {tokenChannel && tokenValue && (
-                    <button
-                      type="button"
-                      onClick={handleCopyToken}
-                      style={{
-                        marginTop: 5, display: 'flex', alignItems: 'center', gap: 4,
-                        background: 'none', border: 'none', cursor: 'pointer',
-                        fontSize: 11, color: copied ? '#15803d' : '#9ca3af', padding: 0,
-                        transition: 'color 0.15s',
-                      }}
-                    >
-                      {copied ? <CheckCheck size={12} /> : <Copy size={12} />}
-                      {copied ? 'Token 已复制' : '复制 Token'}
-                    </button>
-                  )}
-                </div>
 
-              </div>
+                  {/* 能力边界 */}
+                  <div style={{ ...fieldStyle, flex: 1, display: 'flex', flexDirection: 'column' }}>
+                    <label style={labelStyle}>能力边界</label>
+                    <textarea
+                      style={{ ...inputStyle, flex: 1, resize: 'none', minHeight: 0 } as React.CSSProperties}
+                      value={boundary}
+                      onChange={e => setBoundary(e.target.value)}
+                      placeholder="明确智能体不能做的事..."
+                      onFocus={focusStyle} onBlur={blurStyle}
+                    />
+                  </div>
 
-              {/* 能力边界 */}
-              <div style={fieldStyle}>
-                <label style={labelStyle}>能力边界</label>
-                <textarea
-                  style={{ ...inputStyle, minHeight: 80, resize: 'vertical' } as React.CSSProperties}
-                  value={boundary}
-                  onChange={e => setBoundary(e.target.value)}
-                  placeholder="明确智能体不能做的事..."
-                  onFocus={focusStyle} onBlur={blurStyle}
-                />
-              </div>
-
-              {/* 对话记忆长度 & 推理温度值 */}
-              <div style={{ ...fieldStyle, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-                <div>
-                  <label style={labelStyle}>对话记忆长度</label>
-                  <input
-                    type="number" min={1} max={50}
-                    style={inputStyle}
-                    value={memory}
-                    onChange={e => setMemory(e.target.value)}
-                    placeholder="输入数字（轮数），例如：10"
-                    onFocus={focusStyle} onBlur={blurStyle}
-                  />
-                </div>
-                <div>
-                  <label style={labelStyle}>推理温度值</label>
-                  <input
-                    type="number" min={0} max={1} step={0.1}
-                    style={inputStyle}
-                    value={temp}
-                    onChange={e => setTemp(e.target.value)}
-                    placeholder="0=精准，1=创意..."
-                    onFocus={focusStyle} onBlur={blurStyle}
-                  />
                 </div>
               </div>
-
             </form>
           </div>
 

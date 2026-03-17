@@ -147,8 +147,11 @@ export const useTaskStore = create<TaskState>()(
     const now = new Date();
     const mm = String(now.getMonth() + 1).padStart(2, '0');
     const dd = String(now.getDate()).padStart(2, '0');
+    const taskId = panelId ?? `chat_${Date.now()}`;
     const newTask: Task = {
-      id: `chat_${Date.now()}`,
+      // 直接用 conversationId（panelId）作为任务 id，保证任务与会话一对一绑定
+      // 同一 conversationId 不会创建两个 Task，天然防重
+      id: taskId,
       title: title.length > 40 ? title.slice(0, 40) + '...' : title,
       description: '',
       agent: agentName,
@@ -164,9 +167,13 @@ export const useTaskStore = create<TaskState>()(
       source: 'chat',
       panelId,
     };
-    set(state => ({
-      tasks: { ...state.tasks, progress: [newTask, ...state.tasks.progress] },
-    }));
+    set(state => {
+      // 幂等插入：若同 conversationId 的任务已存在，直接跳过，不重复创建
+      const alreadyExists = state.tasks.progress.some(t => t.id === taskId)
+        || state.tasks.done.some(t => t.id === taskId);
+      if (alreadyExists) return state;
+      return { tasks: { ...state.tasks, progress: [newTask, ...state.tasks.progress] } };
+    });
     return newTask;
   },
 

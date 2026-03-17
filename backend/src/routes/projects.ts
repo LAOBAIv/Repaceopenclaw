@@ -26,6 +26,7 @@ const ProjectSchema = z.object({
   endTime: z.string().optional(),
   decisionMaker: z.string().optional(),
   workflowNodes: z.array(WorkflowNodeSchema).optional(),
+  createdBy: z.string().optional(),
 });
 
 const DocumentSchema = z.object({
@@ -114,11 +115,11 @@ router.get("/", (req: Request, res: Response) => {
 router.post("/", (req: Request, res: Response) => {
   const parsed = ProjectSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
-  const { title, description, tags, goal, priority, startTime, endTime, decisionMaker } = parsed.data;
+  const { title, description, tags, status, goal, priority, startTime, endTime, decisionMaker, createdBy } = parsed.data;
   // Cast workflow nodes: safe because WorkflowNodeSchema guarantees id is required string
   const workflowNodes = (parsed.data.workflowNodes || []) as WorkflowNode[];
   res.status(201).json({
-    data: ProjectService.create({ title, description, tags, goal, priority, startTime, endTime, decisionMaker, workflowNodes }),
+    data: ProjectService.create({ title, description, tags, status, goal, priority, startTime, endTime, decisionMaker, workflowNodes, createdBy }),
   });
 });
 
@@ -131,6 +132,19 @@ router.get("/:id", (req: Request, res: Response) => {
 router.put("/:id", (req: Request, res: Response) => {
   const parsed = ProjectSchema.partial().safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  
+  // 权限检查：只有创建人可以修改项目名称
+  const project = ProjectService.getById(req.params.id);
+  if (!project) return res.status(404).json({ error: "Project not found" });
+  
+  const currentUserId = (req as any).user?.id;
+  const isCreator = !project.createdBy || project.createdBy === currentUserId;
+  
+  // 如果修改了 title 且不是创建人，拒绝
+  if (parsed.data.title && !isCreator) {
+    return res.status(403).json({ error: "只有创建人可以修改项目名称" });
+  }
+  
   const p = ProjectService.update(req.params.id, parsed.data as any);
   if (!p) return res.status(404).json({ error: "Project not found" });
   res.json({ data: p });

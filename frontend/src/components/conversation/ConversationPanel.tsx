@@ -10,6 +10,8 @@ interface ConversationPanelProps {
   onClose: (panelId: string) => void;
   /** 将 AI 消息内容插入到文档编辑器 */
   onInsertToDoc?: (content: string) => void;
+  /** 当前面板关联智能体的输出格式，用于消息特殊渲染 */
+  outputFormat?: string;
 }
 
 export function ConversationPanel({
@@ -18,6 +20,7 @@ export function ConversationPanel({
   onSend,
   onClose,
   onInsertToDoc,
+  outputFormat,
 }: ConversationPanelProps) {
   const [input, setInput] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -82,6 +85,7 @@ export function ConversationPanel({
                 message={msg}
                 agentName={panel.agentName}
                 agentColor={panel.agentColor}
+                outputFormat={outputFormat}
                 onInsertToEditor={onInsertToDoc}
               />
             ))}

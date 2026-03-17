@@ -2,8 +2,9 @@ import { useState } from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import {
   Bot, Layers,
-  ChevronLeft, ChevronRight, Settings, Network, Sparkles, PlusCircle, Wrench, Puzzle,
+  ChevronLeft, ChevronRight, Settings, Network, Sparkles, PlusCircle, Wrench, Puzzle, ShieldCheck,
 } from 'lucide-react';
+import { useAuthStore } from '../../stores/authStore';
 
 const NAV_ITEMS = [
   { to: '/workspace',      icon: Sparkles,   label: 'RepaceClaw',  exact: false },
@@ -24,6 +25,8 @@ const CURRENT_PROJECT = {
 export function AppShell() {
   const [collapsed, setCollapsed] = useState(false);
   const navigate = useNavigate();
+  const user = useAuthStore((s) => s.user);
+  const isAdmin = user?.role === 'super_admin' || user?.role === 'admin';
 
   return (
     <div style={{ display: 'flex', height: '100vh', background: 'var(--body-bg)', overflow: 'hidden' }}>
@@ -104,6 +107,27 @@ export function AppShell() {
 
         {/* ── Bottom ── */}
         <div style={{ padding: '4px 8px 12px', display: 'flex', flexDirection: 'column', gap: 2 }}>
+          {/* 管理后台入口（仅 admin/super_admin 可见） */}
+          {isAdmin && (
+            <NavLink to="/admin" style={{ textDecoration: 'none' }}>
+              {({ isActive }) => (
+                <div style={{
+                  display: 'flex', alignItems: 'center',
+                  gap: collapsed ? 0 : 10,
+                  justifyContent: collapsed ? 'center' : 'flex-start',
+                  padding: '9px 10px', borderRadius: 8,
+                  background: isActive ? '#fef3c7' : 'transparent',
+                  color: isActive ? '#d97706' : '#d97706',
+                  fontSize: 13, cursor: 'pointer', fontWeight: 500,
+                }}
+                  title={collapsed ? '管理后台' : undefined}
+                >
+                  <ShieldCheck size={16} style={{ flexShrink: 0 }} />
+                  {!collapsed && '管理后台'}
+                </div>
+              )}
+            </NavLink>
+          )}
           <NavLink to="/plugin-settings" style={{ textDecoration: 'none' }}>
             {({ isActive }) => (
               <div style={{

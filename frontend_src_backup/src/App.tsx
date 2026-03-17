@@ -7,12 +7,28 @@ import { AgentConsole } from './pages/AgentConsole';
 import { AgentKanban } from './pages/AgentKanban';
 import { SkillSettings } from './pages/SkillSettings';
 import { PluginSettings } from './pages/PluginSettings';
+import { AuthPage } from './pages/AuthPage';
+import { useAuthStore } from './stores/authStore';
+
+// 路由守卫：未登录跳转到 /login
+function PrivateRoute({ children }: { children: React.ReactNode }) {
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  return isAuthenticated ? <>{children}</> : <Navigate to="/login" replace />;
+}
 
 function App() {
   return (
     <BrowserRouter>
       <Routes>
-        <Route element={<AppShell />}>
+        {/* 登录/注册页（无需鉴权） */}
+        <Route path="/login" element={<AuthPage />} />
+
+        {/* 需要登录的页面 */}
+        <Route element={
+          <PrivateRoute>
+            <AppShell />
+          </PrivateRoute>
+        }>
           <Route path="/" element={<Navigate to="/workspace" replace />} />
           <Route path="/workspace" element={<ProjectWorkspace />} />
           <Route path="/agents" element={<AgentManager />} />
@@ -29,3 +45,4 @@ function App() {
 }
 
 export default App;
+

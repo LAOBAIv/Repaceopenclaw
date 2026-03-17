@@ -1,6 +1,8 @@
-import { Bot, User } from 'lucide-react';
+import { useState } from 'react';
+import { Bot, User, ChevronDown, ChevronUp, Eye, Code2, Copy } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import type { Message } from '../../types';
-import { InsertContentButton } from '../document/InsertContentButton';
 
 interface MessageBubbleProps {
   message: Message;
@@ -9,6 +11,118 @@ interface MessageBubbleProps {
   showAvatar?: boolean;
   /** 如果提供，AI 消息将显示"插入到文档"按钮 */
   onInsertToEditor?: (text: string) => void;
+  /** 智能体的输出格式，用于特殊渲染 */
+  outputFormat?: string;
+}
+
+/** 解析"预览+完整代码"格式的消息内容 */
+function parsePreviewCode(content: string): { preview: string; code: string; rest: string } | null {
+  const previewMatch = content.match(/<!--\s*PREVIEW_START\s*-->([\s\S]*?)<!--\s*PREVIEW_END\s*-->/i);
+  const codeMatch = content.match(/<!--\s*CODE_START\s*-->([\s\S]*?)<!--\s*CODE_END\s*-->/i);
+  if (!previewMatch && !codeMatch) return null;
+
+  const preview = previewMatch ? previewMatch[1].trim() : '';
+  const code = codeMatch ? codeMatch[1].trim() : '';
+
+  // 去掉这两个区块后的剩余内容（前言/结语等）
+  let rest = content
+    .replace(/<!--\s*PREVIEW_START\s*-->[\s\S]*?<!--\s*PREVIEW_END\s*-->/gi, '')
+    .replace(/<!--\s*CODE_START\s*-->[\s\S]*?<!--\s*CODE_END\s*-->/gi, '')
+    .trim();
+
+  return { preview, code, rest };
+}
+
+const MARKDOWN_CLS = `prose prose-sm prose-invert max-w-none break-words
+  prose-p:my-1 prose-p:leading-relaxed
+  prose-headings:text-slate-100 prose-headings:font-semibold prose-headings:my-2
+  prose-h1:text-base prose-h2:text-sm prose-h3:text-sm
+  prose-strong:text-white prose-strong:font-semibold
+  prose-em:text-slate-300
+  prose-code:text-emerald-300 prose-code:bg-slate-900/60 prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-code:text-xs prose-code:font-mono
+  prose-pre:bg-slate-900/80 prose-pre:border prose-pre:border-slate-600/40 prose-pre:rounded-lg prose-pre:p-3 prose-pre:my-2 prose-pre:overflow-x-auto
+  prose-ul:my-1 prose-ul:pl-4 prose-li:my-0.5
+  prose-ol:my-1 prose-ol:pl-4
+  prose-blockquote:border-l-2 prose-blockquote:border-slate-500 prose-blockquote:pl-3 prose-blockquote:text-slate-400 prose-blockquote:my-1
+  prose-hr:border-slate-600 prose-hr:my-2
+  prose-a:text-indigo-400 prose-a:underline
+  prose-table:text-xs prose-th:text-slate-300 prose-td:text-slate-300`;
+
+/** 预览+完整代码 双区渲染组件 */
+function PreviewCodeView({
+  content,
+  isStreaming,
+  agentColor,
+}: {
+  content: string;
+  isStreaming?: boolean;
+  agentColor: string;
+}) {
+  const [codeExpanded, setCodeExpanded] = useState(false);
+  const parsed = parsePreviewCode(content);
+
+  // 如果还在流式输出中且尚未完成解析标记，或解析失败，退化为普通 Markdown
+  if (!parsed || isStreaming) {
+    return (
+      <ReactMarkdown remarkPlugins={[remarkGfm]} className={MARKDOWN_CLS}>
+        {content}
+      </ReactMarkdown>
+    );
+  }
+
+  const { preview, code, rest } = parsed;
+
+  return (
+    <div className="space-y-2">
+      {/* 前言（如有） */}
+      {rest && (
+        <ReactMarkdown remarkPlugins={[remarkGfm]} className={MARKDOWN_CLS}>
+          {rest}
+        </ReactMarkdown>
+      )}
+
+      {/* 预览区 */}
+      {preview && (
+        <div className="rounded-lg border border-slate-600/50 overflow-hidden">
+          <div
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium"
+            style={{ backgroundColor: `${agentColor}20`, color: agentColor }}
+          >
+            <Eye size={12} />
+            <span>预览效果</span>
+          </div>
+          <div className="px-3 py-2 bg-slate-800/60">
+            <ReactMarkdown remarkPlugins={[remarkGfm]} className={MARKDOWN_CLS}>
+              {preview}
+            </ReactMarkdown>
+          </div>
+        </div>
+      )}
+
+      {/* 完整代码区（折叠/展开） */}
+      {code && (
+        <div className="rounded-lg border border-slate-600/50 overflow-hidden">
+          <button
+            onClick={() => setCodeExpanded((v) => !v)}
+            className="w-full flex items-center justify-between gap-1.5 px-3 py-1.5 text-xs font-medium bg-slate-900/60 hover:bg-slate-900/80 transition-colors text-emerald-400"
+          >
+            <div className="flex items-center gap-1.5">
+              <Code2 size={12} />
+              <span>完整代码</span>
+            </div>
+            {codeExpanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+          </button>
+          {codeExpanded && (
+            <div className="bg-slate-900/80 border-t border-slate-600/40">
+              <ReactMarkdown remarkPlugins={[remarkGfm]} className={MARKDOWN_CLS}>
+                {code}
+              </ReactMarkdown>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
 }
 
 export function MessageBubble({
@@ -17,9 +131,11 @@ export function MessageBubble({
   agentColor = '#6366f1',
   showAvatar = true,
   onInsertToEditor,
+  outputFormat,
 }: MessageBubbleProps) {
   const isUser = message.role === 'user';
   const isStreaming = message.streaming;
+  const isPreviewCodeMode = !isUser && outputFormat === '预览+完整代码';
 
   return (
     <div className={`flex gap-2.5 ${isUser ? 'flex-row-reverse' : ''} mb-4`}>
@@ -41,7 +157,14 @@ export function MessageBubble({
       <div className={`flex flex-col ${isUser ? 'items-end' : 'items-start'} max-w-[78%]`}>
         {/* 发送者名 */}
         {!isUser && agentName && (
-          <span className="text-xs text-slate-500 mb-1 px-1">{agentName}</span>
+          <div className="flex items-center gap-1.5 mb-1 px-1">
+            <span className="text-xs text-slate-500">{agentName}</span>
+            {isPreviewCodeMode && (
+              <span className="text-xs px-1.5 py-0.5 rounded-full bg-emerald-900/40 text-emerald-400 border border-emerald-700/40">
+                预览+代码
+              </span>
+            )}
+          </div>
         )}
 
         {/* 气泡 */}
@@ -52,7 +175,22 @@ export function MessageBubble({
               : 'bg-slate-700/60 text-slate-200 rounded-bl-sm border border-slate-600/30'
           }`}
         >
-          <span className="whitespace-pre-wrap break-words">{message.content}</span>
+          {isUser ? (
+            <span className="whitespace-pre-wrap break-words">{message.content}</span>
+          ) : isPreviewCodeMode ? (
+            <PreviewCodeView
+              content={message.content}
+              isStreaming={isStreaming}
+              agentColor={agentColor}
+            />
+          ) : (
+            <ReactMarkdown
+              remarkPlugins={[remarkGfm]}
+              className={MARKDOWN_CLS}
+            >
+              {message.content}
+            </ReactMarkdown>
+          )}
 
           {/* Streaming indicator */}
           {isStreaming && (
@@ -79,13 +217,14 @@ export function MessageBubble({
         {/* Insert to editor button — only for completed agent messages */}
         {!isUser && !isStreaming && onInsertToEditor && message.content.trim().length > 0 && (
           <div className="px-1 w-full">
-            <InsertContentButton
-              content={message.content}
-              agentName={agentName ?? 'AI'}
-              agentColor={agentColor}
-              onInsert={onInsertToEditor}
-              compact
-            />
+            <button
+              onClick={() => onInsertToEditor(message.content)}
+              className="mt-1 flex items-center gap-1 text-xs text-slate-400 hover:text-white px-2 py-1 rounded hover:bg-slate-700/60 transition-colors"
+              title="插入到文档"
+            >
+              <Copy size={11} />
+              <span>插入到文档</span>
+            </button>
           </div>
         )}
       </div>

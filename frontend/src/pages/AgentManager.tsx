@@ -1,11 +1,43 @@
 import { useEffect, useState } from 'react';
-import { Bot, Plus, Trash2, AlertTriangle, Pencil } from 'lucide-react';
+import { Bot, Plus, Trash2, AlertTriangle, Pencil, Cpu } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAgentStore } from '@/stores/agentStore';
 import { DEFAULT_AGENTS } from '@/data/defaultAgents';
 import { Agent } from '@/types';
 
-/** 颜色首字母头像 */
+/** 模型参数展示栏：只显示渠道（tokenProvider）和模型名（modelName） */
+function ModelParamBar({ agent }: { agent: Agent }) {
+  const channel = agent.tokenProvider;
+  const model   = agent.modelName;
+
+  if (!channel && !model) {
+    return (
+      <div className="am-model-bar" style={{ justifyContent: 'center', opacity: 0.55 }}>
+        <Cpu size={11} />
+        <span style={{ fontSize: 11, color: '#9ca3af' }}>未配置模型</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="am-model-bar">
+      <Cpu size={11} color="#6b7280" style={{ flexShrink: 0 }} />
+
+      {/* 渠道名 */}
+      {channel && (
+        <span className="am-model-channel" title={channel}>{channel}</span>
+      )}
+
+      {/* 分隔符 */}
+      {channel && model && <div className="am-model-sep" />}
+
+      {/* 模型名 */}
+      {model && (
+        <span className="am-model-name" title={model}>{model}</span>
+      )}
+    </div>
+  );
+}
 function AgentAvatar({ agent }: { agent: Agent }) {
   return (
     <div style={{
@@ -217,6 +249,28 @@ export function AgentManager() {
         .am-del-btn-confirm:hover:not(:disabled) { background: #b91c1c; }
         .am-del-btn-confirm:disabled { background: #fca5a5; cursor: not-allowed; }
 
+        /* ── 模型参数区 ── */
+        .am-model-bar {
+          display: flex; align-items: center; gap: 6px;
+          padding: 7px 10px;
+          background: #f8f9fb;
+          border: 1px solid #eff0f2;
+          border-radius: 8px;
+        }
+        .am-model-channel {
+          font-size: 11.5px; font-weight: 600; color: #374151;
+          white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+          max-width: 100px;
+        }
+        .am-model-name {
+          font-size: 11.5px; color: #6b7280;
+          white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+          flex: 1; min-width: 0;
+        }
+        .am-model-sep {
+          width: 1px; height: 12px; background: #e5e7eb; flex-shrink: 0;
+        }
+
         @media (max-width: 900px) {
           .am-grid { grid-template-columns: repeat(2, 1fr); }
         }
@@ -286,6 +340,9 @@ export function AgentManager() {
                       ))}
                     </div>
                   )}
+
+                  {/* ── 模型参数行 ── */}
+                  <ModelParamBar agent={agent} />
                 </div>
               ))}
               {/* 新建卡片 */}

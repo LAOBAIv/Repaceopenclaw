@@ -528,12 +528,16 @@ export function AgentConsole() {
     }
 
     /* ── 新建项目（原有逻辑）── */
-    // 生成项目 id，用于跳转时传入 workspace 识别为项目模式
-    const newProjectId = `proj_${Date.now()}`;
+    // 修复日期计算：用 Date 对象正确处理跨月
+    const dueDate30 = new Date(Date.now() + 30 * 86400000);
+    const dueMm = String(dueDate30.getMonth() + 1).padStart(2, '0');
+    const dueDd = String(dueDate30.getDate()).padStart(2, '0');
 
+    // 优先使用后端返回的真实 ID，避免 kanban 与后端 ID 不一致导致刷新后重复
+    let realProjectId = `proj_${Date.now()}`; // 后端不可用时的 fallback
     try {
-      // 写入后端 projects 表（含完整工作流数据）
-      await createProject({
+      // 写入后端 projects 表（含完整工作流数据），返回含真实 id 的 Project 对象
+      const created = await createProject({
         title: name,
         description: taskDesc.trim(),
         tags,
@@ -551,17 +555,15 @@ export function AgentConsole() {
           taskDesc: n.name,  // 节点名称即为任务目标
         })),
       });
+      // 使用后端真实 ID，防止刷新后 AgentKanban.useEffect 重新同步时出现重复项
+      realProjectId = created.id;
     } catch {
-      // 后端不可用时静默处理，继续添加到 kanban store
+      // 后端不可用时静默处理，继续添加到 kanban store（使用临时 ID）
     }
 
     // 同步到看板 kanban store（前端全局状态）
-    // 修复日期计算：用 Date 对象正确处理跨月
-    const dueDate30 = new Date(Date.now() + 30 * 86400000);
-    const dueMm = String(dueDate30.getMonth() + 1).padStart(2, '0');
-    const dueDd = String(dueDate30.getDate()).padStart(2, '0');
     addProject({
-      id: newProjectId,
+      id: realProjectId,
       title: name,
       description: taskDesc.trim(),
       tags,
@@ -580,11 +582,11 @@ export function AgentConsole() {
     }, 'progress');
 
     handleReset();
-    // 修复：传入 projectId 和 agentNames，确保 workspace 以项目模式打开，且智能体弹窗只显示参与的智能体
+    // 修复：传入后端真实 projectId 和 agentNames，确保 workspace 以项目模式打开
     navigate('/workspace', {
       state: {
         projectName: name,
-        projectId: newProjectId,
+        projectId: realProjectId,
         agentNames: allAgents.map(a => a.name),
       },
     });
