@@ -1,6 +1,7 @@
 import express from "express";
 import cors from "cors";
 import http from "http";
+import path from "path";
 import { initDb } from "./db/client";
 import agentRoutes from "./routes/agents";
 import projectRoutes from "./routes/projects";
@@ -51,6 +52,17 @@ async function main() {
   // GET  /v1/models
   // POST /v1/chat/completions
   app.use("/v1", openaiCompatRoutes);
+
+  // 静态文件服务 - 前端 dist 目录
+  const staticPath = path.join(__dirname, "../../frontend/dist");
+  app.use(express.static(staticPath));
+  
+  // 所有非 API 路由都指向 index.html
+  app.get("*", (req, res) => {
+    if (!req.path.startsWith("/api") && !req.path.startsWith("/v1") && !req.path.startsWith("/ws")) {
+      res.sendFile(path.join(staticPath, "index.html"));
+    }
+  });
 
   // Error handler
   app.use(errorHandler);
