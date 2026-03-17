@@ -64,9 +64,11 @@ function PreviewCodeView({
   // 如果还在流式输出中且尚未完成解析标记，或解析失败，退化为普通 Markdown
   if (!parsed || isStreaming) {
     return (
-      <ReactMarkdown remarkPlugins={[remarkGfm]} className={MARKDOWN_CLS}>
-        {content}
-      </ReactMarkdown>
+      <div className={MARKDOWN_CLS}>
+        <ReactMarkdown remarkPlugins={[remarkGfm]}>
+          {content}
+        </ReactMarkdown>
+      </div>
     );
   }
 
@@ -76,9 +78,11 @@ function PreviewCodeView({
     <div className="space-y-2">
       {/* 前言（如有） */}
       {rest && (
-        <ReactMarkdown remarkPlugins={[remarkGfm]} className={MARKDOWN_CLS}>
-          {rest}
-        </ReactMarkdown>
+        <div className={MARKDOWN_CLS}>
+          <ReactMarkdown remarkPlugins={[remarkGfm]}>
+            {rest}
+          </ReactMarkdown>
+        </div>
       )}
 
       {/* 预览区 */}
@@ -92,9 +96,11 @@ function PreviewCodeView({
             <span>预览效果</span>
           </div>
           <div className="px-3 py-2 bg-slate-800/60">
-            <ReactMarkdown remarkPlugins={[remarkGfm]} className={MARKDOWN_CLS}>
-              {preview}
-            </ReactMarkdown>
+            <div className={MARKDOWN_CLS}>
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                {preview}
+              </ReactMarkdown>
+            </div>
           </div>
         </div>
       )}
@@ -114,9 +120,11 @@ function PreviewCodeView({
           </button>
           {codeExpanded && (
             <div className="bg-slate-900/80 border-t border-slate-600/40">
-              <ReactMarkdown remarkPlugins={[remarkGfm]} className={MARKDOWN_CLS}>
-                {code}
-              </ReactMarkdown>
+              <div className={MARKDOWN_CLS}>
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                  {code}
+                </ReactMarkdown>
+              </div>
             </div>
           )}
         </div>
@@ -184,12 +192,11 @@ export function MessageBubble({
               agentColor={agentColor}
             />
           ) : (
-            <ReactMarkdown
-              remarkPlugins={[remarkGfm]}
-              className={MARKDOWN_CLS}
-            >
-              {message.content}
-            </ReactMarkdown>
+            <div className={MARKDOWN_CLS}>
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                {message.content}
+              </ReactMarkdown>
+            </div>
           )}
 
           {/* Streaming indicator */}
@@ -198,31 +205,22 @@ export function MessageBubble({
               {[0, 1, 2].map((i) => (
                 <span
                   key={i}
-                  className="w-1 h-1 bg-indigo-400 rounded-full animate-bounce"
-                  style={{ animationDelay: `${i * 0.15}s` }}
+                  className="w-1 h-1 bg-current rounded-full animate-bounce"
+                  style={{ animationDelay: `${i * 150}ms` }}
                 />
               ))}
             </span>
           )}
         </div>
 
-        {/* Timestamp */}
-        <span className="text-xs text-slate-600 mt-1 px-1">
-          {new Date(message.createdAt).toLocaleTimeString('zh-CN', {
-            hour: '2-digit',
-            minute: '2-digit',
-          })}
-        </span>
-
-        {/* Insert to editor button — only for completed agent messages */}
-        {!isUser && !isStreaming && onInsertToEditor && message.content.trim().length > 0 && (
-          <div className="px-1 w-full">
+        {/* 操作按钮（仅 AI 消息） */}
+        {!isUser && onInsertToEditor && (
+          <div className="flex items-center gap-2 mt-1.5">
             <button
               onClick={() => onInsertToEditor(message.content)}
-              className="mt-1 flex items-center gap-1 text-xs text-slate-400 hover:text-white px-2 py-1 rounded hover:bg-slate-700/60 transition-colors"
-              title="插入到文档"
+              className="flex items-center gap-1 text-xs text-slate-500 hover:text-indigo-400 transition-colors px-2 py-1 rounded hover:bg-slate-700/50"
             >
-              <Copy size={11} />
+              <Copy size={12} />
               <span>插入到文档</span>
             </button>
           </div>

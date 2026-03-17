@@ -98,4 +98,17 @@ export interface ConversationPanel {
 /** Alias for ConversationPanel — used in UI components */
 export type OpenPanel = ConversationPanel;
 
+// DocumentNode for project documents
+export interface DocumentNode {
+  id: string;
+  projectId: string;
+  parentId: string | null;
+  title: string;
+  content: string;
+  nodeOrder: number;
+  assignedAgentIds: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
 

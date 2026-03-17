@@ -77,7 +77,7 @@ const emptyForm = {
   modelName: '',
   baseUrl: '',
   apiKey: '',
-  authType: 'Bearer' as const,
+  authType: 'Bearer' as 'Bearer' | 'ApiKey' | 'Basic',
   enabled: true,
   priority: 0,
 };
