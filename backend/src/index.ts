@@ -13,6 +13,7 @@ import searchRoutes from "./routes/search";
 import exportImportRoutes from "./routes/exportImport";
 import skillRoutes from "./routes/skills";
 import pluginRoutes from "./routes/plugins";
+import doubaoRoutes from "./routes/doubao";
 import { errorHandler } from "./middleware/errorHandler";
 import { setupWebSocket } from "./ws/wsHandler";
 import authRoutes from "./routes/auth";
@@ -42,11 +43,11 @@ async function main() {
   app.use("/api/token-channels", tokenChannelRoutes);
   app.use("/api/bot-channels", botChannelRoutes);
   app.use("/api/search", searchRoutes);
-  // GET /api/export = full data export; POST /api/export or POST /api/import = data import
   app.use("/api/export", exportImportRoutes);
   app.use("/api/import", exportImportRoutes);
   app.use("/api/skills", skillRoutes);
   app.use("/api/plugins", pluginRoutes);
+  app.use("/api/doubao", doubaoRoutes);
 
   // OpenAI 兼容对外接口（供 OpenClaw / Claude Code / OpenCode 等工具接入）
   // GET  /v1/models
