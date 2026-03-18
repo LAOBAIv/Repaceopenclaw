@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { apiClient } from '../api/client';
-import { Plus, Trash2, TestTube2, CheckCircle2, XCircle, Loader2, ChevronDown, ChevronUp, Zap, Pencil } from 'lucide-react';
+import { Plus, Trash2, TestTube2, CheckCircle2, XCircle, Loader2, ChevronDown, ChevronUp, Zap, Pencil, Eye, EyeOff } from 'lucide-react';
 
 interface Channel {
   id: string;
@@ -95,6 +95,8 @@ export function ModelChannels() {
   const [saveMsg, setSaveMsg] = useState('');
   // 编辑模式：记录当前正在编辑的渠道 provider（null = 新增模式）
   const [editingProvider, setEditingProvider] = useState<string | null>(null);
+  // API Key 显示/隐藏状态
+  const [showApiKey, setShowApiKey] = useState(true);
 
   const fetchChannels = async () => {
     try {
@@ -361,10 +363,39 @@ export function ModelChannels() {
               onChange={v => setForm(f => ({ ...f, baseUrl: v }))}
               placeholder="https://ark.cn-beijing.volces.com/api/v3"
               colSpan />
-            <FormField label="API Key *" value={form.apiKey}
-              onChange={v => setForm(f => ({ ...f, apiKey: v }))}
-              placeholder="粘贴你的 API Key"
-              colSpan />
+
+            {/* API Key 带眼睛图标 */}
+            <div style={{ gridColumn: '1 / -1' }}>
+              <label style={labelStyle}>API Key *</label>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <input
+                  type={showApiKey ? 'text' : 'password'}
+                  value={form.apiKey}
+                  onChange={e => setForm(f => ({ ...f, apiKey: e.target.value }))}
+                  placeholder="粘贴你的 API Key"
+                  style={{ ...inputStyle, flex: 1 }}
+                  autoComplete="off"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowApiKey(v => !v)}
+                  title={showApiKey ? '隐藏' : '显示'}
+                  style={{
+                    padding: '8px 12px',
+                    background: '#f3f4f6',
+                    border: '1px solid #e5e7eb',
+                    borderRadius: 8,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: '#6b7280',
+                  }}
+                >
+                  {showApiKey ? <EyeOff size={16} /> : <Eye size={16} />}
+                </button>
+              </div>
+            </div>
 
             <div>
               <label style={labelStyle}>认证类型</label>

@@ -1241,9 +1241,6 @@ export function AgentCreate() {
                           spellCheck={false}
                         />
                         <div className="tk-token-actions">
-                          <button type="button" className="tk-icon-btn" onClick={() => setShowToken(v => !v)} title={showToken ? '隐藏' : '显示'}>
-                            {showToken ? <EyeOff size={14} /> : <Eye size={14} />}
-                          </button>
                           <button type="button" className="tk-icon-btn" onClick={() => { navigator.clipboard.writeText(tempTokenValue).catch(() => {}); }} title="复制">
                             <Copy size={14} />
                           </button>
