@@ -3275,16 +3275,67 @@ export function ProjectWorkspace() {
     const text = inputValue.trim();
     if (!text) return;
 
-    // 处理 /new 命令：清除当前对话，开启新会话
+    // 处理 /new 命令：自动创建新任务和新会话
     if (text === '/new') {
-      if (activePanel) {
-        // 关闭当前 panel
-        closePanel(activePanel.id);
-        setActivePanelId(null);
+      const defaultAgent = agents[0];
+      if (!defaultAgent) {
+        showToast('没有可用的智能体', 'error');
+        setInputValue('');
+        return;
       }
+
+      // 关闭当前 panel（如果有）
+      if (activePanel) {
+        closePanel(activePanel.id);
+      }
+
       // 创建新任务
-      setShowCreateModal(true);
+      const now = new Date();
+      const mm = String(now.getMonth() + 1).padStart(2, '0');
+      const dd = String(now.getDate()).padStart(2, '0');
+      const taskId = `task_${Date.now()}`;
+      const newTask = {
+        id: taskId,
+        title: '新对话',
+        description: '',
+        agent: defaultAgent.name,
+        agentColor: defaultAgent.color ?? '#6366f1',
+        agents: [{ name: defaultAgent.name, color: defaultAgent.color ?? '#6366f1' }],
+        priority: 'mid' as const,
+        tags: ['新对话'],
+        updatedAt: '刚刚',
+        dueDate: `${mm}/${String(Number(dd) + 7).padStart(2, '0')}`,
+        commentCount: 0,
+        fileCount: 0,
+        source: 'chat' as const,
+        isProject: false,
+        participantCount: 1,
+      };
+      addTask(newTask, 'progress');
+
+      // 创建新 Tab
+      const newTabId = createSessionTab('新对话');
+
+      // 创建新会话（forceNew: true 确保不继承历史）
+      await openPanel({
+        agentId: defaultAgent.id,
+        agentName: defaultAgent.name,
+        agentColor: defaultAgent.color,
+        tabId: newTabId,
+        forceNew: true,
+      });
+
+      // 获取新创建的 panel
+      const freshPanel = useConversationStore.getState().openPanels.find(
+        p => p.agentId === defaultAgent.id
+      );
+      if (freshPanel) {
+        setActivePanelId(freshPanel.id);
+        switchSessionTab(newTabId);
+      }
+
       setInputValue('');
+      showToast('新对话已创建', 'success');
       return;
     }
 
