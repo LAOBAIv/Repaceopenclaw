@@ -3289,29 +3289,9 @@ export function ProjectWorkspace() {
         closePanel(activePanel.id);
       }
 
-      // 创建新任务
-      const now = new Date();
-      const mm = String(now.getMonth() + 1).padStart(2, '0');
-      const dd = String(now.getDate()).padStart(2, '0');
-      const taskId = `task_${Date.now()}`;
-      const newTask = {
-        id: taskId,
-        title: '新对话',
-        description: '',
-        agent: defaultAgent.name,
-        agentColor: defaultAgent.color ?? '#6366f1',
-        agents: [{ name: defaultAgent.name, color: defaultAgent.color ?? '#6366f1' }],
-        priority: 'mid' as const,
-        tags: ['新对话'],
-        updatedAt: '刚刚',
-        dueDate: `${mm}/${String(Number(dd) + 7).padStart(2, '0')}`,
-        commentCount: 0,
-        fileCount: 0,
-        source: 'chat' as const,
-        isProject: false,
-        participantCount: 1,
-      };
-      addTask(newTask, 'progress');
+      // 生成基础数字ID（用于升级/降级时保持一致）
+      const baseNum = Date.now();
+      const taskId = `task_${baseNum}`;
 
       // 创建新 Tab
       const newTabId = createSessionTab('新对话');
@@ -3325,10 +3305,23 @@ export function ProjectWorkspace() {
         forceNew: true,
       });
 
-      // 获取新创建的 panel
+      // 获取新创建的 panel（即新的 sessionId/conversationId）
       const freshPanel = useConversationStore.getState().openPanels.find(
         p => p.agentId === defaultAgent.id
       );
+      const sessionId = freshPanel?.id;
+
+      // 创建新任务，绑定完整关联：taskId + sessionId + agentId + userId
+      addTaskFromChat({
+        title: '新对话',
+        agentName: defaultAgent.name,
+        agentColor: defaultAgent.color ?? '#6366f1',
+        panelId: sessionId,
+        sessionId,
+        agentId: defaultAgent.id,
+        taskId,
+      });
+
       if (freshPanel) {
         setActivePanelId(freshPanel.id);
         switchSessionTab(newTabId);
@@ -3374,8 +3367,7 @@ export function ProjectWorkspace() {
       }
     }
 
-    // 自动为对话建任务：task.id = panelId（conversationId），addTaskFromChat 内部幂等，
-    // 同一 conversationId 已存在则静默跳过，无需外部防重集合
+    // 自动为对话建任务，绑定完整关联：taskId + sessionId + agentId + userId
     if (panelId) {
       // 任务标题：优先用项目名（来自跳转上下文），其次用"与 AgentName 的对话"
       const ctxTitle = resolvedCtx.projectName
@@ -3384,11 +3376,16 @@ export function ProjectWorkspace() {
             return allTasks.find(t => t.id === resolvedCtx.taskId)?.title;
           })() : undefined);
       const taskTitle = ctxTitle || `与 ${agentName || '智能体'} 的对话`;
+      // 获取当前 panel 的 agentId
+      const currentPanel = openPanels.find(p => p.id === panelId);
       addTaskFromChat({
         title: taskTitle,
         agentName: agentName || '智能体',
         agentColor,
         panelId,
+        sessionId: panelId,
+        agentId: currentPanel?.agentId,
+        taskId: resolvedCtx.taskId ?? undefined,
       });
     }
 
@@ -3450,11 +3447,22 @@ export function ProjectWorkspace() {
           flex: 1; min-height: 0; background: #ffffff; overflow-y: auto;
         }
         /* ── 会话 Tab 栏 ── */
+        .session-tab-bar-wrapper {
+          display: flex; align-items: center; position: relative;
+          border-bottom: 1px solid #ebedf0; background: #f5f7fa; flex-shrink: 0;
+        }
+        .session-tab-scroll-btn {
+          display: flex; align-items: center; justify-content: center;
+          width: 24px; height: 100%; border: none; background: #f5f7fa;
+          cursor: pointer; color: #8c8f9a; font-size: 14px; flex-shrink: 0;
+          transition: color 0.15s, background 0.15s; z-index: 1;
+        }
+        .session-tab-scroll-btn:hover { color: #1890ff; background: #e6f4ff; }
+        .session-tab-scroll-btn.hidden { visibility: hidden; width: 0; padding: 0; }
         .session-tab-bar {
           display: flex; align-items: center; gap: 0;
-          padding: 0 16px; border-bottom: 1px solid #ebedf0;
-          background: #f5f7fa; flex-shrink: 0; overflow-x: auto;
-          scrollbar-width: none;
+          padding: 0 4px; flex: 1; overflow-x: auto;
+          scrollbar-width: none; scroll-behavior: smooth;
         }
         .session-tab-bar::-webkit-scrollbar { display: none; }
         .session-tab {
@@ -3832,68 +3840,88 @@ export function ProjectWorkspace() {
             </div>
           )}
 
-          {/* ══════════ 会话 Tab 栏 ══════════ */}
-          <div className="session-tab-bar">
-            {sessionTabs.map((tab) => {
-              const isActive = tab.id === activeTabId;
-              return (
-                <button
-                  key={tab.id}
-                  className={`session-tab${isActive ? ' active' : ''}`}
-                  onClick={() => {
-                    switchSessionTab(tab.id);
-                    if (tab.panelId) setActivePanelId(tab.panelId);
-                  }}
-                  title={tab.title}
-                >
-                  {/* 颜色圆点 */}
-                  {tab.color && (
-                    <span
-                      className="tab-dot"
-                      style={{
-                        background: tab.color,
-                        boxShadow: tab.isStreaming ? `0 0 0 2px ${tab.color}44` : 'none',
-                        animation: tab.isStreaming ? 'pulse 1.2s infinite' : 'none',
-                      }}
-                    />
-                  )}
-                  <span style={{ maxWidth: 100, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {tab.title}
-                  </span>
-                  {/* 关闭按钮（只有多于 1 个 Tab 时才显示） */}
-                  {sessionTabs.length > 1 && (
-                    <button
-                      className="tab-close"
-                      title="关闭会话"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        closeSessionTab(tab.id);
-                        if (tab.panelId) closePanel(tab.panelId);
-                        // 切换 activePanelId 到下一个 tab
-                        const remaining = sessionTabs.filter((t) => t.id !== tab.id);
-                        const nextTab = remaining[0];
-                        setActivePanelId(nextTab?.panelId ?? null);
-                      }}
-                    >
-                      ×
-                    </button>
-                  )}
-                </button>
-              );
-            })}
-            {/* 新建会话按钮 */}
+          {/* ══════════ 会话 Tab 栏（横向滚动） ══════════ */}
+          <div className="session-tab-bar-wrapper">
+            {/* 左滚动按钮 */}
             <button
-              className="session-tab-add"
-              title="新建会话"
+              className={`session-tab-scroll-btn${sessionTabs.length <= 3 ? ' hidden' : ''}`}
               onClick={() => {
-                // 新建 Tab，并从 openPanels 里挑一个未绑定的 panel，或等用户发消息时自动绑定
-                const tabId = createSessionTab();
-                // 如果当前有 openPanels，选择第一个未绑定的 panel（新会话中无 panel，等待用户选 agent）
-                setActivePanelId(null);
+                const bar = document.querySelector('.session-tab-bar');
+                if (bar) bar.scrollBy({ left: -150, behavior: 'smooth' });
               }}
-            >
-              +
-            </button>
+              title="向左滚动"
+            >‹</button>
+
+            <div className="session-tab-bar">
+              {sessionTabs.map((tab) => {
+                const isActive = tab.id === activeTabId;
+                return (
+                  <button
+                    key={tab.id}
+                    className={`session-tab${isActive ? ' active' : ''}`}
+                    onClick={() => {
+                      switchSessionTab(tab.id);
+                      if (tab.panelId) setActivePanelId(tab.panelId);
+                    }}
+                    title={tab.title}
+                  >
+                    {/* 颜色圆点 */}
+                    {tab.color && (
+                      <span
+                        className="tab-dot"
+                        style={{
+                          background: tab.color,
+                          boxShadow: tab.isStreaming ? `0 0 0 2px ${tab.color}44` : 'none',
+                          animation: tab.isStreaming ? 'pulse 1.2s infinite' : 'none',
+                        }}
+                      />
+                    )}
+                    <span style={{ maxWidth: 100, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {tab.title}
+                    </span>
+                    {/* 关闭按钮（只有多于 1 个 Tab 时才显示） */}
+                    {sessionTabs.length > 1 && (
+                      <button
+                        className="tab-close"
+                        title="关闭会话"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          closeSessionTab(tab.id);
+                          if (tab.panelId) closePanel(tab.panelId);
+                          // 切换 activePanelId 到下一个 tab
+                          const remaining = sessionTabs.filter((t) => t.id !== tab.id);
+                          const nextTab = remaining[0];
+                          setActivePanelId(nextTab?.panelId ?? null);
+                        }}
+                      >
+                        ×
+                      </button>
+                    )}
+                  </button>
+                );
+              })}
+              {/* 新建会话按钮 */}
+              <button
+                className="session-tab-add"
+                title="新建会话"
+                onClick={() => {
+                  const tabId = createSessionTab();
+                  setActivePanelId(null);
+                }}
+              >
+                +
+              </button>
+            </div>
+
+            {/* 右滚动按钮 */}
+            <button
+              className={`session-tab-scroll-btn${sessionTabs.length <= 3 ? ' hidden' : ''}`}
+              onClick={() => {
+                const bar = document.querySelector('.session-tab-bar');
+                if (bar) bar.scrollBy({ left: 150, behavior: 'smooth' });
+              }}
+              title="向右滚动"
+            >›</button>
           </div>
 
           {/* ══════════ 对话工作台 ══════════ */}

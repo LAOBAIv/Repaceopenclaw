@@ -19,7 +19,10 @@ export interface TaskAgent {
 
 /* ─── 类型 ─────────────────────────────────────────────────── */
 export interface Task {
+  /** 任务ID (格式: task_{timestamp} 或 proj_{timestamp}) */
   id: string;
+  /** 基础数字ID，用于项目/任务升级降级时保持一致 */
+  baseId?: string;
   title: string;
   description: string;
   /**
@@ -33,6 +36,8 @@ export interface Task {
    * 【规则】长度必须 >= 1，单任务至少包含 1 个智能体
    */
   agents: TaskAgent[];
+  /** 参与智能体的ID列表 */
+  agentIds?: string[];
   priority: 'high' | 'mid' | 'low';
   tags: string[];
   updatedAt: string;
@@ -43,8 +48,20 @@ export interface Task {
   source?: 'manual' | 'chat';
   /** 关联的对话 panel id（对话自动生成时记录）*/
   panelId?: string;
+  /** 关联的会话ID（当前活跃会话，即 conversationId）*/
+  sessionId?: string;
+  /** 关联的会话ID列表（支持多智能体会话）*/
+  sessionIds?: string[];
   /** 任务进度 0-100，仅进行中任务展示 */
   progress?: number;
+  /** 是否为项目（多智能体协作）*/
+  isProject?: boolean;
+  /** 项目ID（如果是项目）*/
+  projectId?: string;
+  /** 创建者用户ID */
+  userId?: string;
+  /** 参与者数量 */
+  participantCount?: number;
 }
 
 export type Column = 'progress' | 'done';
@@ -112,6 +129,14 @@ interface TaskState {
     agentName: string;
     agentColor: string;
     panelId?: string;
+    /** 新增：关联的会话ID */
+    sessionId?: string;
+    /** 新增：关联的智能体ID */
+    agentId?: string;
+    /** 新增：关联的用户ID */
+    userId?: string;
+    /** 新增：关联的任务ID（外部指定） */
+    taskId?: string;
   }) => Task;
 
   /** 移动任务到另一列 */
@@ -143,35 +168,68 @@ export const useTaskStore = create<TaskState>()(
     }));
   },
 
-  addTaskFromChat: ({ title, agentName, agentColor, panelId }) => {
+  addTaskFromChat: ({ title, agentName, agentColor, panelId, sessionId, agentId, userId, taskId: externalTaskId }) => {
     const now = new Date();
     const mm = String(now.getMonth() + 1).padStart(2, '0');
     const dd = String(now.getDate()).padStart(2, '0');
-    const taskId = panelId ?? `chat_${Date.now()}`;
+    // 优先使用外部指定的 taskId，其次用 panelId，最后生成新的
+    const taskId = externalTaskId ?? panelId ?? `chat_${Date.now()}`;
+    // 提取基础数字ID（用于升级/降级时保持一致）
+    const baseId = taskId.replace(/^(task_|proj_|chat_)/, '');
+    const resolvedSessionId = sessionId ?? panelId;
     const newTask: Task = {
-      // 直接用 conversationId（panelId）作为任务 id，保证任务与会话一对一绑定
-      // 同一 conversationId 不会创建两个 Task，天然防重
       id: taskId,
+      baseId,
       title: title.length > 40 ? title.slice(0, 40) + '...' : title,
       description: '',
       agent: agentName,
       agentColor,
-      /* 对话生成时自动将当前对话智能体加入 agents，满足 >=1 的规则 */
       agents: [{ name: agentName, color: agentColor }],
+      agentIds: agentId ? [agentId] : undefined,
       priority: 'mid',
-      tags: ['对话生成'],
+      // tag 绑定 taskId + sessionId
+      tags: [
+        '对话生成',
+        ...(resolvedSessionId ? [`sid:${resolvedSessionId.slice(0, 8)}`] : []),
+      ],
       updatedAt: '刚刚',
       dueDate: `${mm}/${String(Number(dd) + 7).padStart(2, '0')}`,
       commentCount: 0,
       fileCount: 0,
       source: 'chat',
       panelId,
+      sessionId: resolvedSessionId,
+      sessionIds: resolvedSessionId ? [resolvedSessionId] : [],
+      userId,
     };
     set(state => {
-      // 幂等插入：若同 conversationId 的任务已存在，直接跳过，不重复创建
-      const alreadyExists = state.tasks.progress.some(t => t.id === taskId)
-        || state.tasks.done.some(t => t.id === taskId);
-      if (alreadyExists) return state;
+      // 幂等插入：基于 baseId 去重（相同数字仅保留一条）
+      const alreadyExists = state.tasks.progress.some(t => (t.baseId ?? t.id) === baseId)
+        || state.tasks.done.some(t => (t.baseId ?? t.id) === baseId);
+      if (alreadyExists) {
+        // 已存在：更新 sessionId 和 tags
+        const cols: Column[] = ['progress', 'done'];
+        const newTasks = { ...state.tasks };
+        for (const col of cols) {
+          const idx = newTasks[col].findIndex(t => (t.baseId ?? t.id) === baseId);
+          if (idx !== -1) {
+            const existing = newTasks[col][idx];
+            const updatedSessionIds = resolvedSessionId
+              ? [...new Set([...(existing.sessionIds ?? []), resolvedSessionId])]
+              : existing.sessionIds;
+            newTasks[col] = [...newTasks[col]];
+            newTasks[col][idx] = {
+              ...existing,
+              sessionId: resolvedSessionId ?? existing.sessionId,
+              sessionIds: updatedSessionIds,
+              panelId: panelId ?? existing.panelId,
+              updatedAt: '刚刚',
+            };
+            break;
+          }
+        }
+        return { tasks: newTasks };
+      }
       return { tasks: { ...state.tasks, progress: [newTask, ...state.tasks.progress] } };
     });
     return newTask;
