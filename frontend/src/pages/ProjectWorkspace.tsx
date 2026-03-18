@@ -14,6 +14,12 @@ import { projectsApi } from '@/api/projects';
 /* ─── 功能标签列表 ─────────────────────────────────────────── */
 const FUNCTION_TABS = ['消息渠道', '飞书配对', '快捷指令', '技能', '定时任务', '智能体', '文件快传', '标签管理', '优先级'];
 
+/* ─── 新建项目/任务类型 ───────────────────────────────────── */
+interface CreateItemModalState {
+  open: boolean;
+  type: 'project' | 'task' | null;
+}
+
 
 
 
@@ -2753,15 +2759,21 @@ export function ProjectWorkspace() {
   const incomingAgentNames = resolvedCtx.agentNames;
 
   /* ── Store 接入 ─────────────────────────────────────────── */
-  const { currentProject, projects, fetchProjects } = useProjectStore();
+  const { currentProject, projects, fetchProjects, createProject } = useProjectStore();
   const {
     openPanels, openPanel, sendMessage, connect, closePanel, wsConnected, dismissBanner,
     sessionTabs, activeTabId, createSessionTab, switchSessionTab, closeSessionTab, bindPanelToTab,
   } = useConversationStore();
   const { agents, fetchAgents } = useAgentStore();
-  const { addTaskFromChat, tasks, updateTask } = useTaskStore();
+  const { addTaskFromChat, tasks, updateTask, addTask } = useTaskStore();
   const { projects: kanbanProjects, updateProject: updateKanbanProject, addProject: addKanbanProject } = useProjectKanbanStore();
 
+  /* ── 新建项目/任务弹窗状态 ───────────────────────────────── */
+  const [createModal, setCreateModal] = useState<CreateItemModalState>({ open: false, type: null });
+  const [newItemTitle, setNewItemTitle] = useState('');
+  const [newItemDesc, setNewItemDesc] = useState('');
+  const [newItemPriority, setNewItemPriority] = useState<ProjectPriority>('mid');
+  const [creating, setCreating] = useState(false);
   /* ── 本地状态 ────────────────────────────────────────────── */
   const [activeTab, setActiveTab] = useState<string | null>(null);
   const [showPriorityModal, setShowPriorityModal] = useState(false);
@@ -2903,6 +2915,8 @@ export function ProjectWorkspace() {
   const activePanel = (activePanelId ? openPanels.find(p => p.id === activePanelId) : null) ?? openPanels[0] ?? null;
 
   /* ── 动态数据：优先用跳转传入的项目名 > currentProject > 第一个项目 ── */
+  const [editingTitle, setEditingTitle] = useState(false);
+  const [editTitleValue, setEditTitleValue] = useState('');
   const taskName = incomingProjectName ?? currentProject?.title ?? (projects[0]?.title ?? 'WorkBuddy');
   const taskProgress = 68; // 真实进度字段后端暂无，保留占位
 
@@ -3095,6 +3109,149 @@ export function ProjectWorkspace() {
       // 已有项目记录则只更新 agents 列表
       updateKanbanProject(matchedKanbanProject.id, { agents: participantAgents, memberCount: participantAgents.length });
     }
+  }
+
+  /* ── 新建项目 ────────────────────────────────────────────── */
+  async function handleCreateProject() {
+    if (!newItemTitle.trim()) return;
+    setCreating(true);
+    try {
+      const project = await createProject({
+        title: newItemTitle.trim(),
+        description: newItemDesc.trim(),
+        tags: [],
+        priority: newItemPriority,
+        status: 'active',
+        goal: '',
+        startTime: new Date().toISOString(),
+        endTime: '',
+        decisionMaker: '',
+        workflowNodes: [],
+      });
+      
+      // 创建成功后打开项目会话
+      const defaultAgent = agents[0];
+      if (defaultAgent) {
+        const currentTabId = useConversationStore.getState().activeTabId;
+        await openPanel({
+          agentId: defaultAgent.id,
+          agentName: defaultAgent.name,
+          agentColor: defaultAgent.color,
+          projectId: project.id,
+          tabId: currentTabId ?? undefined,
+        });
+        const freshPanel = useConversationStore.getState().openPanels[0];
+        if (freshPanel) {
+          setActivePanelId(freshPanel.id);
+          // 发送初始消息
+          sendMessage(freshPanel.id, `开始新项目：${newItemTitle.trim()}\n\n${newItemDesc.trim() || '暂无描述'}`);
+        }
+      }
+      
+      // 关闭弹窗并清空
+      setCreateModal({ open: false, type: null });
+      setNewItemTitle('');
+      setNewItemDesc('');
+      setNewItemPriority('mid');
+      showToast('项目创建成功', 'success');
+    } catch {
+      showToast('项目创建失败', 'error');
+    } finally {
+      setCreating(false);
+    }
+  }
+
+  /* ── 新建任务 ────────────────────────────────────────────── */
+  async function handleCreateTask() {
+    if (!newItemTitle.trim()) return;
+    setCreating(true);
+    try {
+      const defaultAgent = agents[0];
+      if (!defaultAgent) {
+        showToast('请先创建智能体', 'warning');
+        setCreating(false);
+        return;
+      }
+
+      // 创建任务
+      const now = new Date();
+      const mm = String(now.getMonth() + 1).padStart(2, '0');
+      const dd = String(now.getDate()).padStart(2, '0');
+      const taskId = `task_${Date.now()}`;
+      
+      const newTask = {
+        id: taskId,
+        title: newItemTitle.trim(),
+        description: newItemDesc.trim(),
+        agent: defaultAgent.name,
+        agentColor: defaultAgent.color ?? '#6366f1',
+        agents: [{ name: defaultAgent.name, color: defaultAgent.color ?? '#6366f1' }],
+        priority: newItemPriority,
+        tags: ['手动创建'],
+        updatedAt: '刚刚',
+        dueDate: `${mm}/${String(Number(dd) + 7).padStart(2, '0')}`,
+        commentCount: 0,
+        fileCount: 0,
+        source: 'manual' as const,
+      };
+      
+      addTask(newTask, 'progress');
+      
+      // 创建任务会话
+      const currentTabId = useConversationStore.getState().activeTabId;
+      await openPanel({
+        agentId: defaultAgent.id,
+        agentName: defaultAgent.name,
+        agentColor: defaultAgent.color,
+        projectId: undefined,
+        tabId: currentTabId ?? undefined,
+      });
+      
+      const freshPanel = useConversationStore.getState().openPanels[0];
+      if (freshPanel) {
+        setActivePanelId(freshPanel.id);
+        // 发送初始消息
+        sendMessage(freshPanel.id, `开始新任务：${newItemTitle.trim()}\n\n${newItemDesc.trim() || '暂无描述'}`);
+      }
+      
+      // 关闭弹窗并清空
+      setCreateModal({ open: false, type: null });
+      setNewItemTitle('');
+      setNewItemDesc('');
+      setNewItemPriority('mid');
+      showToast('任务创建成功', 'success');
+    } catch {
+      showToast('任务创建失败', 'error');
+    } finally {
+      setCreating(false);
+    }
+  }
+    setEditTitleValue(taskName);
+    setEditingTitle(true);
+  }
+
+  function saveTitle() {
+    const trimmed = editTitleValue.trim();
+    if (!trimmed || trimmed === taskName) {
+      setEditingTitle(false);
+      return;
+    }
+    
+    // 更新任务/项目标题
+    if (matchedTask) {
+      // 任务模式：更新 taskStore
+      updateTask(matchedTask.id, { title: trimmed });
+    } else if (matchedKanbanProject) {
+      // 项目模式：更新 kanbanStore
+      updateKanbanProject(matchedKanbanProject.id, { title: trimmed });
+      // 同时更新后端项目名称
+      if (backendProjectId) {
+        projectsApi.update(backendProjectId, { title: trimmed }).catch(() => {
+          // 后端更新失败时静默处理
+        });
+      }
+    }
+    setEditingTitle(false);
   }
 
   /* ── 移出协作（不降级，仅减少参与智能体）─────────────────── */
@@ -3473,7 +3630,55 @@ export function ProjectWorkspace() {
               )}
               {isProjectMode ? '项目' : '任务'}
             </span>
-            <span className="brand-name">{taskName}</span>
+            <span className="brand-name" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              {editingTitle ? (
+                <input
+                  autoFocus
+                  value={editTitleValue}
+                  onChange={e => setEditTitleValue(e.target.value)}
+                  onBlur={saveTitle}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') saveTitle();
+                    if (e.key === 'Escape') setEditingTitle(false);
+                  }}
+                  style={{
+                    fontSize: 20, fontWeight: 700, color: '#1a202c',
+                    border: '1.5px solid #3b82f6', borderRadius: 6,
+                    padding: '4px 10px', outline: 'none',
+                    fontFamily: '"Microsoft YaHei","Segoe UI",sans-serif',
+                    width: Math.max(200, editTitleValue.length * 14),
+                  }}
+                />
+              ) : (
+                <>
+                  <span>{taskName}</span>
+                  <button
+                    onClick={startEditTitle}
+                    title="编辑标题"
+                    style={{
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      width: 24, height: 24, borderRadius: 5,
+                      border: '1px solid transparent',
+                      background: 'transparent', cursor: 'pointer',
+                      color: '#9ca3af', transition: 'all 0.15s',
+                    }}
+                    onMouseEnter={e => {
+                      e.currentTarget.style.background = '#f3f4f6';
+                      e.currentTarget.style.color = '#374151';
+                    }}
+                    onMouseLeave={e => {
+                      e.currentTarget.style.background = 'transparent';
+                      e.currentTarget.style.color = '#9ca3af';
+                    }}
+                  >
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                      <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                    </svg>
+                  </button>
+                </>
+              )}
+            </span>
             <span
               className="status-badge"
               style={{
@@ -3490,6 +3695,73 @@ export function ProjectWorkspace() {
               }} />
               {STATUS_CONFIG[appStatus].label}
             </span>
+
+            {/* 分隔线 */}
+            <div style={{ width: 1, height: 20, background: '#e5e7eb', margin: '0 4px' }} />
+
+            {/* 新建项目按钮 */}
+            <button
+              onClick={() => setCreateModal({ open: true, type: 'project' })}
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 4,
+                padding: '4px 10px', borderRadius: 6,
+                border: '1px solid #c4b5fd',
+                background: '#ede9fe',
+                color: '#7c3aed',
+                fontSize: 12, fontWeight: 600,
+                cursor: 'pointer',
+                fontFamily: '"Microsoft YaHei","Segoe UI",sans-serif',
+                transition: 'all 0.15s',
+              }}
+              onMouseEnter={e => {
+                e.currentTarget.style.background = '#ddd6fe';
+                e.currentTarget.style.borderColor = '#a78bfa';
+              }}
+              onMouseLeave={e => {
+                e.currentTarget.style.background = '#ede9fe';
+                e.currentTarget.style.borderColor = '#c4b5fd';
+              }}
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="2" y="7" width="20" height="14" rx="2"/>
+                <path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/>
+                <line x1="12" y1="12" x2="12" y2="16"/>
+                <line x1="9" y1="14" x2="15" y2="14"/>
+              </svg>
+              新建项目
+            </button>
+
+            {/* 新建任务按钮 */}
+            <button
+              onClick={() => setCreateModal({ open: true, type: 'task' })}
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 4,
+                padding: '4px 10px', borderRadius: 6,
+                border: '1px solid #bae6fd',
+                background: '#e0f2fe',
+                color: '#0369a1',
+                fontSize: 12, fontWeight: 600,
+                cursor: 'pointer',
+                fontFamily: '"Microsoft YaHei","Segoe UI",sans-serif',
+                transition: 'all 0.15s',
+              }}
+              onMouseEnter={e => {
+                e.currentTarget.style.background = '#bae6fd';
+                e.currentTarget.style.borderColor = '#7dd3fc';
+              }}
+              onMouseLeave={e => {
+                e.currentTarget.style.background = '#e0f2fe';
+                e.currentTarget.style.borderColor = '#bae6fd';
+              }}
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M9 11l3 3L22 4"/>
+                <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
+                <line x1="12" y1="12" x2="12" y2="16"/>
+                <line x1="9" y1="14" x2="15" y2="14"/>
+              </svg>
+              新建任务
+            </button>
           </div>
 
           {/* 1b. 优先级标签 + 项目标签 + 参与项目的AI智能体 */}
@@ -3929,6 +4201,291 @@ export function ProjectWorkspace() {
 
       {showChannelModal && (
         <ChannelConfigModal onClose={() => setShowChannelModal(false)} />
+      )}
+
+      {/* 新建项目/任务弹窗 */}
+      {createModal.open && (
+        <div
+          onClick={() => setCreateModal({ open: false, type: null })}
+          style={{
+            position: 'fixed', inset: 0,
+            background: 'rgba(0,0,0,0.4)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            zIndex: 1000,
+            backdropFilter: 'blur(3px)',
+            WebkitBackdropFilter: 'blur(3px)',
+            overflowY: 'auto',
+          }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{
+              background: '#fff',
+              borderRadius: 12,
+              boxShadow: '0 24px 64px rgba(0,0,0,0.18), 0 4px 16px rgba(0,0,0,0.08)',
+              width: 480,
+              maxWidth: 'calc(100vw - 32px)',
+              fontFamily: '"Microsoft YaHei","Segoe UI",sans-serif',
+              animation: 'createModalIn 0.2s cubic-bezier(0.34,1.4,0.64,1)',
+              overflow: 'hidden',
+              position: 'relative',
+              marginBottom: 32,
+            }}
+          >
+            {/* 头部 */}
+            <div style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              padding: '22px 28px 18px',
+              borderBottom: '1px solid #f0f0f0',
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <div style={{
+                  width: 38, height: 38, borderRadius: 10,
+                  background: createModal.type === 'project' 
+                    ? 'linear-gradient(135deg,#8b5cf6,#6366f1)' 
+                    : 'linear-gradient(135deg,#3b82f6,#06b6d4)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  flexShrink: 0,
+                }}>
+                  {createModal.type === 'project' ? (
+                    <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="1.8">
+                      <rect x="2" y="7" width="20" height="14" rx="2"/>
+                      <path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/>
+                    </svg>
+                  ) : (
+                    <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="1.8">
+                      <path d="M9 11l3 3L22 4"/>
+                      <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
+                    </svg>
+                  )}
+                </div>
+                <div>
+                  <div style={{ fontSize: 16, fontWeight: 700, color: '#1a202c', lineHeight: 1.3 }}>
+                    新建{createModal.type === 'project' ? '项目' : '任务'}
+                  </div>
+                  <div style={{ fontSize: 12, color: '#666', marginTop: 3, lineHeight: 1.4 }}>
+                    创建后自动开启会话
+                  </div>
+                </div>
+              </div>
+              <button
+                onClick={() => setCreateModal({ open: false, type: null })}
+                style={{
+                  width: 30, height: 30, borderRadius: 8,
+                  border: 'none', background: '#f3f4f6', cursor: 'pointer',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  color: '#9ca3af', fontSize: 18, lineHeight: 1,
+                  transition: 'background 0.15s, color 0.15s',
+                  flexShrink: 0,
+                }}
+                onMouseEnter={e => { e.currentTarget.style.background = '#e5e7eb'; e.currentTarget.style.color = '#374151'; }}
+                onMouseLeave={e => { e.currentTarget.style.background = '#f3f4f6'; e.currentTarget.style.color = '#9ca3af'; }}
+              >×</button>
+            </div>
+
+            {/* 表单内容 */}
+            <div style={{ padding: '24px 28px' }}>
+              {/* 标题 */}
+              <div style={{ marginBottom: 16 }}>
+                <label style={{
+                  display: 'flex', alignItems: 'center', gap: 2,
+                  fontSize: 13, fontWeight: 600, color: '#374151', marginBottom: 7,
+                }}>
+                  标题<span style={{ color: '#ef4444', fontSize: 13, lineHeight: 1, marginLeft: 2 }}>*</span>
+                </label>
+                <input
+                  value={newItemTitle}
+                  onChange={e => setNewItemTitle(e.target.value)}
+                  placeholder={`请输入${createModal.type === 'project' ? '项目' : '任务'}标题`}
+                  style={{
+                    width: '100%', height: 44, padding: '0 16px',
+                    border: '1.5px solid #e5e7eb',
+                    borderRadius: 8, fontSize: 13, outline: 'none',
+                    background: '#fff', color: '#1a202c',
+                    fontFamily: '"Microsoft YaHei","Segoe UI",sans-serif',
+                    boxSizing: 'border-box',
+                    transition: 'border-color 0.15s, box-shadow 0.15s',
+                  }}
+                  onFocus={e => {
+                    e.currentTarget.style.borderColor = '#3b82f6';
+                    e.currentTarget.style.boxShadow = '0 0 0 3px rgba(59,130,246,0.12)';
+                  }}
+                  onBlur={e => {
+                    e.currentTarget.style.borderColor = '#e5e7eb';
+                    e.currentTarget.style.boxShadow = 'none';
+                  }}
+                />
+              </div>
+
+              {/* 描述 */}
+              <div style={{ marginBottom: 16 }}>
+                <label style={{
+                  fontSize: 13, fontWeight: 600, color: '#374151', marginBottom: 7,
+                  display: 'block',
+                }}>
+                  描述
+                </label>
+                <textarea
+                  value={newItemDesc}
+                  onChange={e => setNewItemDesc(e.target.value)}
+                  placeholder={`请输入${createModal.type === 'project' ? '项目' : '任务'}描述（可选）`}
+                  style={{
+                    width: '100%', height: 80, padding: '10px 16px',
+                    border: '1.5px solid #e5e7eb',
+                    borderRadius: 8, fontSize: 13, outline: 'none',
+                    background: '#fff', color: '#1a202c',
+                    fontFamily: '"Microsoft YaHei","Segoe UI",sans-serif',
+                    boxSizing: 'border-box',
+                    resize: 'none',
+                    transition: 'border-color 0.15s, box-shadow 0.15s',
+                  }}
+                  onFocus={e => {
+                    e.currentTarget.style.borderColor = '#3b82f6';
+                    e.currentTarget.style.boxShadow = '0 0 0 3px rgba(59,130,246,0.12)';
+                  }}
+                  onBlur={e => {
+                    e.currentTarget.style.borderColor = '#e5e7eb';
+                    e.currentTarget.style.boxShadow = 'none';
+                  }}
+                />
+              </div>
+
+              {/* 优先级 */}
+              <div style={{ marginBottom: 8 }}>
+                <label style={{
+                  fontSize: 13, fontWeight: 600, color: '#374151', marginBottom: 7,
+                  display: 'block',
+                }}>
+                  优先级
+                </label>
+                <div style={{ display: 'flex', gap: 10 }}>
+                  {PRIORITY_OPTIONS.map(opt => {
+                    const isActive = newItemPriority === opt.value;
+                    return (
+                      <button
+                        key={opt.value}
+                        onClick={() => setNewItemPriority(opt.value)}
+                        style={{
+                          flex: 1, padding: '9px 0', borderRadius: 8, border: '1.5px solid',
+                          borderColor: isActive ? opt.color : '#e5e7eb',
+                          background: isActive ? opt.bg : '#fff',
+                          color: isActive ? opt.color : '#9ca3af',
+                          fontSize: 13, fontWeight: isActive ? 700 : 400,
+                          cursor: 'pointer', transition: 'all 0.15s',
+                          fontFamily: '"Microsoft YaHei","Segoe UI",sans-serif',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                        }}
+                        onMouseEnter={e => {
+                          if (!isActive) {
+                            e.currentTarget.style.borderColor = opt.color;
+                            e.currentTarget.style.background = opt.bg;
+                            e.currentTarget.style.color = opt.color;
+                          }
+                        }}
+                        onMouseLeave={e => {
+                          if (!isActive) {
+                            e.currentTarget.style.borderColor = '#e5e7eb';
+                            e.currentTarget.style.background = '#fff';
+                            e.currentTarget.style.color = '#9ca3af';
+                          }
+                        }}
+                      >
+                        {isActive && (
+                          <svg width="11" height="11" viewBox="0 0 11 11" fill="none">
+                            <path d="M1.5 5.5L4 8L9.5 3" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+                          </svg>
+                        )}
+                        {opt.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+
+            {/* 底部按钮 */}
+            <div style={{
+              display: 'flex', gap: 10, justifyContent: 'flex-end', alignItems: 'center',
+              padding: '16px 28px 24px',
+              borderTop: '1px solid #f0f0f0',
+            }}>
+              <button
+                onClick={() => setCreateModal({ open: false, type: null })}
+                style={{
+                  height: 40, padding: '0 24px', fontSize: 14, borderRadius: 8,
+                  border: '1.5px solid #e5e7eb', background: '#fff', cursor: 'pointer',
+                  color: '#6b7280', fontWeight: 500,
+                  fontFamily: '"Microsoft YaHei","Segoe UI",sans-serif',
+                  transition: 'border-color 0.15s, color 0.15s, background 0.15s',
+                  display: 'inline-flex', alignItems: 'center',
+                }}
+                onMouseEnter={e => {
+                  e.currentTarget.style.borderColor = '#9ca3af';
+                  e.currentTarget.style.color = '#374151';
+                }}
+                onMouseLeave={e => {
+                  e.currentTarget.style.borderColor = '#e5e7eb';
+                  e.currentTarget.style.color = '#6b7280';
+                }}
+              >取消</button>
+
+              <button
+                onClick={createModal.type === 'project' ? handleCreateProject : handleCreateTask}
+                disabled={!newItemTitle.trim() || creating}
+                style={{
+                  height: 40, padding: '0 28px', fontSize: 14, borderRadius: 8,
+                  border: 'none',
+                  background: createModal.type === 'project' ? '#6366f1' : '#3b82f6',
+                  cursor: (!newItemTitle.trim() || creating) ? 'not-allowed' : 'pointer', 
+                  color: '#fff', fontWeight: 600,
+                  fontFamily: '"Microsoft YaHei","Segoe UI",sans-serif',
+                  opacity: (!newItemTitle.trim() || creating) ? 0.6 : 1,
+                  transition: 'background 0.15s, box-shadow 0.15s',
+                  boxShadow: createModal.type === 'project' 
+                    ? '0 2px 8px rgba(99,102,241,0.25)' 
+                    : '0 2px 8px rgba(59,130,246,0.25)',
+                  display: 'inline-flex', alignItems: 'center', gap: 6,
+                }}
+                onMouseEnter={e => {
+                  if (newItemTitle.trim() && !creating) {
+                    e.currentTarget.style.background = createModal.type === 'project' ? '#4f46e5' : '#2563eb';
+                    e.currentTarget.style.boxShadow = createModal.type === 'project'
+                      ? '0 4px 12px rgba(79,70,229,0.35)'
+                      : '0 4px 12px rgba(37,99,235,0.35)';
+                  }
+                }}
+                onMouseLeave={e => {
+                  e.currentTarget.style.background = createModal.type === 'project' ? '#6366f1' : '#3b82f6';
+                  e.currentTarget.style.boxShadow = createModal.type === 'project'
+                    ? '0 2px 8px rgba(99,102,241,0.25)'
+                    : '0 2px 8px rgba(59,130,246,0.25)';
+                }}
+              >
+                {creating ? (
+                  <>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <circle cx="12" cy="12" r="10" strokeDasharray="60" strokeDashoffset="20" style={{ animation: 'spin 1s linear infinite' }}/>
+                    </svg>
+                    创建中...
+                  </>
+                ) : (
+                  <>创建{createModal.type === '项目' ? '项目' : '任务'}</>
+                )}
+              </button>
+            </div>
+
+            <style>{`
+              @keyframes createModalIn {
+                from { opacity: 0; transform: scale(0.9) translateY(16px); }
+                to   { opacity: 1; transform: scale(1) translateY(0); }
+              }
+              @keyframes spin {
+                from { transform: rotate(0deg); }
+                to { transform: rotate(360deg); }
+              }
+            `}</style>
+          </div>
+        </div>
       )}
     </>
   );
