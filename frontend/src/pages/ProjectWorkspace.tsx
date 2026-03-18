@@ -15,12 +15,6 @@ import { CreateItemModal } from '@/components/CreateItemModal';
 /* ─── 功能标签列表 ─────────────────────────────────────────── */
 const FUNCTION_TABS = ['消息渠道', '飞书配对', '快捷指令', '技能', '定时任务', '智能体', '文件快传', '标签管理', '优先级'];
 
-/* ─── 新建项目/任务类型 ───────────────────────────────────── */
-interface CreateItemModalState {
-  open: boolean;
-  type: 'project' | 'task' | null;
-}
-
 
 
 
