@@ -623,10 +623,14 @@ export function AgentCreate() {
       frequencyPenalty: Number(customFreqPenalty) ?? tempModel.frequencyPenalty,
       presencePenalty:  Number(customPresPenalty) ?? tempModel.presencePenalty,
     });
-    // 切换渠道后，从缓存自动回填对应渠道的 Token
+    // 切换渠道后，从缓存自动回填对应渠道的 Token（仅当当前 tokenValue 为空时）
     const cached = loadTokenCache(tempChannel.id);
-    setTokenValue(cached?.apiKey   ?? '');
-    setCustomBaseUrl(cached?.baseUrl ?? '');
+    if (!tokenValue.trim()) {
+      setTokenValue(cached?.apiKey   ?? '');
+    }
+    if (!customBaseUrl.trim()) {
+      setCustomBaseUrl(cached?.baseUrl ?? '');
+    }
     setCodeModelOpen(false);
   }
 
