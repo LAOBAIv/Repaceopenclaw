@@ -51,6 +51,7 @@ interface ConversationStore {
    * 打开会话面板
    * - agentIds 传多个时，创建多智能体会话
    * - agentId（单个）向下兼容
+   * - 返回创建的 panelId
    */
   openPanel: (opts: {
     agentId: string;
@@ -63,7 +64,7 @@ interface ConversationStore {
     tabId?: string;
     /** 强制创建新会话，不复用已有会话 */
     forceNew?: boolean;
-  }) => Promise<void>;
+  }) => Promise<string | void>;
   /** Close a panel by panelId */
   closePanel: (panelId: string) => void;
   /** @deprecated use openPanel */
@@ -195,7 +196,7 @@ export const useConversationStore = create<ConversationStore>((set, get) => ({
   },
 
   addPanel: async (agentId, agentName, agentColor, projectId) => {
-    return get().openPanel({ agentId, agentName, agentColor, projectId });
+    await get().openPanel({ agentId, agentName, agentColor, projectId });
   },
 
   openPanel: async ({ agentId, agentIds, agentName, agentColor, projectId, initialMessage, tabId, forceNew }) => {
@@ -271,6 +272,8 @@ export const useConversationStore = create<ConversationStore>((set, get) => ({
       if (tabId) {
         get().bindPanelToTab(tabId, conv.id, agentName, agentColor);
       }
+      // 返回创建的 panelId
+      return conv.id;
     } catch {
       // API not available, add a local panel
       const localId = `local-${Date.now()}`;
@@ -290,6 +293,8 @@ export const useConversationStore = create<ConversationStore>((set, get) => ({
       if (tabId) {
         get().bindPanelToTab(tabId, localId, agentName, agentColor);
       }
+      // 返回创建的 panelId
+      return localId;
     }
   },
 
