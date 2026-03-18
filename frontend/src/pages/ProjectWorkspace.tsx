@@ -3286,7 +3286,7 @@ export function ProjectWorkspace() {
       agentName = activePanel.agentName;
       agentColor = activePanel.agentColor ?? '#9ca3af';
     } else {
-      // 没有 panel：用第一个可用智能体自动开启一个会话
+      // 没有 panel：用第一个可用智能体自动开启一个新会话（forceNew: true 确保不继承历史）
       const defaultAgent = agents[0];
       if (defaultAgent) {
         // 取当前激活 Tab id（若有），在新建 panel 后自动绑定
@@ -3297,6 +3297,7 @@ export function ProjectWorkspace() {
           agentColor: defaultAgent.color,
           projectId: currentProject?.id,
           tabId: currentTabId ?? undefined,
+          forceNew: true, // 强制创建新会话，不复用已有会话
         });
         const freshPanel = useConversationStore.getState().openPanels[0];
         if (freshPanel) {
