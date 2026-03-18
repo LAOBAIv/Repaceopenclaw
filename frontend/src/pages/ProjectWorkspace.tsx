@@ -10,7 +10,7 @@ import { useTaskStore } from '@/stores/taskStore';
 import { useProjectKanbanStore, type ProjectPriority } from '@/stores/projectKanbanStore';
 import { showToast } from '@/components/Toast';
 import { projectsApi } from '@/api/projects';
-import { CreateItemModal } from '@/components/CreateItemModal';
+import { CreateTaskModal } from '@/components/CreateTaskModal';
 
 /* ─── 功能标签列表 ─────────────────────────────────────────── */
 const FUNCTION_TABS = ['消息渠道', '飞书配对', '快捷指令', '技能', '定时任务', '智能体', '文件快传', '标签管理', '优先级'];
@@ -2763,8 +2763,8 @@ export function ProjectWorkspace() {
   const { addTaskFromChat, tasks, updateTask, addTask } = useTaskStore();
   const { projects: kanbanProjects, updateProject: updateKanbanProject, addProject: addKanbanProject } = useProjectKanbanStore();
 
-  /* ── 新建项目/任务弹窗状态 ───────────────────────────────── */
-  const [createModal, setCreateModal] = useState<{ open: boolean; type: 'project' | 'task' | null }>({ open: false, type: null });
+  /* ── 新建任务弹窗状态 ───────────────────────────────── */
+  const [showCreateModal, setShowCreateModal] = useState(false);
   /* ── 本地状态 ────────────────────────────────────────────── */
   const [activeTab, setActiveTab] = useState<string | null>(null);
   const [showPriorityModal, setShowPriorityModal] = useState(false);
@@ -3574,44 +3574,9 @@ export function ProjectWorkspace() {
               {STATUS_CONFIG[appStatus].label}
             </span>
 
-            {/* 分隔线 */}
-            <div style={{ width: 1, height: 20, background: '#e5e7eb', margin: '0 4px' }} />
-
-            {/* 新建项目按钮 */}
+            {/* 新建任务按钮（统一入口） */}
             <button
-              onClick={() => setCreateModal({ open: true, type: 'project' })}
-              style={{
-                display: 'inline-flex', alignItems: 'center', gap: 4,
-                padding: '4px 10px', borderRadius: 6,
-                border: '1px solid #c4b5fd',
-                background: '#ede9fe',
-                color: '#7c3aed',
-                fontSize: 12, fontWeight: 600,
-                cursor: 'pointer',
-                fontFamily: '"Microsoft YaHei","Segoe UI",sans-serif',
-                transition: 'all 0.15s',
-              }}
-              onMouseEnter={e => {
-                e.currentTarget.style.background = '#ddd6fe';
-                e.currentTarget.style.borderColor = '#a78bfa';
-              }}
-              onMouseLeave={e => {
-                e.currentTarget.style.background = '#ede9fe';
-                e.currentTarget.style.borderColor = '#c4b5fd';
-              }}
-            >
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                <rect x="2" y="7" width="20" height="14" rx="2"/>
-                <path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/>
-                <line x1="12" y1="12" x2="12" y2="16"/>
-                <line x1="9" y1="14" x2="15" y2="14"/>
-              </svg>
-              新建项目
-            </button>
-
-            {/* 新建任务按钮 */}
-            <button
-              onClick={() => setCreateModal({ open: true, type: 'task' })}
+              onClick={() => setShowCreateModal(true)}
               style={{
                 display: 'inline-flex', alignItems: 'center', gap: 4,
                 padding: '4px 10px', borderRadius: 6,
@@ -4081,11 +4046,10 @@ export function ProjectWorkspace() {
         <ChannelConfigModal onClose={() => setShowChannelModal(false)} />
       )}
 
-      {/* 新建项目/任务弹窗 */}
-      <CreateItemModal
-        open={createModal.open}
-        type={createModal.type}
-        onClose={() => setCreateModal({ open: false, type: null })}
+      {/* 新建任务弹窗 */}
+      <CreateTaskModal
+        open={showCreateModal}
+        onClose={() => setShowCreateModal(false)}
       />
     </>
   );
