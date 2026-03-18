@@ -363,7 +363,7 @@ export function ModelChannels() {
               colSpan />
             <FormField label="API Key *" value={form.apiKey}
               onChange={v => setForm(f => ({ ...f, apiKey: v }))}
-              placeholder="粘贴你的 API Key" type="password"
+              placeholder="粘贴你的 API Key"
               colSpan />
 
             <div>
