@@ -202,12 +202,17 @@ export const useConversationStore = create<ConversationStore>((set, get) => ({
     const { openPanels, maxPanels } = get();
     if (openPanels.length >= maxPanels) return;
 
-    // 若该 agent 的面板已经打开（且不是强制新建）
+    // 若该 agent 的面板已经打开
     const existingPanel = openPanels.find((p) => p.agentId === agentId);
-    if (existingPanel && !forceNew) {
-      // 若传入了 tabId，则把已有 panel 绑定到此 Tab（用于空 Tab 复用已有 panel 的场景）
-      if (tabId) get().bindPanelToTab(tabId, existingPanel.id, existingPanel.agentName, existingPanel.agentColor);
-      return;
+    if (existingPanel) {
+      if (forceNew) {
+        // 强制新建：关闭旧面板
+        get().closePanel(existingPanel.id);
+      } else {
+        // 复用已有面板
+        if (tabId) get().bindPanelToTab(tabId, existingPanel.id, existingPanel.agentName, existingPanel.agentColor);
+        return;
+      }
     }
 
     // 合并 agentIds（去重，确保主 agentId 在列表中）
