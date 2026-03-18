@@ -1,0 +1,5 @@
+{
+  "apiKey": "YOUR_VOLC_API_KEY",
+  "baseUrl": "https://ark.cn-beijing.volces.com/api/v3",
+  "model": "claude-3-5-sonnet-20241022"
+}
