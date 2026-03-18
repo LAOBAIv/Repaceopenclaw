@@ -3275,6 +3275,19 @@ export function ProjectWorkspace() {
     const text = inputValue.trim();
     if (!text) return;
 
+    // 处理 /new 命令：清除当前对话，开启新会话
+    if (text === '/new') {
+      if (activePanel) {
+        // 关闭当前 panel
+        closePanel(activePanel.id);
+        setActivePanelId(null);
+      }
+      // 创建新任务
+      setShowCreateModal(true);
+      setInputValue('');
+      return;
+    }
+
     let panelId: string | undefined;
     let agentName = '';
     let agentColor = '#9ca3af';
