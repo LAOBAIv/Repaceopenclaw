@@ -492,7 +492,7 @@ export function AgentCreate() {
   const [tempTokenValue, setTempTokenValue]   = useState('');
   const [customBaseUrl, setCustomBaseUrl]     = useState(() => loadTokenCache(CODE_CHANNELS[0].id)?.baseUrl ?? '');
   const [tempCustomUrl, setTempCustomUrl]     = useState('');
-  const [showToken, setShowToken]             = useState(false);
+  const [showToken, setShowToken]             = useState(true);
   const [copied, setCopied]                   = useState(false);
   // Token 弹窗中选择的模型（从当前渠道的 models 里选）
   const [tempTokenModel, setTempTokenModel]   = useState<CodeModel | null>(null);
