@@ -61,6 +61,8 @@ interface ConversationStore {
     initialMessage?: string;
     /** 绑定到指定 tabId（新建 Tab 时传入） */
     tabId?: string;
+    /** 强制创建新会话，不复用已有会话 */
+    forceNew?: boolean;
   }) => Promise<void>;
   /** Close a panel by panelId */
   closePanel: (panelId: string) => void;
@@ -196,13 +198,13 @@ export const useConversationStore = create<ConversationStore>((set, get) => ({
     return get().openPanel({ agentId, agentName, agentColor, projectId });
   },
 
-  openPanel: async ({ agentId, agentIds, agentName, agentColor, projectId, initialMessage, tabId }) => {
+  openPanel: async ({ agentId, agentIds, agentName, agentColor, projectId, initialMessage, tabId, forceNew }) => {
     const { openPanels, maxPanels } = get();
     if (openPanels.length >= maxPanels) return;
 
-    // 若该 agent 的面板已经打开
+    // 若该 agent 的面板已经打开（且不是强制新建）
     const existingPanel = openPanels.find((p) => p.agentId === agentId);
-    if (existingPanel) {
+    if (existingPanel && !forceNew) {
       // 若传入了 tabId，则把已有 panel 绑定到此 Tab（用于空 Tab 复用已有 panel 的场景）
       if (tabId) get().bindPanelToTab(tabId, existingPanel.id, existingPanel.agentName, existingPanel.agentColor);
       return;
@@ -214,19 +216,30 @@ export const useConversationStore = create<ConversationStore>((set, get) => ({
       : [agentId];
 
     try {
-      // ── 优先复用该 agent 的最新已有会话 ──
+      // ── 优先复用该 agent 的最新已有会话（除非强制新建） ──
       let conv: Conversation;
-      const existingList = await conversationsApi.list(projectId);
-      const existing = existingList.find((c) => c.agentId === agentId || c.agentIds.includes(agentId));
-      if (existing) {
-        conv = existing;
-        // 若新的参与者比已有会话多，逐个追加
-        for (const id of allAgentIds) {
-          if (!conv.agentIds.includes(id)) {
-            await conversationsApi.addAgent(conv.id, id);
+      if (!forceNew) {
+        const existingList = await conversationsApi.list(projectId);
+        const existing = existingList.find((c) => c.agentId === agentId || c.agentIds.includes(agentId));
+        if (existing) {
+          conv = existing;
+          // 若新的参与者比已有会话多，逐个追加
+          for (const id of allAgentIds) {
+            if (!conv.agentIds.includes(id)) {
+              await conversationsApi.addAgent(conv.id, id);
+            }
           }
+        } else {
+          conv = await conversationsApi.create({
+            agentIds: allAgentIds,
+            projectId,
+            title: allAgentIds.length > 1
+              ? `多智能体对话`
+              : `与 ${agentName} 的对话`,
+          });
         }
       } else {
+        // 强制创建新会话
         conv = await conversationsApi.create({
           agentIds: allAgentIds,
           projectId,
