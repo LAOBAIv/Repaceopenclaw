@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import { showToast } from '@/components/Toast';
-import { useProjectStore } from '@/stores/projectStore';
 import { useAgentStore } from '@/stores/agentStore';
 import { useTaskStore } from '@/stores/taskStore';
 import { useConversationStore } from '@/stores/conversationStore';
@@ -12,113 +11,103 @@ const PRIORITY_OPTIONS: { value: ProjectPriority; label: string; color: string; 
   { value: 'low',  label: '低优先级', color: '#22c55e', bg: '#f0fdf4' },
 ];
 
-interface CreateItemModalProps {
+interface CreateTaskModalProps {
   open: boolean;
-  type: 'project' | 'task' | null;
   onClose: () => void;
 }
 
-export function CreateItemModal({ open, type, onClose }: CreateItemModalProps) {
+export function CreateTaskModal({ open, onClose }: CreateTaskModalProps) {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [priority, setPriority] = useState<ProjectPriority>('mid');
+  const [selectedAgentIds, setSelectedAgentIds] = useState<string[]>([]);
   const [creating, setCreating] = useState(false);
 
-  const { createProject } = useProjectStore();
   const { agents } = useAgentStore();
   const { addTask } = useTaskStore();
   const { openPanel, sendMessage } = useConversationStore();
 
-  if (!open || !type) return null;
+  if (!open) return null;
 
-  async function handleCreateProject() {
-    if (!title.trim()) return;
-    setCreating(true);
-    try {
-      const project = await createProject({
-        title: title.trim(),
-        description: description.trim(),
-        tags: [],
-        priority,
-        status: 'active',
-        goal: '',
-        startTime: new Date().toISOString(),
-        endTime: '',
-        decisionMaker: '',
-        workflowNodes: [],
-      });
+  const isProject = selectedAgentIds.length >= 2;
 
-      const defaultAgent = agents[0];
-      if (defaultAgent) {
-        await openPanel({
-          agentId: defaultAgent.id,
-          agentName: defaultAgent.name,
-          agentColor: defaultAgent.color,
-          projectId: project.id,
-        });
-        const freshPanel = useConversationStore.getState().openPanels[0];
-        if (freshPanel) {
-          sendMessage(freshPanel.id, `开始新项目：${title.trim()}\n\n${description.trim() || '暂无描述'}`);
-        }
-      }
-
-      resetAndClose();
-      showToast('项目创建成功', 'success');
-    } catch {
-      showToast('项目创建失败', 'error');
-    } finally {
-      setCreating(false);
-    }
+  function toggleAgent(agentId: string) {
+    setSelectedAgentIds(prev => 
+      prev.includes(agentId) 
+        ? prev.filter(id => id !== agentId)
+        : [...prev, agentId]
+    );
   }
 
-  async function handleCreateTask() {
-    if (!title.trim()) return;
+  async function handleCreate() {
+    if (!title.trim()) {
+      showToast('请输入任务标题', 'warning');
+      return;
+    }
+    if (selectedAgentIds.length === 0) {
+      showToast('请选择至少一个智能体', 'warning');
+      return;
+    }
+
     setCreating(true);
     try {
-      const defaultAgent = agents[0];
-      if (!defaultAgent) {
-        showToast('请先创建智能体', 'warning');
-        setCreating(false);
-        return;
-      }
-
       const now = new Date();
       const mm = String(now.getMonth() + 1).padStart(2, '0');
       const dd = String(now.getDate()).padStart(2, '0');
 
+      const selectedAgents = agents.filter(a => selectedAgentIds.includes(a.id));
+      const mainAgent = selectedAgents[0];
+      
+      // 创建任务/项目
+      const taskId = isProject ? `proj_${Date.now()}` : `task_${Date.now()}`;
       const newTask = {
-        id: `task_${Date.now()}`,
+        id: taskId,
         title: title.trim(),
         description: description.trim(),
-        agent: defaultAgent.name,
-        agentColor: defaultAgent.color ?? '#6366f1',
-        agents: [{ name: defaultAgent.name, color: defaultAgent.color ?? '#6366f1' }],
+        agent: mainAgent.name,
+        agentColor: mainAgent.color ?? '#6366f1',
+        agents: selectedAgents.map(a => ({ name: a.name, color: a.color ?? '#6366f1' })),
         priority,
-        tags: ['手动创建'],
+        tags: isProject ? ['项目', '协作'] : ['任务'],
         updatedAt: '刚刚',
         dueDate: `${mm}/${String(Number(dd) + 7).padStart(2, '0')}`,
         commentCount: 0,
         fileCount: 0,
         source: 'manual' as const,
+        isProject, // 标记是否为项目
+        participantCount: selectedAgentIds.length,
       };
-
+      
       addTask(newTask, 'progress');
-
-      await openPanel({
-        agentId: defaultAgent.id,
-        agentName: defaultAgent.name,
-        agentColor: defaultAgent.color,
-      });
-
-      const freshPanel = useConversationStore.getState().openPanels[0];
-      if (freshPanel) {
-        sendMessage(freshPanel.id, `开始新任务：${title.trim()}\n\n${description.trim() || '暂无描述'}`);
+      
+      // 为每个选中的智能体创建会话
+      for (const agent of selectedAgents) {
+        await openPanel({
+          agentId: agent.id,
+          agentName: agent.name,
+          agentColor: agent.color,
+          projectId: isProject ? taskId : undefined,
+        });
       }
-
+      
+      // 发送初始消息到第一个智能体
+      const firstPanel = useConversationStore.getState().openPanels[0];
+      if (firstPanel) {
+        const typeLabel = isProject ? '项目' : '任务';
+        const participantInfo = isProject 
+          ? `\n参与智能体：${selectedAgents.map(a => a.name).join('、')}` 
+          : '';
+        sendMessage(
+          firstPanel.id, 
+          `开始新${typeLabel}：${title.trim()}${participantInfo}\n\n${description.trim() || '暂无描述'}`
+        );
+      }
+      
       resetAndClose();
-      showToast('任务创建成功', 'success');
+      const typeLabel = isProject ? '项目' : '任务';
+      showToast(`${typeLabel}创建成功`, 'success');
     } catch {
-      showToast('任务创建失败', 'error');
+      showToast('创建失败', 'error');
     } finally {
       setCreating(false);
     }
@@ -128,14 +117,9 @@ export function CreateItemModal({ open, type, onClose }: CreateItemModalProps) {
     setTitle('');
     setDescription('');
     setPriority('mid');
+    setSelectedAgentIds([]);
     onClose();
   }
-
-  const isProject = type === 'project';
-  const themeColor = isProject ? '#6366f1' : '#3b82f6';
-  const themeGradient = isProject 
-    ? 'linear-gradient(135deg,#8b5cf6,#6366f1)' 
-    : 'linear-gradient(135deg,#3b82f6,#06b6d4)';
 
   return (
     <div
@@ -156,7 +140,7 @@ export function CreateItemModal({ open, type, onClose }: CreateItemModalProps) {
           background: '#fff',
           borderRadius: 12,
           boxShadow: '0 24px 64px rgba(0,0,0,0.18), 0 4px 16px rgba(0,0,0,0.08)',
-          width: 480,
+          width: 520,
           maxWidth: 'calc(100vw - 32px)',
           fontFamily: '"Microsoft YaHei","Segoe UI",sans-serif',
           animation: 'createModalIn 0.2s cubic-bezier(0.34,1.4,0.64,1)',
@@ -174,7 +158,9 @@ export function CreateItemModal({ open, type, onClose }: CreateItemModalProps) {
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             <div style={{
               width: 38, height: 38, borderRadius: 10,
-              background: themeGradient,
+              background: isProject 
+                ? 'linear-gradient(135deg,#8b5cf6,#6366f1)' 
+                : 'linear-gradient(135deg,#3b82f6,#06b6d4)',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               flexShrink: 0,
             }}>
@@ -195,7 +181,9 @@ export function CreateItemModal({ open, type, onClose }: CreateItemModalProps) {
                 新建{isProject ? '项目' : '任务'}
               </div>
               <div style={{ fontSize: 12, color: '#666', marginTop: 3, lineHeight: 1.4 }}>
-                创建后自动开启会话
+                {isProject 
+                  ? `协作项目 · ${selectedAgentIds.length}个智能体参与` 
+                  : '单个任务 · 选择一个智能体'}
               </div>
             </div>
           </div>
@@ -227,7 +215,7 @@ export function CreateItemModal({ open, type, onClose }: CreateItemModalProps) {
             <input
               value={title}
               onChange={e => setTitle(e.target.value)}
-              placeholder={`请输入${isProject ? '项目' : '任务'}标题`}
+              placeholder="请输入任务标题"
               style={{
                 width: '100%', height: 44, padding: '0 16px',
                 border: '1.5px solid #e5e7eb',
@@ -259,9 +247,9 @@ export function CreateItemModal({ open, type, onClose }: CreateItemModalProps) {
             <textarea
               value={description}
               onChange={e => setDescription(e.target.value)}
-              placeholder={`请输入${isProject ? '项目' : '任务'}描述（可选）`}
+              placeholder="请输入任务描述（可选）"
               style={{
-                width: '100%', height: 80, padding: '10px 16px',
+                width: '100%', height: 60, padding: '10px 16px',
                 border: '1.5px solid #e5e7eb',
                 borderRadius: 8, fontSize: 13, outline: 'none',
                 background: '#fff', color: '#1a202c',
@@ -282,7 +270,7 @@ export function CreateItemModal({ open, type, onClose }: CreateItemModalProps) {
           </div>
 
           {/* Priority */}
-          <div style={{ marginBottom: 8 }}>
+          <div style={{ marginBottom: 16 }}>
             <label style={{
               fontSize: 13, fontWeight: 600, color: '#374151', marginBottom: 7,
               display: 'block',
@@ -332,6 +320,98 @@ export function CreateItemModal({ open, type, onClose }: CreateItemModalProps) {
               })}
             </div>
           </div>
+
+          {/* Agent Selection */}
+          <div style={{ marginBottom: 8 }}>
+            <label style={{
+              fontSize: 13, fontWeight: 600, color: '#374151', marginBottom: 7,
+              display: 'block',
+            }}>
+              选择智能体<span style={{ color: '#ef4444' }}>*</span>
+              <span style={{ fontSize: 11, color: '#9ca3af', fontWeight: 400, marginLeft: 6 }}>
+                选择2个及以上自动升级为项目
+              </span>
+            </label>
+            <div style={{ 
+              display: 'flex', 
+              flexWrap: 'wrap', 
+              gap: 8,
+              padding: '12px',
+              background: '#f9fafb',
+              borderRadius: 8,
+              border: '1.5px solid #e5e7eb',
+            }}>
+              {agents.map(agent => {
+                const isSelected = selectedAgentIds.includes(agent.id);
+                const ac = agent.color ?? '#6366f1';
+                return (
+                  <button
+                    key={agent.id}
+                    onClick={() => toggleAgent(agent.id)}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 6,
+                      padding: '6px 12px', borderRadius: 20,
+                      border: `1.5px solid ${isSelected ? ac : '#e5e7eb'}`,
+                      background: isSelected ? ac + '15' : '#fff',
+                      color: isSelected ? ac : '#6b7280',
+                      fontSize: 12, fontWeight: isSelected ? 600 : 400,
+                      cursor: 'pointer', transition: 'all 0.15s',
+                      fontFamily: '"Microsoft YaHei","Segoe UI",sans-serif',
+                    }}
+                    onMouseEnter={e => {
+                      if (!isSelected) {
+                        e.currentTarget.style.borderColor = ac;
+                        e.currentTarget.style.color = ac;
+                      }
+                    }}
+                    onMouseLeave={e => {
+                      if (!isSelected) {
+                        e.currentTarget.style.borderColor = '#e5e7eb';
+                        e.currentTarget.style.color = '#6b7280';
+                      }
+                    }}
+                  >
+                    <div style={{
+                      width: 18, height: 18, borderRadius: '50%',
+                      background: ac, display: 'flex', alignItems: 'center',
+                      justifyContent: 'center', fontSize: 9, color: '#fff', fontWeight: 700,
+                    }}>
+                      {agent.name.charAt(0)}
+                    </div>
+                    {agent.name}
+                    {isSelected && (
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                        <polyline points="20 6 9 17 4 12"/>
+                      </svg>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+            {selectedAgentIds.length > 0 && (
+              <div style={{ 
+                marginTop: 8, 
+                fontSize: 12, 
+                color: isProject ? '#7c3aed' : '#0369a1',
+                fontWeight: 500,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+              }}>
+                <span style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 4,
+                  padding: '2px 8px',
+                  borderRadius: 4,
+                  background: isProject ? '#ede9fe' : '#e0f2fe',
+                }}>
+                  已选择 {selectedAgentIds.length} 个智能体
+                  {isProject && '（已升级为项目）'}
+                </span>
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Footer Buttons */}
@@ -361,29 +441,35 @@ export function CreateItemModal({ open, type, onClose }: CreateItemModalProps) {
           >取消</button>
 
           <button
-            onClick={isProject ? handleCreateProject : handleCreateTask}
-            disabled={!title.trim() || creating}
+            onClick={handleCreate}
+            disabled={!title.trim() || selectedAgentIds.length === 0 || creating}
             style={{
               height: 40, padding: '0 28px', fontSize: 14, borderRadius: 8,
               border: 'none',
-              background: themeColor,
-              cursor: (!title.trim() || creating) ? 'not-allowed' : 'pointer',
+              background: isProject ? '#6366f1' : '#3b82f6',
+              cursor: (!title.trim() || selectedAgentIds.length === 0 || creating) ? 'not-allowed' : 'pointer',
               color: '#fff', fontWeight: 600,
               fontFamily: '"Microsoft YaHei","Segoe UI",sans-serif',
-              opacity: (!title.trim() || creating) ? 0.6 : 1,
+              opacity: (!title.trim() || selectedAgentIds.length === 0 || creating) ? 0.6 : 1,
               transition: 'background 0.15s, box-shadow 0.15s',
-              boxShadow: `0 2px 8px ${themeColor}40`,
+              boxShadow: isProject 
+                ? '0 2px 8px rgba(99,102,241,0.25)' 
+                : '0 2px 8px rgba(59,130,246,0.25)',
               display: 'inline-flex', alignItems: 'center', gap: 6,
             }}
             onMouseEnter={e => {
-              if (title.trim() && !creating) {
+              if (title.trim() && selectedAgentIds.length > 0 && !creating) {
                 e.currentTarget.style.background = isProject ? '#4f46e5' : '#2563eb';
-                e.currentTarget.style.boxShadow = `0 4px 12px ${themeColor}60`;
+                e.currentTarget.style.boxShadow = isProject
+                  ? '0 4px 12px rgba(79,70,229,0.35)'
+                  : '0 4px 12px rgba(37,99,235,0.35)';
               }
             }}
             onMouseLeave={e => {
-              e.currentTarget.style.background = themeColor;
-              e.currentTarget.style.boxShadow = `0 2px 8px ${themeColor}40`;
+              e.currentTarget.style.background = isProject ? '#6366f1' : '#3b82f6';
+              e.currentTarget.style.boxShadow = isProject
+                ? '0 2px 8px rgba(99,102,241,0.25)'
+                : '0 2px 8px rgba(59,130,246,0.25)';
             }}
           >
             {creating ? (
