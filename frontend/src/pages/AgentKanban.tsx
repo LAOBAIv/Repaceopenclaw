@@ -1582,11 +1582,13 @@ export function AgentKanban() {
 ══════════════════════════════════════════════════════════════ */
 function StatusKanban({ col, searchText }: { col: Column; searchText: string }) {
   const navigate = useNavigate();
-  const { tasks, moveTask: storeMoveTask, removeTask } = useTaskStore();
+  const { tasks, moveTask: storeMoveTask, removeTask, addTask } = useTaskStore();
   const { projects, moveProject: storeMoveProject, removeProject } = useProjectKanbanStore();
+  const { agents } = useAgentStore();
 
   const [editTask, setEditTask]       = useState<{ task: Task; col: Column } | null>(null);
   const [editProject, setEditProject] = useState<{ project: KanbanProject; col: ProjectColumn } | null>(null);
+  const [showAddTask, setShowAddTask] = useState(false);
 
   const hasFilter = !!searchText;
 
@@ -1716,15 +1718,43 @@ function StatusKanban({ col, searchText }: { col: Column; searchText: string }) 
 
           {/* ── 任务区块 ── */}
           <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
-              <ListTodo size={15} color="#3b82f6" />
-              <span style={{ fontSize: 14, fontWeight: 700, color: '#374151' }}>任务</span>
-              <span style={{
-                fontSize: 11, padding: '1px 8px', borderRadius: 20, fontWeight: 700,
-                background: '#eff6ff', color: '#3b82f6',
-              }}>
-                {colTasks.length}{hasFilter && colTasks.length !== tasks[col].length ? `/${tasks[col].length}` : ''}
-              </span>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <ListTodo size={15} color="#3b82f6" />
+                <span style={{ fontSize: 14, fontWeight: 700, color: '#374151' }}>任务</span>
+                <span style={{
+                  fontSize: 11, padding: '1px 8px', borderRadius: 20, fontWeight: 700,
+                  background: '#eff6ff', color: '#3b82f6',
+                }}>
+                  {colTasks.length}{hasFilter && colTasks.length !== tasks[col].length ? `/${tasks[col].length}` : ''}
+                </span>
+              </div>
+              {/* 新增任务按钮 */}
+              <button
+                onClick={() => setShowAddTask(true)}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 5,
+                  padding: '6px 12px', borderRadius: 7,
+                  border: '1.5px solid #3b82f6',
+                  background: '#eff6ff', color: '#3b82f6',
+                  fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                  fontFamily: '"Microsoft YaHei","Segoe UI",sans-serif',
+                  transition: 'all 0.15s',
+                }}
+                onMouseEnter={e => {
+                  e.currentTarget.style.background = '#3b82f6';
+                  e.currentTarget.style.color = '#fff';
+                }}
+                onMouseLeave={e => {
+                  e.currentTarget.style.background = '#eff6ff';
+                  e.currentTarget.style.color = '#3b82f6';
+                }}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+                </svg>
+                新增任务
+              </button>
             </div>
             {colTasks.length === 0 ? (
               <div style={{
@@ -1776,7 +1806,320 @@ function StatusKanban({ col, searchText }: { col: Column; searchText: string }) 
           }}
         />
       )}
+      {/* 新增任务弹窗 */}
+      {showAddTask && (
+        <AddTaskPanel
+          agents={agents}
+          defaultCol={col}
+          onClose={() => setShowAddTask(false)}
+          onAdd={(task) => {
+            addTask(task, col);
+            setShowAddTask(false);
+          }}
+        />
+      )}
     </>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════
+   新增任务弹窗
+══════════════════════════════════════════════════════════════ */
+function AddTaskPanel({
+  agents,
+  defaultCol,
+  onClose,
+  onAdd,
+}: {
+  agents: import('../types').Agent[];
+  defaultCol: Column;
+  onClose: () => void;
+  onAdd: (task: Task) => void;
+}) {
+  const [title, setTitle] = useState('');
+  const [description, setDescription] = useState('');
+  const [priority, setPriority] = useState<Task['priority']>('mid');
+  const [dueDate, setDueDate] = useState('');
+  const [selectedAgentId, setSelectedAgentId] = useState<string>('');
+  const [tags, setTags] = useState<string[]>([]);
+  const [tagInput, setTagInput] = useState('');
+
+  const canSubmit = title.trim() && selectedAgentId;
+
+  function handleSubmit() {
+    if (!canSubmit) return;
+    const agent = agents.find(a => a.id === selectedAgentId);
+    if (!agent) return;
+
+    const now = new Date();
+    const mm = String(now.getMonth() + 1).padStart(2, '0');
+    const dd = String(now.getDate()).padStart(2, '0');
+
+    const newTask: Task = {
+      id: `task_${Date.now()}`,
+      title: title.trim(),
+      description: description.trim(),
+      agent: agent.name,
+      agentColor: agent.color ?? '#6366f1',
+      agents: [{ name: agent.name, color: agent.color ?? '#6366f1' }],
+      priority,
+      tags,
+      updatedAt: '刚刚',
+      dueDate: dueDate || `${mm}/${dd}`,
+      commentCount: 0,
+      fileCount: 0,
+      source: 'manual',
+      progress: 0,
+    };
+    onAdd(newTask);
+  }
+
+  function addTag() {
+    const t = tagInput.trim();
+    if (t && !tags.includes(t)) {
+      setTags([...tags, t]);
+      setTagInput('');
+    }
+  }
+
+  function removeTag(tag: string) {
+    setTags(tags.filter(t => t !== tag));
+  }
+
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: 'fixed', inset: 0,
+        background: 'rgba(0,0,0,0.4)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        zIndex: 9999,
+        backdropFilter: 'blur(3px)',
+        WebkitBackdropFilter: 'blur(3px)',
+      }}
+    >
+      <div
+        onClick={e => e.stopPropagation()}
+        style={{
+          background: '#fff', borderRadius: 14,
+          width: 520, maxWidth: 'calc(100vw - 32px)',
+          maxHeight: 'calc(100vh - 64px)',
+          boxShadow: '0 24px 64px rgba(0,0,0,0.18)',
+          display: 'flex', flexDirection: 'column',
+          fontFamily: '"Microsoft YaHei","Segoe UI",sans-serif',
+          overflow: 'hidden',
+        }}
+      >
+        {/* 头部 */}
+        <div style={{
+          padding: '20px 24px', borderBottom: '1px solid #f0f0f0',
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        }}>
+          <span style={{ fontWeight: 700, fontSize: 16, color: '#1a202c' }}>新增任务</span>
+          <button onClick={onClose} style={{
+            background: 'none', border: 'none', cursor: 'pointer',
+            color: '#9ca3af', fontSize: 20, lineHeight: 1, padding: 4,
+          }}>×</button>
+        </div>
+
+        {/* 内容区 */}
+        <div style={{ flex: 1, overflowY: 'auto', padding: '20px 24px' }}>
+          {/* 任务名称 */}
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ fontSize: 12, fontWeight: 600, color: '#374151', marginBottom: 6 }}>
+              任务名称 <span style={{ color: '#ef4444' }}>*</span>
+            </div>
+            <input
+              value={title}
+              onChange={e => setTitle(e.target.value)}
+              placeholder="输入任务名称"
+              style={{
+                width: '100%', padding: '8px 12px', fontSize: 14,
+                border: '1.5px solid #e5e7eb', borderRadius: 8, outline: 'none',
+                boxSizing: 'border-box', fontFamily: 'inherit',
+              }}
+              onFocus={e => e.currentTarget.style.borderColor = '#3b82f6'}
+              onBlur={e => e.currentTarget.style.borderColor = '#e5e7eb'}
+            />
+          </div>
+
+          {/* 负责智能体 */}
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ fontSize: 12, fontWeight: 600, color: '#374151', marginBottom: 6 }}>
+              负责智能体 <span style={{ color: '#ef4444' }}>*</span>
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+              {agents.map(agent => {
+                const selected = selectedAgentId === agent.id;
+                const ac = agent.color ?? '#6366f1';
+                return (
+                  <button
+                    key={agent.id}
+                    onClick={() => setSelectedAgentId(agent.id)}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 6,
+                      padding: '6px 12px', borderRadius: 8,
+                      border: `1.5px solid ${selected ? ac : '#e5e7eb'}`,
+                      background: selected ? ac + '15' : '#fff',
+                      cursor: 'pointer', fontSize: 13,
+                      color: selected ? ac : '#374151',
+                      fontFamily: 'inherit', transition: 'all 0.15s',
+                    }}
+                  >
+                    <div style={{
+                      width: 18, height: 18, borderRadius: '50%',
+                      background: ac + '33', display: 'flex',
+                      alignItems: 'center', justifyContent: 'center',
+                      color: ac, fontSize: 9, fontWeight: 700,
+                    }}>{agent.name.charAt(0)}</div>
+                    {agent.name}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* 优先级 */}
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ fontSize: 12, fontWeight: 600, color: '#374151', marginBottom: 6 }}>优先级</div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              {(['high', 'mid', 'low'] as const).map(pv => (
+                <button
+                  key={pv}
+                  onClick={() => setPriority(pv)}
+                  style={{
+                    flex: 1, padding: '7px 0', borderRadius: 7,
+                    border: '1.5px solid',
+                    borderColor: priority === pv ? PRIORITY_MAP[pv].color : '#e5e7eb',
+                    background: priority === pv ? PRIORITY_MAP[pv].bg : '#fff',
+                    color: priority === pv ? PRIORITY_MAP[pv].color : '#9ca3af',
+                    fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                    fontFamily: 'inherit', transition: 'all 0.15s',
+                  }}
+                >{PRIORITY_MAP[pv].label}</button>
+              ))}
+            </div>
+          </div>
+
+          {/* 截止日期 */}
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ fontSize: 12, fontWeight: 600, color: '#374151', marginBottom: 6 }}>截止日期</div>
+            <input
+              type="date"
+              value={dueDate}
+              onChange={e => setDueDate(e.target.value)}
+              style={{
+                width: '100%', padding: '7px 12px', fontSize: 13,
+                border: '1.5px solid #e5e7eb', borderRadius: 8, outline: 'none',
+                boxSizing: 'border-box', fontFamily: 'inherit', color: '#374151',
+              }}
+              onFocus={e => e.currentTarget.style.borderColor = '#3b82f6'}
+              onBlur={e => e.currentTarget.style.borderColor = '#e5e7eb'}
+            />
+          </div>
+
+          {/* 标签 */}
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ fontSize: 12, fontWeight: 600, color: '#374151', marginBottom: 6 }}>标签</div>
+            <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+              <input
+                value={tagInput}
+                onChange={e => setTagInput(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addTag(); } }}
+                placeholder="输入标签，Enter 添加"
+                style={{
+                  flex: 1, padding: '6px 12px', fontSize: 13,
+                  border: '1.5px solid #e5e7eb', borderRadius: 8, outline: 'none',
+                  boxSizing: 'border-box', fontFamily: 'inherit',
+                }}
+                onFocus={e => e.currentTarget.style.borderColor = '#3b82f6'}
+                onBlur={e => e.currentTarget.style.borderColor = '#e5e7eb'}
+              />
+              <button
+                onClick={addTag}
+                disabled={!tagInput.trim()}
+                style={{
+                  padding: '6px 14px', borderRadius: 8,
+                  border: 'none', background: tagInput.trim() ? '#3b82f6' : '#e5e7eb',
+                  color: '#fff', fontSize: 13, fontWeight: 600,
+                  cursor: tagInput.trim() ? 'pointer' : 'default',
+                  fontFamily: 'inherit',
+                }}
+              >添加</button>
+            </div>
+            {tags.length > 0 && (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                {tags.map(tag => {
+                  const c = getTagColor(tag);
+                  return (
+                    <span key={tag} style={{
+                      display: 'inline-flex', alignItems: 'center', gap: 4,
+                      fontSize: 12, padding: '3px 10px', borderRadius: 20,
+                      background: c.bg, color: c.text, border: `1px solid ${c.border}`,
+                    }}>
+                      {tag}
+                      <button
+                        onClick={() => removeTag(tag)}
+                        style={{
+                          background: 'none', border: 'none', cursor: 'pointer',
+                          color: c.text, opacity: 0.5, fontSize: 14, lineHeight: 1,
+                        }}
+                      >×</button>
+                    </span>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* 任务描述 */}
+          <div style={{ marginBottom: 8 }}>
+            <div style={{ fontSize: 12, fontWeight: 600, color: '#374151', marginBottom: 6 }}>任务描述</div>
+            <textarea
+              value={description}
+              onChange={e => setDescription(e.target.value)}
+              placeholder="添加任务描述（可选）"
+              rows={3}
+              style={{
+                width: '100%', padding: '8px 12px', fontSize: 13,
+                border: '1.5px solid #e5e7eb', borderRadius: 8, outline: 'none',
+                boxSizing: 'border-box', fontFamily: 'inherit', resize: 'vertical',
+                minHeight: 60,
+              }}
+              onFocus={e => e.currentTarget.style.borderColor = '#3b82f6'}
+              onBlur={e => e.currentTarget.style.borderColor = '#e5e7eb'}
+            />
+          </div>
+        </div>
+
+        {/* 底部按钮 */}
+        <div style={{
+          padding: '14px 24px', borderTop: '1px solid #f0f0f0',
+          display: 'flex', justifyContent: 'flex-end', gap: 10,
+        }}>
+          <button
+            onClick={onClose}
+            style={{
+              padding: '8px 20px', borderRadius: 8,
+              border: '1.5px solid #e5e7eb', background: '#fff',
+              color: '#6b7280', fontSize: 13, fontWeight: 500,
+              cursor: 'pointer', fontFamily: 'inherit',
+            }}
+          >取消</button>
+          <button
+            onClick={handleSubmit}
+            disabled={!canSubmit}
+            style={{
+              padding: '8px 20px', borderRadius: 8,
+              border: 'none', background: canSubmit ? '#3b82f6' : '#e5e7eb',
+              color: '#fff', fontSize: 13, fontWeight: 600,
+              cursor: canSubmit ? 'pointer' : 'default',
+              fontFamily: 'inherit',
+            }}
+          >创建任务</button>
+        </div>
+      </div>
+    </div>
   );
 }
 
