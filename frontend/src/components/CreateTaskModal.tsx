@@ -58,54 +58,89 @@ export function CreateTaskModal({ open, onClose }: CreateTaskModalProps) {
       const selectedAgents = agents.filter(a => selectedAgentIds.includes(a.id));
       const mainAgent = selectedAgents[0];
       
-      // 创建任务/项目
-      const taskId = isProject ? `proj_${Date.now()}` : `task_${Date.now()}`;
+      // 生成基础ID（时间戳）- 用于项目/任务升级降级时保持一致
+      const baseId = String(Date.now());
+      // 任务/项目ID：使用统一前缀，便于去重处理
+      const taskId = isProject ? `proj_${baseId}` : `task_${baseId}`;
+      
       const newTask = {
         id: taskId,
+        baseId, // 基础ID，升级降级时保持不变
         title: title.trim(),
         description: description.trim(),
         agent: mainAgent.name,
         agentColor: mainAgent.color ?? '#6366f1',
         agents: selectedAgents.map(a => ({ name: a.name, color: a.color ?? '#6366f1' })),
+        agentIds: selectedAgentIds, // 智能体ID列表
         priority,
-        tags: isProject ? ['项目', '协作'] : ['任务'],
+        tags: isProject ? ['项目', '协作', `tid_${baseId}`] : ['任务', `tid_${baseId}`], // 添加ID作为tag
         updatedAt: '刚刚',
         dueDate: `${mm}/${String(Number(dd) + 7).padStart(2, '0')}`,
         commentCount: 0,
         fileCount: 0,
         source: 'manual' as const,
-        isProject, // 标记是否为项目
+        isProject,
+        projectId: isProject ? taskId : undefined,
         participantCount: selectedAgentIds.length,
+        sessionIds: [], // 初始化空会话ID列表
       };
       
+      // 先添加任务到任务栏（确保任务栏立即更新）
       addTask(newTask, 'progress');
       
-      // 为每个选中的智能体创建会话
-      for (const agent of selectedAgents) {
-        await openPanel({
-          agentId: agent.id,
-          agentName: agent.name,
-          agentColor: agent.color,
-          projectId: isProject ? taskId : undefined,
-        });
-      }
-      
-      // 发送初始消息到第一个智能体
-      const firstPanel = useConversationStore.getState().openPanels[0];
-      if (firstPanel) {
-        const typeLabel = isProject ? '项目' : '任务';
-        const participantInfo = isProject 
-          ? `\n参与智能体：${selectedAgents.map(a => a.name).join('、')}` 
-          : '';
-        sendMessage(
-          firstPanel.id, 
-          `开始新${typeLabel}：${title.trim()}${participantInfo}\n\n${description.trim() || '暂无描述'}`
-        );
-      }
-      
+      // 关闭模态框，让用户看到任务已创建
       resetAndClose();
       const typeLabel = isProject ? '项目' : '任务';
       showToast(`${typeLabel}创建成功`, 'success');
+      
+      // 延迟打开会话面板，确保UI已更新
+      setTimeout(async () => {
+        const createdPanelIds: string[] = [];
+        
+        // 为每个选中的智能体创建会话
+        for (const agent of selectedAgents) {
+          const panelId = await openPanel({
+            agentId: agent.id,
+            agentName: agent.name,
+            agentColor: agent.color,
+            projectId: isProject ? taskId : undefined,
+          });
+          
+          // 记录创建的 panelId
+          if (panelId) {
+            createdPanelIds.push(panelId);
+          }
+        }
+        
+        // 更新任务的sessionIds关联，并添加sessionId到tags
+        if (createdPanelIds.length > 0) {
+          const { updateTask } = useTaskStore.getState();
+          // 构建新tags：保留原有tags + 新增taskId_tag + sessionId_tag
+          const baseTags = isProject ? ['项目', '协作'] : ['任务'];
+          const newTags = [
+            ...baseTags,
+            `tid_${baseId}`, // taskId tag
+            ...createdPanelIds.map((sid, idx) => `sid_${idx}_${sid}`) // sessionId tags
+          ];
+          updateTask(taskId, { 
+            sessionIds: createdPanelIds,
+            tags: newTags
+          });
+        }
+        
+        // 发送初始消息到第一个智能体的面板
+        if (createdPanelIds.length > 0) {
+          const firstPanelId = createdPanelIds[0];
+          const participantInfo = isProject 
+            ? `\n参与智能体：${selectedAgents.map(a => a.name).join('、')}` 
+            : '';
+          sendMessage(
+            firstPanelId, 
+            `开始新${typeLabel}：${title.trim()}${participantInfo}\n\n${description.trim() || '暂无描述'}`
+          );
+        }
+      }, 100);
+      
     } catch {
       showToast('创建失败', 'error');
     } finally {

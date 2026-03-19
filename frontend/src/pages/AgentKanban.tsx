@@ -1,3 +1,4 @@
+import { PRIORITY_MAP as SHARED_PRIORITY_MAP, SHARED_PRESET_TAGS as SHARED_SHARED_PRESET_TAGS, getTagColor as sharedGetTagColor } from "@/lib/constants";
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
@@ -8,113 +9,6 @@ import {
 } from 'lucide-react';
 import { useTaskStore, Task, Column } from '@/stores/taskStore';
 import { useProjectKanbanStore, KanbanProject, ProjectColumn } from '@/stores/projectKanbanStore';
-import { useAgentStore } from '@/stores/agentStore';
-import { projectsApi } from '@/api/projects';
-import { showToast } from '@/components/Toast';
-
-/* ══════════════════════════════════════════════════════════════
-   自定义确认弹窗
-   替代 window.confirm —— 支持按钮居中、确认后刷新页面
-══════════════════════════════════════════════════════════════ */
-function ConfirmDialog({
-  message,
-  onConfirm,
-  onCancel,
-}: {
-  message: string;
-  onConfirm: () => void;
-  onCancel: () => void;
-}) {
-  return (
-    /* 全屏半透明遮罩 */
-    <div
-      onClick={onCancel}
-      style={{
-        position: 'fixed', inset: 0,
-        background: 'rgba(0,0,0,0.35)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        zIndex: 9999,
-      }}
-    >
-      {/* 弹窗主体，阻止点击冒泡到遮罩 */}
-      <div
-        onClick={e => e.stopPropagation()}
-        style={{
-          background: '#fff',
-          borderRadius: 14,
-          padding: '28px 32px 24px',
-          minWidth: 320,
-          maxWidth: 420,
-          boxShadow: '0 8px 32px rgba(0,0,0,0.18)',
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          gap: 20,
-        }}
-      >
-        {/* 警告图标 */}
-        <div style={{
-          width: 48, height: 48, borderRadius: '50%',
-          background: '#fef2f2',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          flexShrink: 0,
-        }}>
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none"
-            stroke="#ef4444" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
-            <line x1="12" y1="9" x2="12" y2="13"/>
-            <line x1="12" y1="17" x2="12.01" y2="17"/>
-          </svg>
-        </div>
-
-        {/* 提示文字 */}
-        <p style={{
-          margin: 0, textAlign: 'center',
-          fontSize: 15, color: '#374151', lineHeight: 1.6,
-          fontFamily: '"Microsoft YaHei","Segoe UI",sans-serif',
-        }}>
-          {message}
-        </p>
-
-        {/* 按钮组 —— 居中排列 */}
-        <div style={{ display: 'flex', gap: 12, justifyContent: 'center' }}>
-          <button
-            onClick={onCancel}
-            style={{
-              padding: '8px 24px', borderRadius: 8,
-              border: '1.5px solid #e5e7eb',
-              background: '#fff', color: '#6b7280',
-              fontSize: 14, fontWeight: 500,
-              cursor: 'pointer',
-              fontFamily: '"Microsoft YaHei","Segoe UI",sans-serif',
-              transition: 'background 0.12s',
-            }}
-            onMouseEnter={e => { e.currentTarget.style.background = '#f9fafb'; }}
-            onMouseLeave={e => { e.currentTarget.style.background = '#fff'; }}
-          >
-            取消
-          </button>
-          <button
-            onClick={onConfirm}
-            style={{
-              padding: '8px 24px', borderRadius: 8,
-              border: 'none',
-              background: '#ef4444', color: '#fff',
-              fontSize: 14, fontWeight: 600,
-              cursor: 'pointer',
-              fontFamily: '"Microsoft YaHei","Segoe UI",sans-serif',
-              transition: 'background 0.12s',
-            }}
-            onMouseEnter={e => { e.currentTarget.style.background = '#dc2626'; }}
-            onMouseLeave={e => { e.currentTarget.style.background = '#ef4444'; }}
-          >
-            确认删除
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 /* ══════════════════════════════════════════════════════════════
    通用配置
@@ -148,7 +42,7 @@ function getTagColor(tag: string) {
 }
 
 /* 预设标签（与 ProjectWorkspace 保持一致）*/
-const PRESET_TAGS = ['优先级高', '待跟进', '已完成', '阻塞中', 'Bug', 'Feature', '文档', '重构'];
+const SHARED_PRESET_TAGS = ['优先级高', '待跟进', '已完成', '阻塞中', 'Bug', 'Feature', '文档', '重构'];
 
 /* ══════════════════════════════════════════════════════════════
    任务详情面板
@@ -189,7 +83,7 @@ function TaskDetailPanel({
     setEditing(false);
   }
 
-  const p = PRIORITY_MAP[editing ? editPriority : task.priority];
+  const p = SHARED_SHARED_PRIORITY_MAP[editing ? editPriority : task.priority];
 
   return (
     <div onClick={onClose} style={{
@@ -309,11 +203,11 @@ function TaskDetailPanel({
                 {(['high', 'mid', 'low'] as const).map(pv => (
                   <button key={pv} onClick={() => setEditPriority(pv)} style={{
                     flex: 1, padding: '6px 0', borderRadius: 7, border: '1.5px solid',
-                    borderColor: editPriority === pv ? PRIORITY_MAP[pv].color : '#e5e7eb',
-                    background: editPriority === pv ? PRIORITY_MAP[pv].bg : '#fff',
-                    color: editPriority === pv ? PRIORITY_MAP[pv].color : '#9ca3af',
+                    borderColor: editPriority === pv ? SHARED_PRIORITY_MAP[pv].color : '#e5e7eb',
+                    background: editPriority === pv ? SHARED_PRIORITY_MAP[pv].bg : '#fff',
+                    color: editPriority === pv ? SHARED_PRIORITY_MAP[pv].color : '#9ca3af',
                     fontSize: 12, fontWeight: 600, cursor: 'pointer', transition: 'all 0.15s',
-                  }}>{PRIORITY_MAP[pv].label}</button>
+                  }}>{SHARED_PRIORITY_MAP[pv].label}</button>
                 ))}
               </div>
             </div>
@@ -449,7 +343,7 @@ function ProjectDetailPanel({
     setTagInput('');
   }
 
-  const p = PRIORITY_MAP[editing ? editPriority : (project.priority ?? 'low')];
+  const p = SHARED_SHARED_PRIORITY_MAP[editing ? editPriority : (project.priority ?? 'low')];
 
   return (
     <div onClick={onClose} style={{
@@ -491,7 +385,7 @@ function ProjectDetailPanel({
                 background: p.bg, color: p.color, fontWeight: 600,
               }}>{p.label}</span>
               {project.tags.map(t => {
-                const c = getTagColor(t);
+                const c = sharedGetTagColor(t);
                 return (
                   <span key={t} style={{
                     fontSize: 11, padding: '2px 8px', borderRadius: 20,
@@ -601,15 +495,15 @@ function ProjectDetailPanel({
                       onClick={() => editing && setEditPriority(pv)}
                       style={{
                         flex: 1, padding: '5px 0', borderRadius: 7, border: '1.5px solid',
-                        borderColor: isActive ? PRIORITY_MAP[pv].color : '#e5e7eb',
-                        background: isActive ? PRIORITY_MAP[pv].bg : '#fff',
-                        color: isActive ? PRIORITY_MAP[pv].color : '#9ca3af',
+                        borderColor: isActive ? SHARED_PRIORITY_MAP[pv].color : '#e5e7eb',
+                        background: isActive ? SHARED_PRIORITY_MAP[pv].bg : '#fff',
+                        color: isActive ? SHARED_PRIORITY_MAP[pv].color : '#9ca3af',
                         fontSize: 12, fontWeight: isActive ? 600 : 400,
                         cursor: editing ? 'pointer' : 'default',
                         transition: 'all 0.15s',
                         opacity: editing ? 1 : (isActive ? 1 : 0.5),
                       }}
-                    >{PRIORITY_MAP[pv].label}</button>
+                    >{SHARED_PRIORITY_MAP[pv].label}</button>
                   );
                 })}
               </div>
@@ -638,7 +532,7 @@ function ProjectDetailPanel({
                   点击下方快捷标签或输入自定义标签
                 </span>
               ) : localTags.map(tag => {
-                const c = getTagColor(tag);
+                const c = sharedGetTagColor(tag);
                 return (
                   <span key={tag} style={{
                     display: 'inline-flex', alignItems: 'center', gap: 3,
@@ -671,9 +565,9 @@ function ProjectDetailPanel({
                 快捷标签
               </div>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                {PRESET_TAGS.map(pt => {
+                {SHARED_PRESET_TAGS.map(pt => {
                   const selected = localTags.includes(pt);
-                  const c = getTagColor(pt);
+                  const c = sharedGetTagColor(pt);
                   return (
                     <button
                       key={pt}
@@ -824,23 +718,8 @@ function TaskCard({
   onEditNavigate?: (t: Task) => void;
 }) {
   const navigate = useNavigate();
-  const { updateTask: updateTaskStore } = useTaskStore();
   const [hovered, setHovered] = useState(false);
-  const [isEditingTitle, setIsEditingTitle] = useState(false);
-  const [editingTitle, setEditingTitle] = useState(task.title);
-  const p = PRIORITY_MAP[task.priority];
-
-  async function saveTitle() {
-    const trimmed = editingTitle.trim();
-    if (!trimmed || trimmed === task.title) {
-      setIsEditingTitle(false);
-      setEditingTitle(task.title);
-      return;
-    }
-    // 对于任务，直接更新前端 store（当前无后端任务 API）
-    updateTaskStore(task.id, { title: trimmed });
-    setIsEditingTitle(false);
-  }
+  const p = SHARED_SHARED_PRIORITY_MAP[task.priority];
 
   return (
     <div
@@ -887,54 +766,9 @@ function TaskCard({
         })}
         style={{ flex: 1, minWidth: 0, cursor: 'pointer' }}
       >
-        {/* 标题行（支持双击编辑） */}
+        {/* 标题行 */}
         <div style={{ fontSize: 14, fontWeight: 600, color: '#333', display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-          {isEditingTitle ? (
-            <input
-              autoFocus
-              value={editingTitle}
-              onChange={e => setEditingTitle(e.target.value)}
-              onBlur={saveTitle}
-              onKeyDown={e => {
-                if (e.key === 'Enter') saveTitle();
-                if (e.key === 'Escape') {
-                  setIsEditingTitle(false);
-                  setEditingTitle(task.title);
-                }
-              }}
-              onClick={e => e.stopPropagation()}
-              style={{
-                flex: 1,
-                fontSize: 14,
-                fontWeight: 600,
-                color: '#333',
-                border: '1.5px solid #3b82f6',
-                borderRadius: 6,
-                padding: '4px 8px',
-                outline: 'none',
-                fontFamily: '\"Microsoft YaHei\",\"Segoe UI\",sans-serif',
-              }}
-            />
-          ) : (
-            <span
-              onDoubleClick={() => setIsEditingTitle(true)}
-              style={{
-                flex: 1,
-                cursor: 'pointer',
-                padding: '2px 4px',
-                borderRadius: 4,
-                transition: 'background 0.12s',
-              }}
-              onMouseEnter={e => {
-                if (!isEditingTitle) (e.currentTarget as HTMLSpanElement).style.background = '#f0f0f0';
-              }}
-              onMouseLeave={e => {
-                (e.currentTarget as HTMLSpanElement).style.background = 'transparent';
-              }}
-            >
-              {task.title}
-            </span>
-          )}
+          {task.title}
           <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 4, background: p.bg, color: p.color, fontWeight: 400 }}>{p.label}</span>
           {task.source === 'chat' && (
             <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 4, background: '#ede9fe', color: '#7c3aed', fontWeight: 400 }}>对话生成</span>
@@ -1075,36 +909,8 @@ function ProjectCard({
   onEditNavigate?: (p: KanbanProject) => void;
 }) {
   const navigate = useNavigate();
-  const { updateProject: updateKanbanProject } = useProjectKanbanStore();
   const [hovered, setHovered] = useState(false);
-  const [isEditingTitle, setIsEditingTitle] = useState(false);
-  const [editingTitle, setEditingTitle] = useState(project.title);
-  const p = PRIORITY_MAP[project.priority ?? 'low'];
-
-  async function saveTitle() {
-    const trimmed = editingTitle.trim();
-    if (!trimmed || trimmed === project.title) {
-      setIsEditingTitle(false);
-      setEditingTitle(project.title);
-      return;
-    }
-    try {
-      // 调用后端 API 更新
-      const { projectsApi } = await import('@/api/projects');
-      await projectsApi.update(project.id, { title: trimmed });
-      // 更新前端 kanban store
-      updateKanbanProject(project.id, { title: trimmed });
-      setIsEditingTitle(false);
-    } catch (err: any) {
-      if (err.response?.status === 403) {
-        showToast('只有创建人可以修改项目名称', 'error');
-      } else {
-        showToast('修改项目名称失败', 'error');
-      }
-      setEditingTitle(project.title);
-      setIsEditingTitle(false);
-    }
-  }
+  const p = SHARED_SHARED_PRIORITY_MAP[project.priority ?? 'low'];
 
   return (
     <div
@@ -1151,55 +957,10 @@ function ProjectCard({
         })}
         style={{ flex: 1, minWidth: 0, cursor: 'pointer' }}
       >
-        {/* 标题行：项目名 + 优先级（支持双击编辑） */}
+        {/* 标题行：项目名 + 优先级 */}
         <div style={{ fontSize: 14, fontWeight: 600, color: '#333', display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-          {isEditingTitle ? (
-            <input
-              autoFocus
-              value={editingTitle}
-              onChange={e => setEditingTitle(e.target.value)}
-              onBlur={saveTitle}
-              onKeyDown={e => {
-                if (e.key === 'Enter') saveTitle();
-                if (e.key === 'Escape') {
-                  setIsEditingTitle(false);
-                  setEditingTitle(project.title);
-                }
-              }}
-              onClick={e => e.stopPropagation()}
-              style={{
-                flex: 1,
-                fontSize: 14,
-                fontWeight: 600,
-                color: '#333',
-                border: '1.5px solid #3b82f6',
-                borderRadius: 6,
-                padding: '4px 8px',
-                outline: 'none',
-                fontFamily: '\"Microsoft YaHei\",\"Segoe UI\",sans-serif',
-              }}
-            />
-          ) : (
-            <span
-              onDoubleClick={() => setIsEditingTitle(true)}
-              style={{
-                flex: 1,
-                cursor: 'pointer',
-                padding: '2px 4px',
-                borderRadius: 4,
-                transition: 'background 0.12s',
-              }}
-              onMouseEnter={e => {
-                if (!isEditingTitle) (e.currentTarget as HTMLSpanElement).style.background = '#f0f0f0';
-              }}
-              onMouseLeave={e => {
-                (e.currentTarget as HTMLSpanElement).style.background = 'transparent';
-              }}
-            >
-              {project.title}
-            </span>
-          )}
-          <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 4, background: p.bg, color: p.color, fontWeight: 400, flexShrink: 0 }}>{p.label}</span>
+          {project.title}
+          <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 4, background: p.bg, color: p.color, fontWeight: 400 }}>{p.label}</span>
         </div>
 
         {/* 描述 */}
@@ -1210,43 +971,21 @@ function ProjectCard({
 
         {/* 底部元信息行：智能体 Avatars · 进度 · 截止日期 · 标签 */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 12, color: '#9ca3af', flexWrap: 'wrap' }}>
-          {/*
-           * 项目智能体 Avatar 组（最多显示 4 个，超出显示 +N）
-           *
-           * 【数据来源说明】
-           *   读取 project.agents（ProjectAgent[]），该字段在两个时机写入：
-           *     1. AgentKanban useEffect 初始化：从后端 workflowNodes 反查写入
-           *     2. ProjectWorkspace.tsx 的 useEffect（监听 collabNodes 变化）：
-           *        用户在协作弹窗里实时增删智能体时，自动同步写回此字段
-           *   两级 fallback：
-           *     ① project.agents 有值 → 优先使用（多智能体）
-           *     ② 降级为 project.agent + project.agentColor（单智能体旧格式，向后兼容）
-           *
-           * ⚠️ 请勿在此处直接用 agentStore 反查，此组件无法获取 collabNodes；
-           *    跨组件同步通过 ProjectWorkspace.tsx 的 useEffect 写回 kanbanStore 实现。
-           */}
-          {(() => {
-            const agentList = project.agents && project.agents.length > 0
-              ? project.agents
-              : [{ name: project.agent, color: project.agentColor }];
-            return (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                {agentList.slice(0, 4).map((a, i) => (
-                  <div key={i} title={a.name} style={{
-                    width: 20, height: 20, borderRadius: '50%',
-                    background: a.color + '33',
-                    border: `1.5px solid ${a.color}88`,
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    color: a.color, fontSize: 10, fontWeight: 700,
-                    flexShrink: 0,
-                  }}>{a.name.charAt(0)}</div>
-                ))}
-                {agentList.length > 4 && (
-                  <span style={{ fontSize: 10, color: '#9ca3af', marginLeft: 2 }}>+{agentList.length - 4}</span>
-                )}
-              </div>
-            );
-          })()}
+          {/* 项目智能体 Avatar 组（展示所有参与智能体，最多显示 4 个）*/}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
+            {(project.agents ?? [{ name: project.agent, color: project.agentColor }]).slice(0, 4).map((a, i) => (
+              <div key={i} title={a.name} style={{
+                width: 18, height: 18, borderRadius: '50%',
+                background: a.color + '33',
+                border: `1.5px solid ${a.color}66`,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                color: a.color, fontSize: 9, fontWeight: 700,
+              }}>{a.name.charAt(0)}</div>
+            ))}
+            {(project.agents ?? []).length > 4 && (
+              <span style={{ fontSize: 10, color: '#9ca3af', marginLeft: 2 }}>+{project.agents.length - 4}</span>
+            )}
+          </div>
           {col === 'done' && (
             <><span>·</span><span style={{ fontWeight: 600, color: '#22c55e' }}>100%</span></>
           )}
@@ -1260,7 +999,7 @@ function ProjectCard({
             <><span>·</span><span style={{ display: 'flex', alignItems: 'center', gap: 3 }}><Calendar size={11} />{project.dueDate}</span></>
           )}
           {project.tags.length > 0 && project.tags.map(t => {
-            const c = getTagColor(t);
+            const c = sharedGetTagColor(t);
             return (
               <span key={t} style={{
                 fontSize: 11, padding: '1px 8px', borderRadius: 20,
@@ -1272,36 +1011,11 @@ function ProjectCard({
         </div>
       </div>
 
-      {/* 操作按钮区：「进入会话」「编辑」「删除」，与 TaskCard 保持一致 */}
+      {/* 操作按钮区：直接显示「编辑」「删除」，不再使用三点菜单 */}
       <div
         style={{ display: 'flex', flexDirection: 'column', gap: 6, flexShrink: 0 }}
         onClick={e => e.stopPropagation()}
       >
-        {/* 进入会话按钮 */}
-        <button
-          onClick={() => navigate('/workspace', {
-            state: {
-              projectName: project.title,
-              projectId: project.id,
-              agentNames: (project.agents ?? [{ name: project.agent, color: project.agentColor }]).map(a => a.name),
-            },
-          })}
-          title="进入会话"
-          style={{
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            width: 28, height: 28, borderRadius: 6, border: '1px solid #bfdbfe',
-            background: '#eff6ff',
-            color: '#2563eb', cursor: 'pointer',
-            transition: 'background 0.12s, border-color 0.12s',
-          }}
-          onMouseEnter={e => { e.currentTarget.style.background = '#dbeafe'; e.currentTarget.style.borderColor = '#93c5fd'; }}
-          onMouseLeave={e => { e.currentTarget.style.background = '#eff6ff'; e.currentTarget.style.borderColor = '#bfdbfe'; }}
-        >
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
-          </svg>
-        </button>
-
         {/* 编辑按钮（仅图标） */}
         <button
           onClick={() => onEditNavigate ? onEditNavigate(project) : onEdit()}
@@ -1370,100 +1084,9 @@ export function AgentKanban() {
   const [searchText, setSearchText] = useState('');
 
   const { tasks } = useTaskStore();
-  const { projects, addProject, updateProject: updateKanbanProject } = useProjectKanbanStore();
-  const { agents, fetchAgents } = useAgentStore();
+  const { projects } = useProjectKanbanStore();
   const progressCount = tasks['progress'].length + projects['progress'].length;
   const doneCount = tasks['done'].length + projects['done'].length;
-
-  /* ── 从后端同步项目到 kanban store，防止刷新后用户新建的项目消失 ── */
-  useEffect(() => {
-    (async () => {
-      // 先等智能体加载完毕，再查项目——避免 agents store 为空时查不到名字
-      await fetchAgents();
-      // fetchAgents 完成后，从 store 里取最新的 agents 列表
-      const freshAgents = useAgentStore.getState().agents;
-
-      let backendProjects: import('../types').Project[];
-      try {
-        backendProjects = await projectsApi.list();
-      } catch {
-        return; // 后端不可用时静默
-      }
-
-      const allKanban = [...projects.progress, ...projects.done];
-
-      /**
-       * 将后端 updatedAt（ISO 时间字符串）转为可读的相对时间展示
-       * 例如：刚刚 / 5分钟前 / 2小时前 / 3天前
-       */
-      function formatUpdatedAt(isoStr: string | undefined): string {
-        if (!isoStr) return '刚刚';
-        const diff = Date.now() - new Date(isoStr).getTime();
-        const mins = Math.floor(diff / 60000);
-        if (mins < 2) return '刚刚';
-        if (mins < 60) return `${mins}分钟前`;
-        const hours = Math.floor(mins / 60);
-        if (hours < 24) return `${hours}小时前`;
-        const days = Math.floor(hours / 24);
-        if (days < 7) return `${days}天前`;
-        const weeks = Math.floor(days / 7);
-        return `${weeks}周前`;
-      }
-
-      backendProjects.forEach(bp => {
-        // 从 workflow_nodes 里推导参与智能体列表（使用最新 freshAgents 反查）
-        const agentIds = [...new Set((bp.workflowNodes ?? []).flatMap(n => n.agentIds))];
-        const agentsInNodes = agentIds
-          .map(id => freshAgents.find(a => a.id === id))
-          .filter(Boolean)
-          .map(a => ({ name: a!.name, color: a!.color ?? '#6366f1' }));
-        const firstAgent = agentsInNodes[0] ?? { name: '策划助手', color: '#6366f1' };
-        const dueDate = bp.endTime ? bp.endTime.slice(0, 10).replace(/-/g, '/').slice(5) : '';
-        const updatedAt = formatUpdatedAt(bp.updatedAt);
-
-        const alreadyInKanban = allKanban.find(
-          kp => kp.id === bp.id || kp.title === bp.title
-        );
-        if (alreadyInKanban) {
-          // 已有项目：同步后端最新的 title/description/tags/priority/dueDate/agents/updatedAt
-          // 不覆盖 progress（进度由用户在前端手动管理）
-          updateKanbanProject(alreadyInKanban.id, {
-            id: bp.id,                    // 确保 ID 与后端一致（修复临时 proj_xxx 遗留问题）
-            title: bp.title,
-            description: bp.description ?? '',
-            tags: bp.tags ?? [],
-            priority: bp.priority ?? 'low',
-            dueDate,
-            updatedAt,
-            agent: firstAgent.name,
-            agentColor: firstAgent.color,
-            agents: agentsInNodes.length > 0 ? agentsInNodes : [firstAgent],
-            taskCount: (bp.workflowNodes ?? []).length,
-            memberCount: agentsInNodes.length || 1,
-          });
-          return;
-        }
-        // 新项目：写入 kanban store（使用后端真实 id，根据 status 放入对应列）
-        const targetCol = bp.status === 'archived' ? 'done' : 'progress';
-        addProject({
-          id: bp.id,
-          title: bp.title,
-          description: bp.description ?? '',
-          tags: bp.tags ?? [],
-          priority: bp.priority ?? 'low',
-          agent: firstAgent.name,
-          agentColor: firstAgent.color,
-          agents: agentsInNodes.length > 0 ? agentsInNodes : [firstAgent],
-          progress: 0,
-          dueDate,
-          updatedAt,
-          taskCount: (bp.workflowNodes ?? []).length,
-          memberCount: agentsInNodes.length || 1,
-        }, targetCol);
-      });
-    })();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   // 接收来自「配置智能体」按钮的跳转参数
   const location = useLocation();
@@ -1582,67 +1205,13 @@ export function AgentKanban() {
 ══════════════════════════════════════════════════════════════ */
 function StatusKanban({ col, searchText }: { col: Column; searchText: string }) {
   const navigate = useNavigate();
-  const { tasks, moveTask: storeMoveTask, removeTask, addTask } = useTaskStore();
+  const { tasks, moveTask: storeMoveTask, removeTask } = useTaskStore();
   const { projects, moveProject: storeMoveProject, removeProject } = useProjectKanbanStore();
-  const { agents } = useAgentStore();
 
   const [editTask, setEditTask]       = useState<{ task: Task; col: Column } | null>(null);
   const [editProject, setEditProject] = useState<{ project: KanbanProject; col: ProjectColumn } | null>(null);
-  const [showAddTask, setShowAddTask] = useState(false);
 
   const hasFilter = !!searchText;
-
-  /**
-   * 待确认的删除操作：存储弹窗提示文字和确认后的执行函数。
-   * 非 null 时渲染 ConfirmDialog，用户点「确认删除」后执行 action 并刷新页面。
-   */
-  const [pendingDelete, setPendingDelete] = useState<{
-    message: string;
-    action: () => Promise<void> | void;
-  } | null>(null);
-
-  /**
-   * 删除项目：
-   * BUG 根因——之前只删前端 store（projectKanbanStore.removeProject），
-   * 但 AgentKanban 挂载时会从后端重新同步项目（useEffect + projectsApi.list），
-   * 刷新页面后被删的项目会从后端重新加回来，导致"删除没有效果"。
-   *
-   * 修复：先调后端 projectsApi.delete 删除服务端记录，
-   * 成功后再删前端 store，确保刷新后不会复原。
-   * 同时改用自定义弹窗（ConfirmDialog），确认后调用 window.location.reload() 刷新页面。
-   */
-  function handleDeleteProject(projectId: string, projectTitle: string) {
-    setPendingDelete({
-      message: `确定删除项目「${projectTitle}」？此操作不可撤销。`,
-      action: async () => {
-        try {
-          // Step 1：删除后端记录（先删后端，防止刷新时 useEffect 重新同步回来）
-          await projectsApi.delete(projectId);
-        } catch {
-          // 后端删除失败时，也继续删前端 store（避免 mock 数据/无后端时卡住）
-        }
-        // Step 2：删前端 store（projectKanbanStore + localStorage persist）
-        removeProject(projectId);
-      },
-    });
-  }
-
-  /**
-   * 删除任务：
-   * 当前无独立的后端任务 API，只删前端 store（taskStore + localStorage persist）。
-   * 任务数据不会从后端同步回来（AgentKanban 的 useEffect 只同步项目），
-   * 所以纯前端删除对任务是有效的。
-   * 同样改用自定义弹窗，确认后刷新页面。
-   */
-  function handleDeleteTask(taskId: string, taskTitle: string) {
-    setPendingDelete({
-      message: `确定删除任务「${taskTitle}」？此操作不可撤销。`,
-      action: () => {
-        // 只删前端 store（taskStore 无后端 API，persist 到 localStorage）
-        removeTask(taskId);
-      },
-    });
-  }
 
   function filterTask(task: Task) {
     if (!searchText) return true;
@@ -1663,26 +1232,6 @@ function StatusKanban({ col, searchText }: { col: Column; searchText: string }) 
 
   return (
     <>
-      {/* ── 删除确认弹窗 ──
-          pendingDelete 非 null 时展示，按钮居中对齐。
-          用户点「确认删除」后：
-            1. 执行 action（调后端 API + 删前端 store）
-            2. 调 window.location.reload() 刷新页面，确保列表数据与后端完全一致
-          用户点「取消」或点遮罩则关闭弹窗，什么都不做。
-      */}
-      {pendingDelete && (
-        <ConfirmDialog
-          message={pendingDelete.message}
-          onCancel={() => setPendingDelete(null)}
-          onConfirm={async () => {
-            await pendingDelete.action();
-            setPendingDelete(null);
-            // 刷新页面，确保列表展示与 store/后端数据完全同步
-            window.location.reload();
-          }}
-        />
-      )}
-
       <div style={{ flex: 1, overflowY: 'auto', padding: '20px 32px' }}>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24, alignItems: 'start' }}>
 
@@ -1708,7 +1257,7 @@ function StatusKanban({ col, searchText }: { col: Column; searchText: string }) 
                 {colProjects.map(project => (
                   <ProjectCard key={project.id} project={project} col={col}
                     onEdit={() => {/* navigate handled inside ProjectCard */}}
-                    onDelete={() => handleDeleteProject(project.id, project.title)}
+                    onDelete={() => removeProject(project.id)}
                     onEditNavigate={(p) => navigate('/console', { state: { editProject: p } })}
                   />
                 ))}
@@ -1718,43 +1267,15 @@ function StatusKanban({ col, searchText }: { col: Column; searchText: string }) 
 
           {/* ── 任务区块 ── */}
           <div>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <ListTodo size={15} color="#3b82f6" />
-                <span style={{ fontSize: 14, fontWeight: 700, color: '#374151' }}>任务</span>
-                <span style={{
-                  fontSize: 11, padding: '1px 8px', borderRadius: 20, fontWeight: 700,
-                  background: '#eff6ff', color: '#3b82f6',
-                }}>
-                  {colTasks.length}{hasFilter && colTasks.length !== tasks[col].length ? `/${tasks[col].length}` : ''}
-                </span>
-              </div>
-              {/* 新增任务按钮 */}
-              <button
-                onClick={() => setShowAddTask(true)}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: 5,
-                  padding: '6px 12px', borderRadius: 7,
-                  border: '1.5px solid #3b82f6',
-                  background: '#eff6ff', color: '#3b82f6',
-                  fontSize: 12, fontWeight: 600, cursor: 'pointer',
-                  fontFamily: '"Microsoft YaHei","Segoe UI",sans-serif',
-                  transition: 'all 0.15s',
-                }}
-                onMouseEnter={e => {
-                  e.currentTarget.style.background = '#3b82f6';
-                  e.currentTarget.style.color = '#fff';
-                }}
-                onMouseLeave={e => {
-                  e.currentTarget.style.background = '#eff6ff';
-                  e.currentTarget.style.color = '#3b82f6';
-                }}
-              >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
-                </svg>
-                新增任务
-              </button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
+              <ListTodo size={15} color="#3b82f6" />
+              <span style={{ fontSize: 14, fontWeight: 700, color: '#374151' }}>任务</span>
+              <span style={{
+                fontSize: 11, padding: '1px 8px', borderRadius: 20, fontWeight: 700,
+                background: '#eff6ff', color: '#3b82f6',
+              }}>
+                {colTasks.length}{hasFilter && colTasks.length !== tasks[col].length ? `/${tasks[col].length}` : ''}
+              </span>
             </div>
             {colTasks.length === 0 ? (
               <div style={{
@@ -1766,7 +1287,7 @@ function StatusKanban({ col, searchText }: { col: Column; searchText: string }) 
                 {colTasks.map(task => (
                   <TaskCard key={task.id} task={task} col={col}
                     onEdit={() => setEditTask({ task, col })}
-                    onDelete={() => handleDeleteTask(task.id, task.title)}
+                    onDelete={() => removeTask(task.id)}
                     onEditNavigate={(t) => navigate('/console', { state: { editTask: t } })}
                   />
                 ))}
@@ -1792,334 +1313,10 @@ function StatusKanban({ col, searchText }: { col: Column; searchText: string }) 
           project={editProject.project}
           col={editProject.col}
           onClose={() => setEditProject(null)}
-          onMove={async (id, from, to) => {
-            // Step 1：更新前端 store（立即生效）
-            storeMoveProject(id, from, to);
-            // Step 2：同步 status 到后端（active = 进行中, archived = 已完成）
-            const newStatus = to === 'done' ? 'archived' : 'active';
-            try {
-              await projectsApi.update(id, { status: newStatus } as any);
-            } catch {
-              // 后端不可用时静默，前端状态已更新不回滚
-            }
-            setEditProject(null);
-          }}
-        />
-      )}
-      {/* 新增任务弹窗 */}
-      {showAddTask && (
-        <AddTaskPanel
-          agents={agents}
-          defaultCol={col}
-          onClose={() => setShowAddTask(false)}
-          onAdd={(task) => {
-            addTask(task, col);
-            setShowAddTask(false);
-          }}
+          onMove={(id, from, to) => { storeMoveProject(id, from, to); setEditProject(null); }}
         />
       )}
     </>
-  );
-}
-
-/* ══════════════════════════════════════════════════════════════
-   新增任务弹窗
-══════════════════════════════════════════════════════════════ */
-function AddTaskPanel({
-  agents,
-  defaultCol,
-  onClose,
-  onAdd,
-}: {
-  agents: import('../types').Agent[];
-  defaultCol: Column;
-  onClose: () => void;
-  onAdd: (task: Task) => void;
-}) {
-  const [title, setTitle] = useState('');
-  const [description, setDescription] = useState('');
-  const [priority, setPriority] = useState<Task['priority']>('mid');
-  const [dueDate, setDueDate] = useState('');
-  const [selectedAgentId, setSelectedAgentId] = useState<string>('');
-  const [tags, setTags] = useState<string[]>([]);
-  const [tagInput, setTagInput] = useState('');
-
-  const canSubmit = title.trim() && selectedAgentId;
-
-  function handleSubmit() {
-    if (!canSubmit) return;
-    const agent = agents.find(a => a.id === selectedAgentId);
-    if (!agent) return;
-
-    const now = new Date();
-    const mm = String(now.getMonth() + 1).padStart(2, '0');
-    const dd = String(now.getDate()).padStart(2, '0');
-
-    const newTask: Task = {
-      id: `task_${Date.now()}`,
-      title: title.trim(),
-      description: description.trim(),
-      agent: agent.name,
-      agentColor: agent.color ?? '#6366f1',
-      agents: [{ name: agent.name, color: agent.color ?? '#6366f1' }],
-      priority,
-      tags,
-      updatedAt: '刚刚',
-      dueDate: dueDate || `${mm}/${dd}`,
-      commentCount: 0,
-      fileCount: 0,
-      source: 'manual',
-      progress: 0,
-    };
-    onAdd(newTask);
-  }
-
-  function addTag() {
-    const t = tagInput.trim();
-    if (t && !tags.includes(t)) {
-      setTags([...tags, t]);
-      setTagInput('');
-    }
-  }
-
-  function removeTag(tag: string) {
-    setTags(tags.filter(t => t !== tag));
-  }
-
-  return (
-    <div
-      onClick={onClose}
-      style={{
-        position: 'fixed', inset: 0,
-        background: 'rgba(0,0,0,0.4)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        zIndex: 9999,
-        backdropFilter: 'blur(3px)',
-        WebkitBackdropFilter: 'blur(3px)',
-      }}
-    >
-      <div
-        onClick={e => e.stopPropagation()}
-        style={{
-          background: '#fff', borderRadius: 14,
-          width: 520, maxWidth: 'calc(100vw - 32px)',
-          maxHeight: 'calc(100vh - 64px)',
-          boxShadow: '0 24px 64px rgba(0,0,0,0.18)',
-          display: 'flex', flexDirection: 'column',
-          fontFamily: '"Microsoft YaHei","Segoe UI",sans-serif',
-          overflow: 'hidden',
-        }}
-      >
-        {/* 头部 */}
-        <div style={{
-          padding: '20px 24px', borderBottom: '1px solid #f0f0f0',
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        }}>
-          <span style={{ fontWeight: 700, fontSize: 16, color: '#1a202c' }}>新增任务</span>
-          <button onClick={onClose} style={{
-            background: 'none', border: 'none', cursor: 'pointer',
-            color: '#9ca3af', fontSize: 20, lineHeight: 1, padding: 4,
-          }}>×</button>
-        </div>
-
-        {/* 内容区 */}
-        <div style={{ flex: 1, overflowY: 'auto', padding: '20px 24px' }}>
-          {/* 任务名称 */}
-          <div style={{ marginBottom: 16 }}>
-            <div style={{ fontSize: 12, fontWeight: 600, color: '#374151', marginBottom: 6 }}>
-              任务名称 <span style={{ color: '#ef4444' }}>*</span>
-            </div>
-            <input
-              value={title}
-              onChange={e => setTitle(e.target.value)}
-              placeholder="输入任务名称"
-              style={{
-                width: '100%', padding: '8px 12px', fontSize: 14,
-                border: '1.5px solid #e5e7eb', borderRadius: 8, outline: 'none',
-                boxSizing: 'border-box', fontFamily: 'inherit',
-              }}
-              onFocus={e => e.currentTarget.style.borderColor = '#3b82f6'}
-              onBlur={e => e.currentTarget.style.borderColor = '#e5e7eb'}
-            />
-          </div>
-
-          {/* 负责智能体 */}
-          <div style={{ marginBottom: 16 }}>
-            <div style={{ fontSize: 12, fontWeight: 600, color: '#374151', marginBottom: 6 }}>
-              负责智能体 <span style={{ color: '#ef4444' }}>*</span>
-            </div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-              {agents.map(agent => {
-                const selected = selectedAgentId === agent.id;
-                const ac = agent.color ?? '#6366f1';
-                return (
-                  <button
-                    key={agent.id}
-                    onClick={() => setSelectedAgentId(agent.id)}
-                    style={{
-                      display: 'flex', alignItems: 'center', gap: 6,
-                      padding: '6px 12px', borderRadius: 8,
-                      border: `1.5px solid ${selected ? ac : '#e5e7eb'}`,
-                      background: selected ? ac + '15' : '#fff',
-                      cursor: 'pointer', fontSize: 13,
-                      color: selected ? ac : '#374151',
-                      fontFamily: 'inherit', transition: 'all 0.15s',
-                    }}
-                  >
-                    <div style={{
-                      width: 18, height: 18, borderRadius: '50%',
-                      background: ac + '33', display: 'flex',
-                      alignItems: 'center', justifyContent: 'center',
-                      color: ac, fontSize: 9, fontWeight: 700,
-                    }}>{agent.name.charAt(0)}</div>
-                    {agent.name}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* 优先级 */}
-          <div style={{ marginBottom: 16 }}>
-            <div style={{ fontSize: 12, fontWeight: 600, color: '#374151', marginBottom: 6 }}>优先级</div>
-            <div style={{ display: 'flex', gap: 8 }}>
-              {(['high', 'mid', 'low'] as const).map(pv => (
-                <button
-                  key={pv}
-                  onClick={() => setPriority(pv)}
-                  style={{
-                    flex: 1, padding: '7px 0', borderRadius: 7,
-                    border: '1.5px solid',
-                    borderColor: priority === pv ? PRIORITY_MAP[pv].color : '#e5e7eb',
-                    background: priority === pv ? PRIORITY_MAP[pv].bg : '#fff',
-                    color: priority === pv ? PRIORITY_MAP[pv].color : '#9ca3af',
-                    fontSize: 12, fontWeight: 600, cursor: 'pointer',
-                    fontFamily: 'inherit', transition: 'all 0.15s',
-                  }}
-                >{PRIORITY_MAP[pv].label}</button>
-              ))}
-            </div>
-          </div>
-
-          {/* 截止日期 */}
-          <div style={{ marginBottom: 16 }}>
-            <div style={{ fontSize: 12, fontWeight: 600, color: '#374151', marginBottom: 6 }}>截止日期</div>
-            <input
-              type="date"
-              value={dueDate}
-              onChange={e => setDueDate(e.target.value)}
-              style={{
-                width: '100%', padding: '7px 12px', fontSize: 13,
-                border: '1.5px solid #e5e7eb', borderRadius: 8, outline: 'none',
-                boxSizing: 'border-box', fontFamily: 'inherit', color: '#374151',
-              }}
-              onFocus={e => e.currentTarget.style.borderColor = '#3b82f6'}
-              onBlur={e => e.currentTarget.style.borderColor = '#e5e7eb'}
-            />
-          </div>
-
-          {/* 标签 */}
-          <div style={{ marginBottom: 16 }}>
-            <div style={{ fontSize: 12, fontWeight: 600, color: '#374151', marginBottom: 6 }}>标签</div>
-            <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
-              <input
-                value={tagInput}
-                onChange={e => setTagInput(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addTag(); } }}
-                placeholder="输入标签，Enter 添加"
-                style={{
-                  flex: 1, padding: '6px 12px', fontSize: 13,
-                  border: '1.5px solid #e5e7eb', borderRadius: 8, outline: 'none',
-                  boxSizing: 'border-box', fontFamily: 'inherit',
-                }}
-                onFocus={e => e.currentTarget.style.borderColor = '#3b82f6'}
-                onBlur={e => e.currentTarget.style.borderColor = '#e5e7eb'}
-              />
-              <button
-                onClick={addTag}
-                disabled={!tagInput.trim()}
-                style={{
-                  padding: '6px 14px', borderRadius: 8,
-                  border: 'none', background: tagInput.trim() ? '#3b82f6' : '#e5e7eb',
-                  color: '#fff', fontSize: 13, fontWeight: 600,
-                  cursor: tagInput.trim() ? 'pointer' : 'default',
-                  fontFamily: 'inherit',
-                }}
-              >添加</button>
-            </div>
-            {tags.length > 0 && (
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                {tags.map(tag => {
-                  const c = getTagColor(tag);
-                  return (
-                    <span key={tag} style={{
-                      display: 'inline-flex', alignItems: 'center', gap: 4,
-                      fontSize: 12, padding: '3px 10px', borderRadius: 20,
-                      background: c.bg, color: c.text, border: `1px solid ${c.border}`,
-                    }}>
-                      {tag}
-                      <button
-                        onClick={() => removeTag(tag)}
-                        style={{
-                          background: 'none', border: 'none', cursor: 'pointer',
-                          color: c.text, opacity: 0.5, fontSize: 14, lineHeight: 1,
-                        }}
-                      >×</button>
-                    </span>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-
-          {/* 任务描述 */}
-          <div style={{ marginBottom: 8 }}>
-            <div style={{ fontSize: 12, fontWeight: 600, color: '#374151', marginBottom: 6 }}>任务描述</div>
-            <textarea
-              value={description}
-              onChange={e => setDescription(e.target.value)}
-              placeholder="添加任务描述（可选）"
-              rows={3}
-              style={{
-                width: '100%', padding: '8px 12px', fontSize: 13,
-                border: '1.5px solid #e5e7eb', borderRadius: 8, outline: 'none',
-                boxSizing: 'border-box', fontFamily: 'inherit', resize: 'vertical',
-                minHeight: 60,
-              }}
-              onFocus={e => e.currentTarget.style.borderColor = '#3b82f6'}
-              onBlur={e => e.currentTarget.style.borderColor = '#e5e7eb'}
-            />
-          </div>
-        </div>
-
-        {/* 底部按钮 */}
-        <div style={{
-          padding: '14px 24px', borderTop: '1px solid #f0f0f0',
-          display: 'flex', justifyContent: 'flex-end', gap: 10,
-        }}>
-          <button
-            onClick={onClose}
-            style={{
-              padding: '8px 20px', borderRadius: 8,
-              border: '1.5px solid #e5e7eb', background: '#fff',
-              color: '#6b7280', fontSize: 13, fontWeight: 500,
-              cursor: 'pointer', fontFamily: 'inherit',
-            }}
-          >取消</button>
-          <button
-            onClick={handleSubmit}
-            disabled={!canSubmit}
-            style={{
-              padding: '8px 20px', borderRadius: 8,
-              border: 'none', background: canSubmit ? '#3b82f6' : '#e5e7eb',
-              color: '#fff', fontSize: 13, fontWeight: 600,
-              cursor: canSubmit ? 'pointer' : 'default',
-              fontFamily: 'inherit',
-            }}
-          >创建任务</button>
-        </div>
-      </div>
-    </div>
   );
 }
 
