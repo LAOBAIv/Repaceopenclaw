@@ -15,7 +15,7 @@ import {
   VerticalLeftOutlined,
   HolderOutlined,
 } from '@ant-design/icons';
-import type { TabsProps, MenuProps, DropResult } from 'antd';
+import type { TabsProps, MenuProps } from 'antd';
 import { DndProvider, useDrag, useDrop } from 'react-dnd';
 import { HTML5Backend } from 'react-dnd-html5-backend';
 

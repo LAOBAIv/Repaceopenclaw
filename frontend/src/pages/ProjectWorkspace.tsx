@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { useLocation, useNavigate } from 'react-router-dom';
 
@@ -8,6 +8,12 @@ import { useAgentStore } from '@/stores/agentStore';
 import { useTaskStore } from '@/stores/taskStore';
 import { useProjectKanbanStore, type ProjectPriority } from '@/stores/projectKanbanStore';
 import { showToast } from '@/components/Toast';
+
+/* ── 浏览器标签页类型 ── */
+interface BrowserTab {
+  key: string;
+  title: string;
+}
 import {
   SkillPanel,
   SchedulePanel,
@@ -1962,6 +1968,33 @@ export function ProjectWorkspace() {
 
   /* ── 动态数据：优先用跳转传入的项目名 > currentProject > 第一个项目 ── */
   const taskName = incomingProjectName ?? currentProject?.title ?? (projects[0]?.title ?? 'WorkBuddy');
+
+  /* ── 浏览器标签页 ── */
+  const [browserTabs, setBrowserTabs] = useState<BrowserTab[]>([
+    { key: 'home', title: '工作台' },
+  ]);
+  const [activeBrowserTabKey, setActiveBrowserTabKey] = useState('home');
+
+  useEffect(() => {
+    setBrowserTabs(prev => prev.map(tab =>
+      tab.key === 'home' ? { ...tab, title: taskName || '工作台' } : tab
+    ));
+  }, [taskName]);
+
+  const handleAddBrowserTab = useCallback(() => {
+    const newTab: BrowserTab = { key: `tab-${Date.now()}`, title: '新标签页' };
+    setBrowserTabs(prev => [...prev, newTab]);
+    setActiveBrowserTabKey(newTab.key);
+  }, []);
+
+  const handleCloseBrowserTab = useCallback((key: string) => {
+    const idx = browserTabs.findIndex(t => t.key === key);
+    setBrowserTabs(prev => prev.filter(t => t.key !== key));
+    if (activeBrowserTabKey === key) {
+      const next = browserTabs[idx + 1] || browserTabs[idx - 1] || browserTabs[0];
+      if (next) setActiveBrowserTabKey(next.key);
+    }
+  }, [browserTabs, activeBrowserTabKey]);
   const taskProgress = 68; // 真实进度字段后端暂无，保留占位
 
   /* ── 找到 kanban 中对应的项目（项目模式用来读写 tags/priority）── */
@@ -2253,194 +2286,53 @@ export function ProjectWorkspace() {
       <div className="workspace-body">
         <div className="layout-container">
 
-          {/* 1. 顶部标题栏 */}
-          <div className="content-header">
-            {/* 模式标签：任务 / 项目 */}
-            <span style={{
-              display: 'inline-flex', alignItems: 'center', gap: 4,
-              padding: '2px 8px', borderRadius: 6, flexShrink: 0,
-              fontSize: 11, fontWeight: 600, lineHeight: 1.6,
-              background: isProjectMode ? '#ede9fe' : '#e0f2fe',
-              color:      isProjectMode ? '#7c3aed'  : '#0369a1',
-              border:     `1px solid ${isProjectMode ? '#c4b5fd' : '#bae6fd'}`,
-              userSelect: 'none',
-            }}>
-              {isProjectMode ? (
-                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                  <rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/>
-                </svg>
-              ) : (
-                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
-                </svg>
-              )}
-              {isProjectMode ? '项目' : '任务'}
-            </span>
-            <span className="brand-name">{taskName}</span>
-            <span
-              className="status-badge"
-              style={{
-                background:   STATUS_CONFIG[appStatus].bg,
-                color:        STATUS_CONFIG[appStatus].color,
-                borderColor:  STATUS_CONFIG[appStatus].border,
-              }}
-            >
-              <span style={{
-                width: 6, height: 6, borderRadius: '50%',
-                background: STATUS_CONFIG[appStatus].dotColor,
-                flexShrink: 0,
-                ...(appStatus === 'busy' ? { animation: 'pulse 1.2s infinite' } : {}),
-              }} />
-              {STATUS_CONFIG[appStatus].label}
-            </span>
-          </div>
-
-          {/* 1b. 优先级标签 + 项目标签 + 参与项目的AI智能体 */}
-          {(currentTags.length > 0 || currentPriority || agents.length > 0) && (
-            <div style={{
-              padding: '7px 24px',
-              borderBottom: '1px solid #f0f0f0',
-              display: 'flex',
-              flexDirection: 'row',
-              alignItems: 'center',
-              gap: 12,
-            }}>
-              {/* 优先级只读标签（仅有值时展示） */}
-              {currentPriority && (() => {
-                const opt = PRIORITY_OPTIONS.find(o => o.value === currentPriority);
-                if (!opt) return null;
-                return (
-                  <span style={{
-                    display: 'inline-flex', alignItems: 'center', gap: 5,
-                    padding: '2px 9px', borderRadius: 20, flexShrink: 0,
-                    fontSize: 11, fontWeight: 600, lineHeight: 1.6,
-                    border: `1px solid ${opt.color}`,
-                    background: opt.bg,
-                    color: opt.color,
-                    fontFamily: '"Microsoft YaHei","Segoe UI",sans-serif',
-                    userSelect: 'none',
-                  }}>
-                    <span style={{
-                      width: 6, height: 6, borderRadius: '50%',
-                      background: opt.color, flexShrink: 0, display: 'inline-block',
-                    }} />
-                    {opt.label}
+          {/* ── 浏览器风格多标签栏 ── */}
+          <div style={{ display: 'flex', alignItems: 'flex-end', padding: '12px 16px 0', flexShrink: 0, overflowX: 'auto', gap: 4, background: '#fafbfc' }}>
+            {browserTabs.map((tab) => {
+              const isActive = tab.key === activeBrowserTabKey;
+              return (
+                <div
+                  key={tab.key}
+                  onClick={() => setActiveBrowserTabKey(tab.key)}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 10,
+                    padding: isActive ? '14px 20px 12px' : '12px 18px 10px',
+                    background: isActive ? '#fff' : 'transparent',
+                    borderRadius: '8px 8px 0 0',
+                    border: isActive ? '1px solid #e5e7eb' : '1px solid transparent',
+                    borderBottom: 'none',
+                    cursor: 'pointer', minWidth: 120, flexShrink: 0,
+                    color: isActive ? '#1f2937' : '#6b7280',
+                    fontSize: 14, fontWeight: isActive ? 600 : 500,
+                    transition: 'all 0.2s ease',
+                    boxShadow: isActive ? '0 -2px 8px rgba(0,0,0,0.06)' : 'none',
+                    position: 'relative', marginBottom: -1,
+                  }}
+                  onMouseEnter={(e) => { if (!isActive) { e.currentTarget.style.background = '#f3f4f6'; e.currentTarget.style.color = '#374151'; } }}
+                  onMouseLeave={(e) => { if (!isActive) { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#6b7280'; } }}
+                >
+                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 160 }}>{tab.title}</span>
+                  <span
+                    onClick={(e) => { e.stopPropagation(); handleCloseBrowserTab(tab.key); }}
+                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 20, height: 20, borderRadius: 6, opacity: 0.4, cursor: 'pointer', transition: 'all 0.15s', marginLeft: 4 }}
+                    onMouseEnter={(e) => { e.stopPropagation(); e.currentTarget.style.background = '#fee2e2'; e.currentTarget.style.opacity = '1'; e.currentTarget.style.color = '#ef4444'; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.opacity = '0.4'; e.currentTarget.style.color = 'inherit'; }}
+                  >
+                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M3 3L9 9M9 3L3 9" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/></svg>
                   </span>
-                );
-              })()}
-
-              {/* 标签区 */}
-              {currentTags.length > 0 && (
-                <div style={{ display: 'flex', flexWrap: 'nowrap', alignItems: 'center', gap: 5, flexShrink: 0 }}>
-                  {currentTags.slice(0, 4).map(tag => {
-                    const c = getTagColor(tag);
-                    return (
-                      <span key={tag} style={{
-                        fontSize: 11, padding: '2px 9px', borderRadius: 20,
-                        background: c.bg, color: c.text, border: `1px solid ${c.border}`,
-                        fontWeight: 500, lineHeight: 1.6,
-                        fontFamily: '"Microsoft YaHei","Segoe UI",sans-serif',
-                        cursor: 'pointer',
-                        transition: 'opacity 0.12s',
-                      }}
-                        title="点击管理标签"
-                        onClick={() => setActiveTab('标签管理')}
-                      >{tag}</span>
-                    );
-                  })}
                 </div>
-              )}
-
-              {/* 分隔线（当左侧有内容时） */}
-              {(currentPriority || currentTags.length > 0) && agents.length > 0 && (
-                <div style={{ width: 1, height: 18, background: '#e5e7eb', flexShrink: 0 }} />
-              )}
-
-        {/* 参与项目的AI智能体（仅展示图标，不可点击/管理） */}
-        {agents.length > 0 && (() => {
-          // 项目（isProjectMode=true）→ 显示全部参与智能体叠放
-          // 任务 → 只显示当前激活的单个智能体
-          const isProject = isProjectMode;
-
-                if (isProject) {
-                  /* ── 项目模式：全部智能体叠放 ── */
-                  return (
-                    <div style={{ display: 'flex', alignItems: 'center' }}>
-                      {agents.slice(0, 6).map((agent, idx) => {
-                        const ac = agent.color ?? '#6366f1';
-                        const isActiveAgent = openPanels.some(p => p.agentId === agent.id);
-                        return (
-                          <div
-                            key={agent.id}
-                            title={agent.name}
-                            style={{
-                              width: 24, height: 24, borderRadius: '50%',
-                              background: ac + '22',
-                              border: `2px solid ${isActiveAgent ? ac : '#fff'}`,
-                              display: 'flex', alignItems: 'center', justifyContent: 'center',
-                              color: ac, fontWeight: 700, fontSize: 9,
-                              marginLeft: idx > 0 ? -6 : 0,
-                              cursor: 'default',
-                              position: 'relative',
-                              zIndex: agents.slice(0, 6).length - idx,
-                              boxShadow: `0 0 0 1.5px ${isActiveAgent ? ac + '44' : '#f5f5f5'}`,
-                              userSelect: 'none',
-                            }}
-                          >
-                            {agent.name.charAt(0)}
-                          </div>
-                        );
-                      })}
-                      {agents.length > 6 && (
-                        <div style={{
-                          width: 24, height: 24, borderRadius: '50%',
-                          background: '#f3f4f6',
-                          border: '2px solid #fff',
-                          display: 'flex', alignItems: 'center', justifyContent: 'center',
-                          color: '#9ca3af', fontWeight: 700, fontSize: 9,
-                          marginLeft: -6,
-                          cursor: 'default',
-                          userSelect: 'none',
-                        }}>
-                          +{agents.length - 6}
-                        </div>
-                      )}
-                    </div>
-                  );
-                }
-
-                /* ── 任务模式：只显示当前激活的智能体 ── */
-                const curAgent = activePanel
-                  ? agents.find(a => a.id === activePanel.agentId) ?? null
-                  : agents[0] ?? null;
-                if (!curAgent) return null;
-                const ac = curAgent.color ?? '#6366f1';
-                return (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <div style={{
-                      width: 22, height: 22, borderRadius: '50%',
-                      background: ac + '20',
-                      border: `2px solid ${ac}`,
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      color: ac, fontWeight: 700, fontSize: 9,
-                      flexShrink: 0,
-                      boxShadow: `0 0 0 2px ${ac}22`,
-                      userSelect: 'none',
-                    }}>
-                      {curAgent.name.charAt(0)}
-                    </div>
-                    <span style={{
-                      fontSize: 12, fontWeight: 600, color: ac,
-                      fontFamily: '"Microsoft YaHei","Segoe UI",sans-serif',
-                      userSelect: 'none',
-                    }}>
-                      {curAgent.name}
-                    </span>
-                  </div>
-                );
-              })()}
-            </div>
-          )}
+              );
+            })}
+            <button
+              onClick={handleAddBrowserTab}
+              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 36, height: 36, background: 'transparent', border: '1px dashed #d1d5db', borderRadius: 8, cursor: 'pointer', color: '#9ca3af', flexShrink: 0, transition: 'all 0.2s', marginBottom: 4 }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = '#f3f4f6'; e.currentTarget.style.borderColor = '#9ca3af'; e.currentTarget.style.color = '#6b7280'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.borderColor = '#d1d5db'; e.currentTarget.style.color = '#9ca3af'; }}
+              title="新增标签页"
+            >
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 3V13M3 8H13" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>
+            </button>
+          </div>
 
           {/* ══════════ 对话工作台 ══════════ */}
 
