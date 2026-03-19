@@ -1,4 +1,4 @@
-import { PRIORITY_MAP as SHARED_PRIORITY_MAP, SHARED_PRESET_TAGS as SHARED_SHARED_PRESET_TAGS, getTagColor as sharedGetTagColor } from "@/lib/constants";
+import { PRIORITY_MAP as SHARED_PRIORITY_MAP, PRESET_TAGS as SHARED_PRESET_TAGS, getTagColor as sharedGetTagColor } from "@/lib/constants";
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
@@ -41,8 +41,6 @@ function getTagColor(tag: string) {
   return TAG_COLOR_POOL[h % TAG_COLOR_POOL.length];
 }
 
-/* 预设标签（与 ProjectWorkspace 保持一致）*/
-const SHARED_PRESET_TAGS = ['优先级高', '待跟进', '已完成', '阻塞中', 'Bug', 'Feature', '文档', '重构'];
 
 /* ══════════════════════════════════════════════════════════════
    任务详情面板
@@ -83,7 +81,7 @@ function TaskDetailPanel({
     setEditing(false);
   }
 
-  const p = SHARED_SHARED_PRIORITY_MAP[editing ? editPriority : task.priority];
+  const p = SHARED_PRIORITY_MAP[editing ? editPriority : task.priority];
 
   return (
     <div onClick={onClose} style={{
@@ -343,7 +341,7 @@ function ProjectDetailPanel({
     setTagInput('');
   }
 
-  const p = SHARED_SHARED_PRIORITY_MAP[editing ? editPriority : (project.priority ?? 'low')];
+  const p = SHARED_PRIORITY_MAP[editing ? editPriority : (project.priority ?? 'low')];
 
   return (
     <div onClick={onClose} style={{
@@ -719,7 +717,7 @@ function TaskCard({
 }) {
   const navigate = useNavigate();
   const [hovered, setHovered] = useState(false);
-  const p = SHARED_SHARED_PRIORITY_MAP[task.priority];
+  const p = SHARED_PRIORITY_MAP[task.priority];
 
   return (
     <div
@@ -910,7 +908,7 @@ function ProjectCard({
 }) {
   const navigate = useNavigate();
   const [hovered, setHovered] = useState(false);
-  const p = SHARED_SHARED_PRIORITY_MAP[project.priority ?? 'low'];
+  const p = SHARED_PRIORITY_MAP[project.priority ?? 'low'];
 
   return (
     <div

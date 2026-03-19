@@ -6,7 +6,7 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { Button, Space, message, Card } from 'antd';
 import { PlusOutlined, DeleteOutlined } from '@ant-design/icons';
-import { MultiTabs, TabItem } from '@/components/MultiTabs';
+import MultiTabs, { TabItem } from '@/components/MultiTabs';
 
 // ============ 示例组件 ============
 
