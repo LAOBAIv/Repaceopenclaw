@@ -1,3 +1,8 @@
+/**
+ * 定时任务面板组件
+ * 展示定时任务示例，支持快捷填充和发送
+ */
+
 import React from 'react';
 
 interface SchedulePanelProps {
@@ -6,29 +11,18 @@ interface SchedulePanelProps {
 }
 
 const GROUPS: { label: string; items: string[] }[] = [
-  {
-    label: '重复提醒示例',
-    items: ['日程预告', 'Email 查看', '运行报告', '每月事项提醒'],
-  },
-  {
-    label: '定时提醒示例',
-    items: ['会议提醒', '临时提醒', '家人生日', '就医提醒'],
-  },
-  {
-    label: '实时追踪示例',
-    items: ['黄金价格', '世界新闻', '股价追踪'],
-  },
+  { label: '重复提醒示例', items: ['日程预告', 'Email 查看', '运行报告', '每月事项提醒'] },
+  { label: '定时提醒示例', items: ['会议提醒', '临时提醒', '家人生日', '就医提醒'] },
+  { label: '实时追踪示例', items: ['黄金价格', '世界新闻', '股价追踪'] },
 ];
 
 export function SchedulePanel({ onFillInput, onSend }: SchedulePanelProps) {
   return (
     <div style={{ fontFamily: '"Microsoft YaHei","Segoe UI",sans-serif', background: '#fff' }}>
-      {/* ── 顶部引导文案 ── */}
+      {/* 顶部引导文案 */}
       <div style={{
         display: 'flex', alignItems: 'flex-start', gap: 9,
-        paddingBottom: 16,
-        borderBottom: '1px solid #f0f0f0',
-        marginBottom: 20,
+        paddingBottom: 16, borderBottom: '1px solid #f0f0f0', marginBottom: 20,
       }}>
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="1.8"
           strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginTop: 2 }}>
@@ -39,34 +33,22 @@ export function SchedulePanel({ onFillInput, onSend }: SchedulePanelProps) {
         </span>
       </div>
 
-      {/* ── 示例分组 ── */}
+      {/* 示例分组 */}
       {GROUPS.map((group, gi) => (
         <div key={group.label} style={{ marginBottom: gi < GROUPS.length - 1 ? 18 : 0 }}>
-          {/* 组标题 */}
-          <div style={{
-            fontSize: 11, color: '#9ca3af', fontWeight: 500,
-            marginBottom: 10, letterSpacing: '0.02em',
-          }}>
+          <div style={{ fontSize: 11, color: '#9ca3af', fontWeight: 500, marginBottom: 10, letterSpacing: '0.02em' }}>
             {group.label}
           </div>
-          {/* 横向按钮组 */}
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
             {group.items.map(item => (
               <button
                 key={item}
                 onClick={() => onFillInput?.(item)}
                 style={{
-                  padding: '6px 14px',
-                  borderRadius: 8,
-                  border: 'none',
-                  background: '#f3f4f6',
-                  cursor: 'pointer',
-                  fontSize: 12,
-                  color: '#374151',
-                  fontFamily: '"Microsoft YaHei","Segoe UI",sans-serif',
-                  fontWeight: 400,
-                  transition: 'background 0.12s',
-                  outline: 'none',
+                  padding: '6px 14px', borderRadius: 8, border: 'none',
+                  background: '#f3f4f6', cursor: 'pointer', fontSize: 12,
+                  color: '#374151', fontFamily: '"Microsoft YaHei","Segoe UI",sans-serif',
+                  fontWeight: 400, transition: 'background 0.12s', outline: 'none',
                   whiteSpace: 'nowrap',
                 }}
                 onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = '#e5e7eb'; }}
@@ -79,26 +61,15 @@ export function SchedulePanel({ onFillInput, onSend }: SchedulePanelProps) {
         </div>
       ))}
 
-      {/* ── 底部操作按钮 ── */}
+      {/* 底部操作按钮 */}
       <button
         onClick={() => onSend?.('查看当前配置的定时任务，简要描述任务内容')}
         style={{
-          marginTop: 20,
-          width: '100%',
-          height: 40,
-          fontSize: 13,
-          fontWeight: 400,
-          border: 'none',
-          borderRadius: 8,
-          background: '#f3f4f6',
-          cursor: 'pointer',
-          color: '#374151',
-          fontFamily: '"Microsoft YaHei","Segoe UI",sans-serif',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          transition: 'background 0.12s',
-          outline: 'none',
+          marginTop: 20, width: '100%', height: 40, fontSize: 13, fontWeight: 400,
+          border: 'none', borderRadius: 8, background: '#f3f4f6', cursor: 'pointer',
+          color: '#374151', fontFamily: '"Microsoft YaHei","Segoe UI",sans-serif',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          transition: 'background 0.12s', outline: 'none',
         }}
         onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = '#e5e7eb'; }}
         onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = '#f3f4f6'; }}

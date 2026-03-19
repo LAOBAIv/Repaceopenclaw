@@ -1,6 +1,12 @@
+/**
+ * 快捷指令面板组件
+ * 展示快捷指令列表，支持点击注入指令
+ */
+
 import React from 'react';
 
 interface ShortcutPanelProps {
+  taskName?: string;
   onInject?: (text: string) => void;
 }
 
@@ -35,12 +41,10 @@ const SHORTCUT_GROUPS: { label: string; items: { label: string; cmd: string; hin
 export function ShortcutPanel({ onInject }: ShortcutPanelProps) {
   return (
     <div style={{ fontFamily: '"Microsoft YaHei","Segoe UI",sans-serif', background: '#fff' }}>
-      {/* ── 顶部引导文案 ── */}
+      {/* 顶部引导文案 */}
       <div style={{
         display: 'flex', alignItems: 'flex-start', gap: 9,
-        paddingBottom: 16,
-        borderBottom: '1px solid #f0f0f0',
-        marginBottom: 20,
+        paddingBottom: 16, borderBottom: '1px solid #f0f0f0', marginBottom: 20,
       }}>
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="1.8"
           strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginTop: 2 }}>
@@ -52,17 +56,12 @@ export function ShortcutPanel({ onInject }: ShortcutPanelProps) {
         </span>
       </div>
 
-      {/* ── 指令分组 ── */}
+      {/* 指令分组 */}
       {SHORTCUT_GROUPS.map((group, gi) => (
         <div key={group.label} style={{ marginBottom: gi < SHORTCUT_GROUPS.length - 1 ? 18 : 0 }}>
-          {/* 组标题 */}
-          <div style={{
-            fontSize: 11, color: '#9ca3af', fontWeight: 500,
-            marginBottom: 10, letterSpacing: '0.02em',
-          }}>
+          <div style={{ fontSize: 11, color: '#9ca3af', fontWeight: 500, marginBottom: 10, letterSpacing: '0.02em' }}>
             {group.label}
           </div>
-          {/* 横向按钮组 */}
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
             {group.items.map(item => (
               <button
@@ -70,19 +69,11 @@ export function ShortcutPanel({ onInject }: ShortcutPanelProps) {
                 onClick={() => onInject?.(item.cmd)}
                 title={item.hint}
                 style={{
-                  padding: '6px 14px',
-                  borderRadius: 8,
-                  border: 'none',
-                  background: '#f3f4f6',
-                  cursor: 'pointer',
-                  fontSize: 12,
-                  color: '#374151',
-                  fontFamily: '"Microsoft YaHei","Segoe UI",sans-serif',
-                  fontWeight: 400,
-                  transition: 'background 0.12s',
-                  outline: 'none',
-                  whiteSpace: 'nowrap',
-                  display: 'inline-flex', alignItems: 'center', gap: 5,
+                  padding: '6px 14px', borderRadius: 8, border: 'none',
+                  background: '#f3f4f6', cursor: 'pointer', fontSize: 12,
+                  color: '#374151', fontFamily: '"Microsoft YaHei","Segoe UI",sans-serif',
+                  fontWeight: 400, transition: 'background 0.12s', outline: 'none',
+                  whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: 5,
                 }}
                 onMouseEnter={e => {
                   (e.currentTarget as HTMLButtonElement).style.background = '#fef3c7';
@@ -96,8 +87,7 @@ export function ShortcutPanel({ onInject }: ShortcutPanelProps) {
                 <span style={{
                   fontSize: 10, padding: '1px 5px', borderRadius: 4,
                   background: 'rgba(245,158,11,0.12)', color: '#d97706',
-                  fontFamily: 'monospace', letterSpacing: '0.02em',
-                  fontWeight: 600,
+                  fontFamily: 'monospace', letterSpacing: '0.02em', fontWeight: 600,
                 }}>{item.cmd}</span>
                 {item.label}
               </button>
@@ -106,27 +96,15 @@ export function ShortcutPanel({ onInject }: ShortcutPanelProps) {
         </div>
       ))}
 
-      {/* ── 底部操作按钮 ── */}
+      {/* 底部操作按钮 */}
       <button
         onClick={() => onInject?.('/help')}
         style={{
-          marginTop: 20,
-          width: '100%',
-          height: 40,
-          fontSize: 13,
-          fontWeight: 400,
-          border: 'none',
-          borderRadius: 8,
-          background: '#f3f4f6',
-          cursor: 'pointer',
-          color: '#374151',
-          fontFamily: '"Microsoft YaHei","Segoe UI",sans-serif',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          gap: 6,
-          transition: 'background 0.12s',
-          outline: 'none',
+          marginTop: 20, width: '100%', height: 40, fontSize: 13, fontWeight: 400,
+          border: 'none', borderRadius: 8, background: '#f3f4f6', cursor: 'pointer',
+          color: '#374151', fontFamily: '"Microsoft YaHei","Segoe UI",sans-serif',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+          transition: 'background 0.12s', outline: 'none',
         }}
         onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = '#e5e7eb'; }}
         onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = '#f3f4f6'; }}

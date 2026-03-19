@@ -5,743 +5,26 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { useProjectStore } from '@/stores/projectStore';
 import { useConversationStore } from '@/stores/conversationStore';
 import { useAgentStore } from '@/stores/agentStore';
-import { MessageBubble } from '@/components/conversation/MessageBubble';
 import { useTaskStore } from '@/stores/taskStore';
 import { useProjectKanbanStore, type ProjectPriority } from '@/stores/projectKanbanStore';
 import { showToast } from '@/components/Toast';
-import { projectsApi } from '@/api/projects';
-import { CreateTaskModal } from '@/components/CreateTaskModal';
+import {
+  SkillPanel,
+  SchedulePanel,
+  ShortcutPanel,
+  TagPanel,
+  FUNCTION_TABS,
+  CHANNEL_LIST,
+  PRIORITY_OPTIONS,
+  TAB_META,
+  CHANNEL_TABS,
+  CHANNEL_LABELS,
+  getProgressColor,
+  getTagColor,
+  type ChannelType,
+} from '@/components/workspace';
 
 /* ─── 功能标签列表 ─────────────────────────────────────────── */
-const FUNCTION_TABS = ['消息渠道', '飞书配对', '快捷指令', '技能', '定时任务', '智能体', '文件快传', '标签管理', '优先级'];
-
-
-
-
-
-
-function getProgressColor(p: number) {
-  if (p >= 80) return '#22c55e';
-  if (p >= 50) return '#3b82f6';
-  return '#f59e0b';
-}
-
-/* ─── 优先级配置 ───────────────────────────────────────────── */
-const PRIORITY_OPTIONS: { value: ProjectPriority; label: string; color: string; bg: string }[] = [
-  { value: 'high', label: '高优先级', color: '#ef4444', bg: '#fef2f2' },
-  { value: 'mid',  label: '中优先级', color: '#f59e0b', bg: '#fffbeb' },
-  { value: 'low',  label: '低优先级', color: '#22c55e', bg: '#f0fdf4' },
-];
-
-/* ─── 浮动面板内容组件 ─────────────────────────────────────── */
-
-/* 每个 tab 的元信息 */
-const TAB_META: Record<string, { icon: React.ReactNode; subtitle: string; gradient: string }> = {
-  '消息渠道': {
-    gradient: 'linear-gradient(135deg,#6366f1,#8b5cf6)',
-    subtitle: '连接渠道后，智能体可接收并回复消息',
-    icon: (
-      <svg width="19" height="19" viewBox="0 0 17 17" fill="none">
-        <path d="M2 3.5C2 2.67 2.67 2 3.5 2H10L15 7V13.5C15 14.33 14.33 15 13.5 15H3.5C2.67 15 2 14.33 2 13.5V3.5Z"
-          fill="none" stroke="white" strokeWidth="1.4" strokeLinejoin="round"/>
-        <path d="M10 2V7H15" stroke="white" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
-        <path d="M5 10H12M5 12.5H9" stroke="white" strokeWidth="1.3" strokeLinecap="round"/>
-      </svg>
-    ),
-  },
-  '飞书配对': {
-    gradient: 'linear-gradient(135deg,#00b96b,#06d6a0)',
-    subtitle: '绑定飞书账号，自动同步消息与日历',
-    icon: (
-      <svg width="19" height="19" viewBox="0 0 17 17" fill="none">
-        <circle cx="8.5" cy="8.5" r="5.5" stroke="white" strokeWidth="1.4"/>
-        <path d="M6 8.5L8 10.5L11 7" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-      </svg>
-    ),
-  },
-  '快捷指令': {
-    gradient: 'linear-gradient(135deg,#f59e0b,#f97316)',
-    subtitle: '在输入框中输入 / 触发快捷指令',
-    icon: (
-      <svg width="19" height="19" viewBox="0 0 17 17" fill="none">
-        <rect x="2" y="2" width="13" height="13" rx="3" stroke="white" strokeWidth="1.4"/>
-        <path d="M5.5 8.5L7.5 10.5L11.5 6.5" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-      </svg>
-    ),
-  },
-  '文件快传': {
-    gradient: 'linear-gradient(135deg,#3b82f6,#06b6d4)',
-    subtitle: '上传文件作为智能体上下文参考资料',
-    icon: (
-      <svg width="19" height="19" viewBox="0 0 17 17" fill="none">
-        <path d="M3 13V4.5C3 3.67 3.67 3 4.5 3H9L14 8V13C14 13.83 13.33 14.5 12.5 14.5H4.5C3.67 14.5 3 13.83 3 13Z"
-          stroke="white" strokeWidth="1.4" strokeLinejoin="round"/>
-        <path d="M9 3V8H14" stroke="white" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
-        <path d="M8.5 10V13.5M7 11.5L8.5 10L10 11.5" stroke="white" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
-      </svg>
-    ),
-  },
-  '标签管理': {
-    gradient: 'linear-gradient(135deg,#ec4899,#a855f7)',
-    subtitle: '管理项目标签，标签将同步至项目列表',
-    icon: (
-      <svg width="19" height="19" viewBox="0 0 17 17" fill="none">
-        <path d="M2 9.5L7.5 3H14V9.5L8.5 15L2 9.5Z" stroke="white" strokeWidth="1.4" strokeLinejoin="round"/>
-        <circle cx="11" cy="6" r="1.2" fill="white"/>
-      </svg>
-    ),
-  },
-  '技能': {
-    gradient: 'linear-gradient(135deg,#0ea5e9,#6366f1)',
-    subtitle: '为智能体配置专属技能模块',
-    icon: (
-      <svg width="19" height="19" viewBox="0 0 17 17" fill="none">
-        <path d="M8.5 2L10.5 6.5H15L11.5 9.5L13 14L8.5 11L4 14L5.5 9.5L2 6.5H6.5L8.5 2Z" stroke="white" strokeWidth="1.3" strokeLinejoin="round"/>
-      </svg>
-    ),
-  },
-  '定时任务': {
-    gradient: 'linear-gradient(135deg,#f97316,#ef4444)',
-    subtitle: '设置定期自动执行的任务计划',
-    icon: (
-      <svg width="19" height="19" viewBox="0 0 17 17" fill="none">
-        <circle cx="8.5" cy="9" r="5.5" stroke="white" strokeWidth="1.4"/>
-        <path d="M8.5 6V9.5L11 11" stroke="white" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
-        <path d="M6 2.5H11" stroke="white" strokeWidth="1.4" strokeLinecap="round"/>
-      </svg>
-    ),
-  },
-  '智能体': {
-    gradient: 'linear-gradient(135deg,#8b5cf6,#6366f1)',
-    subtitle: '管理并配置项目关联的智能体',
-    icon: (
-      <svg width="19" height="19" viewBox="0 0 17 17" fill="none">
-        <rect x="3" y="5" width="11" height="8" rx="2.5" stroke="white" strokeWidth="1.4"/>
-        <circle cx="6" cy="9" r="1.2" fill="white"/>
-        <circle cx="11" cy="9" r="1.2" fill="white"/>
-        <path d="M6 3.5V5M11 3.5V5" stroke="white" strokeWidth="1.4" strokeLinecap="round"/>
-        <path d="M6 13V14.5M11 13V14.5" stroke="white" strokeWidth="1.3" strokeLinecap="round"/>
-      </svg>
-    ),
-  },
-};
-
-/* ─── 定时任务面板 ──────────────────────────────────────────── */
-/* ─── 技能面板 ──────────────────────────────────────────────── */
-function SkillPanel({ onInject }: { taskName?: string; onInject?: (text: string) => void }) {
-  const SKILL_GROUPS: { label: string; items: { key: string; cmd: string; hint: string }[] }[] = [
-    {
-      label: '信息获取',
-      items: [
-        { key: '联网搜索', cmd: '/skill search', hint: '实时搜索互联网，获取最新新闻、数据与资料。' },
-        { key: '知识库检索', cmd: '/skill kb', hint: '从项目知识库中检索相关文档，增强回答准确性。' },
-        { key: '图片识别', cmd: '/skill vision', hint: '上传图片后自动识别内容、提取文字或描述画面。' },
-      ],
-    },
-    {
-      label: '数据与代码',
-      items: [
-        { key: '代码执行', cmd: '/skill code', hint: '在沙箱中运行 Python / JavaScript 代码并返回结果。' },
-        { key: '文件解析', cmd: '/skill file', hint: '解析 PDF、Word、Excel 等文件，提取其中的文字与数据。' },
-        { key: '数据分析', cmd: '/skill analyze', hint: '对表格或数据集进行统计、趋势分析与洞察总结。' },
-        { key: '图表生成', cmd: '/skill chart', hint: '根据数据自动生成折线图、柱状图、饼图等可视化图表。' },
-      ],
-    },
-    {
-      label: '协作与通知',
-      items: [
-        { key: '邮件发送', cmd: '/skill email', hint: '通过绑定邮箱自动撰写并发送邮件，支持附件。' },
-        { key: '日历同步', cmd: '/skill calendar', hint: '读取或写入日历事件，自动安排日程与提醒。' },
-      ],
-    },
-  ];
-
-  return (
-    <div style={{ fontFamily: '"Microsoft YaHei","Segoe UI",sans-serif', background: '#fff' }}>
-
-      {/* ── 顶部引导文案 ── */}
-      <div style={{
-        display: 'flex', alignItems: 'flex-start', gap: 9,
-        paddingBottom: 16,
-        borderBottom: '1px solid #f0f0f0',
-        marginBottom: 20,
-      }}>
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#0ea5e9" strokeWidth="1.8"
-          strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginTop: 2 }}>
-          <path d="M8.5 2L10.5 6.5H15L11.5 9.5L13 14L8.5 11L4 14L5.5 9.5L2 6.5H6.5L8.5 2Z"/>
-        </svg>
-        <span style={{ fontSize: 13, color: '#374151', lineHeight: 1.75 }}>
-          点击技能按钮，将对应指令带入对话框，让智能体调用该能力。可同时点击多个后一起发送。
-        </span>
-      </div>
-
-      {/* ── 技能分组 ── */}
-      {SKILL_GROUPS.map((group, gi) => (
-        <div key={group.label} style={{ marginBottom: gi < SKILL_GROUPS.length - 1 ? 18 : 0 }}>
-          {/* 组标题 */}
-          <div style={{
-            fontSize: 11, color: '#9ca3af', fontWeight: 500,
-            marginBottom: 10, letterSpacing: '0.02em',
-          }}>
-            {group.label}
-          </div>
-          {/* 横向按钮组 */}
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-            {group.items.map(item => (
-              <button
-                key={item.key}
-                onClick={() => onInject?.(item.cmd)}
-                title={item.hint}
-                style={{
-                  padding: '6px 14px',
-                  borderRadius: 8,
-                  border: 'none',
-                  background: '#f3f4f6',
-                  cursor: 'pointer',
-                  fontSize: 12,
-                  color: '#374151',
-                  fontFamily: '"Microsoft YaHei","Segoe UI",sans-serif',
-                  fontWeight: 400,
-                  transition: 'background 0.12s',
-                  outline: 'none',
-                  whiteSpace: 'nowrap',
-                  display: 'inline-flex', alignItems: 'center', gap: 5,
-                }}
-                onMouseEnter={e => {
-                  (e.currentTarget as HTMLButtonElement).style.background = '#e0e7ff';
-                  (e.currentTarget as HTMLButtonElement).style.color = '#4f46e5';
-                }}
-                onMouseLeave={e => {
-                  (e.currentTarget as HTMLButtonElement).style.background = '#f3f4f6';
-                  (e.currentTarget as HTMLButtonElement).style.color = '#374151';
-                }}
-              >
-                <span style={{
-                  fontSize: 10, padding: '1px 5px', borderRadius: 4,
-                  background: 'rgba(99,102,241,0.1)', color: '#6366f1',
-                  fontFamily: 'monospace', letterSpacing: '0.02em',
-                  fontWeight: 600,
-                }}>{item.cmd.split(' ').pop()}</span>
-                {item.key}
-              </button>
-            ))}
-          </div>
-        </div>
-      ))}
-
-      {/* ── 底部操作按钮 ── */}
-      <button
-        onClick={() => onInject?.('/skill list')}
-        style={{
-          marginTop: 20,
-          width: '100%',
-          height: 40,
-          fontSize: 13,
-          fontWeight: 400,
-          border: 'none',
-          borderRadius: 8,
-          background: '#f3f4f6',
-          cursor: 'pointer',
-          color: '#374151',
-          fontFamily: '"Microsoft YaHei","Segoe UI",sans-serif',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          gap: 6,
-          transition: 'background 0.12s',
-          outline: 'none',
-        }}
-        onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = '#e5e7eb'; }}
-        onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = '#f3f4f6'; }}
-      >
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/>
-          <line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/>
-        </svg>
-        查看全部可用技能
-      </button>
-    </div>
-  );
-}
-
-function SchedulePanel({
-  onFillInput,
-  onSend,
-}: {
-  onFillInput?: (text: string) => void;
-  onSend?: (text: string) => void;
-}) {
-  const GROUPS: { label: string; items: string[] }[] = [
-    {
-      label: '重复提醒示例',
-      items: ['日程预告', 'Email 查看', '运行报告', '每月事项提醒'],
-    },
-    {
-      label: '定时提醒示例',
-      items: ['会议提醒', '临时提醒', '家人生日', '就医提醒'],
-    },
-    {
-      label: '实时追踪示例',
-      items: ['黄金价格', '世界新闻', '股价追踪'],
-    },
-  ];
-
-  return (
-    <div style={{ fontFamily: '"Microsoft YaHei","Segoe UI",sans-serif', background: '#fff' }}>
-
-      {/* ── 顶部引导文案 ── */}
-      <div style={{
-        display: 'flex', alignItems: 'flex-start', gap: 9,
-        paddingBottom: 16,
-        borderBottom: '1px solid #f0f0f0',
-        marginBottom: 20,
-      }}>
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="1.8"
-          strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginTop: 2 }}>
-          <path d="M9 18h6M10 22h4M12 2a7 7 0 0 1 4.9 11.9c-.6.6-1.4 1.6-1.9 3.1H9c-.5-1.5-1.3-2.5-1.9-3.1A7 7 0 0 1 12 2z"/>
-        </svg>
-        <span style={{ fontSize: 13, color: '#374151', lineHeight: 1.75 }}>
-          不用记命令，不用写代码，像聊天一样，直接设置定时任务。只需要说清楚 3 件事：什么时候执行，做什么任务，要不要重复。
-        </span>
-      </div>
-
-      {/* ── 示例分组 ── */}
-      {GROUPS.map((group, gi) => (
-        <div key={group.label} style={{ marginBottom: gi < GROUPS.length - 1 ? 18 : 0 }}>
-          {/* 组标题 */}
-          <div style={{
-            fontSize: 11, color: '#9ca3af', fontWeight: 500,
-            marginBottom: 10, letterSpacing: '0.02em',
-          }}>
-            {group.label}
-          </div>
-          {/* 横向按钮组 */}
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-            {group.items.map(item => (
-              <button
-                key={item}
-                onClick={() => onFillInput?.(item)}
-                style={{
-                  padding: '6px 14px',
-                  borderRadius: 8,
-                  border: 'none',
-                  background: '#f3f4f6',
-                  cursor: 'pointer',
-                  fontSize: 12,
-                  color: '#374151',
-                  fontFamily: '"Microsoft YaHei","Segoe UI",sans-serif',
-                  fontWeight: 400,
-                  transition: 'background 0.12s',
-                  outline: 'none',
-                  whiteSpace: 'nowrap',
-                }}
-                onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = '#e5e7eb'; }}
-                onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = '#f3f4f6'; }}
-              >
-                {item}
-              </button>
-            ))}
-          </div>
-        </div>
-      ))}
-
-      {/* ── 底部操作按钮 ── */}
-      <button
-        onClick={() => onSend?.('查看当前配置的定时任务，简要描述任务内容')}
-        style={{
-          marginTop: 20,
-          width: '100%',
-          height: 40,
-          fontSize: 13,
-          fontWeight: 400,
-          border: 'none',
-          borderRadius: 8,
-          background: '#f3f4f6',
-          cursor: 'pointer',
-          color: '#374151',
-          fontFamily: '"Microsoft YaHei","Segoe UI",sans-serif',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          transition: 'background 0.12s',
-          outline: 'none',
-        }}
-        onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = '#e5e7eb'; }}
-        onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = '#f3f4f6'; }}
-      >
-        查看我的定时任务
-      </button>
-    </div>
-  );
-}
-
-/* ─── 快捷指令面板 ──────────────────────────────────────────── */
-function ShortcutPanel({ onInject }: { taskName?: string; onInject?: (text: string) => void }) {
-  const SHORTCUT_GROUPS: { label: string; items: { label: string; cmd: string; hint: string }[] }[] = [
-    {
-      label: '对话控制',
-      items: [
-        { label: '新对话', cmd: '/new', hint: '清空当前对话，开启一段全新的会话。' },
-        { label: '查看上下文', cmd: '/context', hint: '展示当前对话已记住的上下文内容与 Token 用量。' },
-        { label: '清空上下文', cmd: '/clear', hint: '清除本次对话的历史上下文，释放记忆空间。' },
-        { label: '总结对话', cmd: '/summary', hint: '对当前对话内容生成简洁的摘要与关键结论。' },
-      ],
-    },
-    {
-      label: '系统查询',
-      items: [
-        { label: '系统状态', cmd: '/status', hint: '查看当前系统运行状态，包括模型、工具、连接情况。' },
-        { label: '查看计划', cmd: '/plan', hint: '查看智能体当前正在执行或待执行的任务计划。' },
-        { label: '工具列表', cmd: '/tools', hint: '查看当前可调用的工具，例如浏览器、文件、代码执行等。' },
-      ],
-    },
-    {
-      label: '任务操作',
-      items: [
-        { label: '暂停任务', cmd: '/pause', hint: '暂停智能体当前正在执行的任务。' },
-        { label: '继续执行', cmd: '/resume', hint: '恢复被暂停的任务继续执行。' },
-        { label: '取消任务', cmd: '/cancel', hint: '取消当前任务，停止所有相关操作。' },
-      ],
-    },
-  ];
-
-  return (
-    <div style={{ fontFamily: '"Microsoft YaHei","Segoe UI",sans-serif', background: '#fff' }}>
-
-      {/* ── 顶部引导文案 ── */}
-      <div style={{
-        display: 'flex', alignItems: 'flex-start', gap: 9,
-        paddingBottom: 16,
-        borderBottom: '1px solid #f0f0f0',
-        marginBottom: 20,
-      }}>
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="1.8"
-          strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginTop: 2 }}>
-          <rect x="2" y="2" width="20" height="20" rx="4"/>
-          <path d="M8 12l3 3 5-5"/>
-        </svg>
-        <span style={{ fontSize: 13, color: '#374151', lineHeight: 1.75 }}>
-          点击按钮将指令带入对话框，或直接在输入框中输入 / 触发快捷指令。
-        </span>
-      </div>
-
-      {/* ── 指令分组 ── */}
-      {SHORTCUT_GROUPS.map((group, gi) => (
-        <div key={group.label} style={{ marginBottom: gi < SHORTCUT_GROUPS.length - 1 ? 18 : 0 }}>
-          {/* 组标题 */}
-          <div style={{
-            fontSize: 11, color: '#9ca3af', fontWeight: 500,
-            marginBottom: 10, letterSpacing: '0.02em',
-          }}>
-            {group.label}
-          </div>
-          {/* 横向按钮组 */}
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-            {group.items.map(item => (
-              <button
-                key={item.label}
-                onClick={() => onInject?.(item.cmd)}
-                title={item.hint}
-                style={{
-                  padding: '6px 14px',
-                  borderRadius: 8,
-                  border: 'none',
-                  background: '#f3f4f6',
-                  cursor: 'pointer',
-                  fontSize: 12,
-                  color: '#374151',
-                  fontFamily: '"Microsoft YaHei","Segoe UI",sans-serif',
-                  fontWeight: 400,
-                  transition: 'background 0.12s',
-                  outline: 'none',
-                  whiteSpace: 'nowrap',
-                  display: 'inline-flex', alignItems: 'center', gap: 5,
-                }}
-                onMouseEnter={e => {
-                  (e.currentTarget as HTMLButtonElement).style.background = '#fef3c7';
-                  (e.currentTarget as HTMLButtonElement).style.color = '#b45309';
-                }}
-                onMouseLeave={e => {
-                  (e.currentTarget as HTMLButtonElement).style.background = '#f3f4f6';
-                  (e.currentTarget as HTMLButtonElement).style.color = '#374151';
-                }}
-              >
-                <span style={{
-                  fontSize: 10, padding: '1px 5px', borderRadius: 4,
-                  background: 'rgba(245,158,11,0.12)', color: '#d97706',
-                  fontFamily: 'monospace', letterSpacing: '0.02em',
-                  fontWeight: 600,
-                }}>{item.cmd}</span>
-                {item.label}
-              </button>
-            ))}
-          </div>
-        </div>
-      ))}
-
-      {/* ── 底部操作按钮 ── */}
-      <button
-        onClick={() => onInject?.('/help')}
-        style={{
-          marginTop: 20,
-          width: '100%',
-          height: 40,
-          fontSize: 13,
-          fontWeight: 400,
-          border: 'none',
-          borderRadius: 8,
-          background: '#f3f4f6',
-          cursor: 'pointer',
-          color: '#374151',
-          fontFamily: '"Microsoft YaHei","Segoe UI",sans-serif',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          gap: 6,
-          transition: 'background 0.12s',
-          outline: 'none',
-        }}
-        onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = '#e5e7eb'; }}
-        onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = '#f3f4f6'; }}
-      >
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <circle cx="12" cy="12" r="10"/>
-          <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/>
-          <line x1="12" y1="17" x2="12.01" y2="17"/>
-        </svg>
-        查看全部指令帮助
-      </button>
-    </div>
-  );
-}
-
-/* ─── 标签管理面板 ──────────────────────────────────────────── */
-// 标签颜色池
-const TAG_COLOR_POOL: { bg: string; border: string; text: string }[] = [
-  { bg: '#eff6ff', border: '#bfdbfe', text: '#1d4ed8' },
-  { bg: '#f0fdf4', border: '#bbf7d0', text: '#15803d' },
-  { bg: '#fdf4ff', border: '#e9d5ff', text: '#7c3aed' },
-  { bg: '#fff7ed', border: '#fed7aa', text: '#c2410c' },
-  { bg: '#fef2f2', border: '#fecaca', text: '#b91c1c' },
-  { bg: '#ecfdf5', border: '#a7f3d0', text: '#065f46' },
-  { bg: '#f0f9ff', border: '#bae6fd', text: '#0369a1' },
-  { bg: '#fafaf9', border: '#e7e5e4', text: '#44403c' },
-];
-
-function getTagColor(tag: string) {
-  let h = 0;
-  for (let i = 0; i < tag.length; i++) h = (h * 31 + tag.charCodeAt(i)) >>> 0;
-  return TAG_COLOR_POOL[h % TAG_COLOR_POOL.length];
-}
-
-// 预设标签
-const PRESET_TAGS = ['优先级高', '待跟进', '已完成', '阻塞中', 'Bug', 'Feature', '文档', '重构'];
-
-
-
-
-function TagPanel({
-  tags, onAddTag, onRemoveTag, taskName,
-}: {
-  tags?: string[];
-  onAddTag?: (tag: string) => void;
-  onRemoveTag?: (tag: string) => void;
-  taskName?: string;
-}) {
-  // 本地维护已选标签（初始化为外部传入的 tags）
-  const [localTags, setLocalTags] = useState<string[]>(tags ?? []);
-  const [tagInput, setTagInput] = useState('');
-  const tagInputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    tagInputRef.current?.focus();
-  }, []);
-
-  // 添加标签（去重）
-  function addTag(raw: string) {
-    const t = raw.trim();
-    if (!t || localTags.includes(t)) return;
-    const next = [...localTags, t];
-    setLocalTags(next);
-    onAddTag?.(t);
-  }
-
-  // 移除标签
-  function removeTag(tag: string) {
-    setLocalTags(prev => prev.filter(t => t !== tag));
-    onRemoveTag?.(tag);
-  }
-
-  // 点击预设标签：已选则取消，未选则添加
-  function togglePreset(pt: string) {
-    if (localTags.includes(pt)) {
-      removeTag(pt);
-    } else {
-      addTag(pt);
-    }
-  }
-
-  function commitTag() {
-    addTag(tagInput);
-    setTagInput('');
-  }
-
-  return (
-    <div style={{ fontFamily: '"Microsoft YaHei","Segoe UI",sans-serif' }}>
-
-      {/* ── 顶部：已选标签展示区 ── */}
-      <div style={{
-        display: 'flex', flexWrap: 'wrap', gap: 7, alignContent: 'flex-start',
-        minHeight: 52, marginBottom: 16,
-        padding: '10px 12px',
-        background: '#fafafa',
-        border: '1.5px solid #e5e7eb',
-        borderRadius: 10,
-        transition: 'border-color 0.15s',
-      }}
-        onClick={() => tagInputRef.current?.focus()}
-      >
-        {localTags.length === 0 ? (
-          <span style={{ fontSize: 12, color: '#d1d5db', lineHeight: '24px', userSelect: 'none' }}>
-            点击下方标签或输入自定义标签后展示在这里
-          </span>
-        ) : localTags.map(tag => {
-          const c = getTagColor(tag);
-          return (
-            <span key={tag} style={{
-              display: 'inline-flex', alignItems: 'center', gap: 3,
-              fontSize: 12, padding: '3px 8px 3px 10px', borderRadius: 20,
-              background: c.bg, color: c.text, border: `1px solid ${c.border}`,
-              fontWeight: 500, lineHeight: 1.5,
-            }}>
-              {tag}
-              <button
-                onClick={e => { e.stopPropagation(); removeTag(tag); }}
-                style={{
-                  background: 'none', border: 'none', cursor: 'pointer',
-                  padding: '0 1px', lineHeight: 1, color: c.text,
-                  opacity: 0.45, fontSize: 15,
-                  display: 'flex', alignItems: 'center',
-                  transition: 'opacity 0.12s',
-                }}
-                onMouseEnter={e => { e.currentTarget.style.opacity = '1'; }}
-                onMouseLeave={e => { e.currentTarget.style.opacity = '0.45'; }}
-                title="移除此标签"
-              >×</button>
-            </span>
-          );
-        })}
-      </div>
-
-      {/* ── 快捷预设标签（可点击切换）── */}
-      <div style={{ marginBottom: 14 }}>
-        <div style={{ fontSize: 11, color: '#9ca3af', fontWeight: 600, letterSpacing: '0.04em', marginBottom: 8 }}>
-          快捷标签
-        </div>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-          {PRESET_TAGS.map(pt => {
-            const selected = localTags.includes(pt);
-            const c = getTagColor(pt);
-            return (
-              <button
-                key={pt}
-                onClick={() => togglePreset(pt)}
-                style={{
-                  padding: '4px 11px', borderRadius: 20, fontSize: 12,
-                  border: `1px solid ${selected ? c.border : '#e5e7eb'}`,
-                  background: selected ? c.bg : '#fff',
-                  color: selected ? c.text : '#6b7280',
-                  cursor: 'pointer',
-                  fontFamily: '"Microsoft YaHei","Segoe UI",sans-serif',
-                  fontWeight: selected ? 600 : 400,
-                  transition: 'all 0.12s',
-                  display: 'inline-flex', alignItems: 'center', gap: 4,
-                  outline: 'none',
-                }}
-                onMouseEnter={e => {
-                  if (!selected) {
-                    (e.currentTarget as HTMLButtonElement).style.borderColor = c.border;
-                    (e.currentTarget as HTMLButtonElement).style.background = c.bg + 'cc';
-                    (e.currentTarget as HTMLButtonElement).style.color = c.text;
-                  }
-                }}
-                onMouseLeave={e => {
-                  if (!selected) {
-                    (e.currentTarget as HTMLButtonElement).style.borderColor = '#e5e7eb';
-                    (e.currentTarget as HTMLButtonElement).style.background = '#fff';
-                    (e.currentTarget as HTMLButtonElement).style.color = '#6b7280';
-                  }
-                }}
-              >
-                {selected ? (
-                  <svg width="10" height="10" viewBox="0 0 10 10" fill="none" style={{ flexShrink: 0 }}>
-                    <path d="M1.5 5L4 7.5L8.5 2.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
-                  </svg>
-                ) : (
-                  <span style={{ fontSize: 12, lineHeight: 1, opacity: 0.5 }}>+</span>
-                )}
-                {pt}
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* ── 自定义输入 ── */}
-      <div style={{ display: 'flex', gap: 8 }}>
-        <input
-          ref={tagInputRef}
-          value={tagInput}
-          onChange={e => setTagInput(e.target.value)}
-          onKeyDown={e => {
-            if (e.key === 'Enter') { e.preventDefault(); commitTag(); }
-          }}
-          placeholder="输入自定义标签，Enter 确认"
-          style={{
-            flex: 1, height: 38, fontSize: 13, padding: '0 14px',
-            border: '1.5px solid #e5e7eb', borderRadius: 8, outline: 'none',
-            fontFamily: '"Microsoft YaHei","Segoe UI",sans-serif', color: '#374151',
-            transition: 'border-color 0.15s', boxSizing: 'border-box',
-          }}
-          onFocus={e => { e.currentTarget.style.borderColor = '#6366f1'; }}
-          onBlur={e => { e.currentTarget.style.borderColor = '#e5e7eb'; }}
-        />
-        <button
-          onClick={commitTag}
-          style={{
-            height: 38, padding: '0 18px', fontSize: 13, fontWeight: 600,
-            border: 'none', borderRadius: 8,
-            background: '#6366f1', color: '#fff', cursor: 'pointer',
-            fontFamily: '"Microsoft YaHei","Segoe UI",sans-serif',
-            transition: 'background 0.15s',
-            display: 'inline-flex', alignItems: 'center',
-          }}
-          onMouseEnter={e => { e.currentTarget.style.background = '#4f46e5'; }}
-          onMouseLeave={e => { e.currentTarget.style.background = '#6366f1'; }}
-        >添加</button>
-      </div>
-
-      {/* ── 项目信息栏 ── */}
-      {taskName && (
-        <div style={{
-          marginTop: 12, display: 'flex', alignItems: 'center', gap: 7,
-          padding: '8px 12px', background: '#f3f4f6', borderRadius: 8,
-          fontSize: 12, color: '#6b7280',
-        }}>
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
-            <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
-          </svg>
-          <span>标签将同步至项目 <b style={{ color: '#374151' }}>{taskName}</b> 看板列表</span>
-        </div>
-      )}
-    </div>
-  );
-}
-
-/* ─── 智能体面板（切换 / 协作 两子Tab） ─────────────────── */
-
-
-/* 协作流程节点类型 */
 type FlowNodeType = 'serial' | 'parallel';
 interface FlowNode {
   id: string;
@@ -751,7 +34,7 @@ interface FlowNode {
   desc: string;
 }
 function makeFlowNode(idx: number): FlowNode {
-  return { id: `fn_${Date.now()}_${idx}`, name: '', nodeType: 'serial', agentIds: [], desc: '' };
+  return { id: `fn_${Date.now()}_${idx}`, name: `流程节点 ${idx + 1}`, nodeType: 'serial', agentIds: [], desc: '' };
 }
 
 /* ── 添加节点浮层菜单（Portal 挂到 body，zIndex 99999） ── */
@@ -968,14 +251,12 @@ function AgentPanel({
   onOpenPanel,
   onClosePanel,
   currentProjectId,
-  backendProjectId,
   collabNodes,
   setCollabNodes,
   isProject,
   participatingAgentNames,
   onUpgradeToProject,
   onDowngradeToTask,
-  onRemoveAgent,
 }: {
   agents?: import('../types').Agent[];
   agentStatusMap: Record<string, { label: string; color: string }>;
@@ -989,8 +270,6 @@ function AgentPanel({
   onOpenPanel: (agentId: string, agentName: string, agentColor: string, initialMessage?: string) => void;
   onClosePanel: (panelId: string) => void;
   currentProjectId?: string;
-  /** 后端数据库中项目的真实 UUID，用于保存 workflowNodes */
-  backendProjectId?: string;
   collabNodes: FlowNode[];
   setCollabNodes: React.Dispatch<React.SetStateAction<FlowNode[]>>;
   /** 当前是项目（true）还是任务（false），任务模式显示协作Tab但带升级入口 */
@@ -1001,16 +280,15 @@ function AgentPanel({
   onUpgradeToProject?: (newAgentNames: string[]) => void;
   /** 项目降级为任务回调 */
   onDowngradeToTask?: (keptAgentName: string) => void;
-  /** 从项目中移出一个智能体（不降级）回调 */
-  onRemoveAgent?: (removedAgentName: string) => void;
 }) {
   const [subTab, setSubTab] = useState<'switch'|'collab'>('switch');
 
   /* ── 智能体列表过滤 ── */
   const allAgents = agents ?? [];
-  // 切换 Tab 始终显示全量智能体，供用户自由切换对话；
-  // incomingAgentNames 仅用于协作 Tab 中推导"参与协作的智能体"，不影响切换列表
-  const agentList = allAgents;
+  const agentList =
+    incomingAgentNames && incomingAgentNames.length > 0
+      ? allAgents.filter(a => incomingAgentNames.includes(a.name))
+      : allAgents;
 
   /* ══════════ 协作 Tab：FlowNode 流程节点 ══════════ */
   // nodes/setNodes 是外层持久化状态的别名，关闭弹窗后数据不会丢失
@@ -1032,7 +310,7 @@ function AgentPanel({
       }
       return [...prev, {
         id: `fn_${Date.now()}`,
-        name: '',
+        name: `流程节点 ${prev.length + 1}`,
         nodeType: type,
         agentIds: [],
         desc: '',
@@ -1060,13 +338,6 @@ function AgentPanel({
   }
 
   function applyCollab() {
-    // 校验：所有节点的任务目标必须填写
-    const emptyNodeIdx = nodes.findIndex(n => n.name.trim() === '');
-    if (emptyNodeIdx !== -1) {
-      showToast(`请填写节点 ${emptyNodeIdx + 1} 的任务目标`, 'error');
-      return;
-    }
-
     // 构建协作上下文：所有节点的概览（供每个智能体了解整体分工）
     const allNodes = nodes.filter(n => n.agentIds.length > 0);
     const contextLines = allNodes.map((n, i) => {
@@ -1074,22 +345,9 @@ function AgentPanel({
         .map(id => allAgents.find(a => a.id === id)?.name ?? id)
         .join('、');
       const type = n.nodeType === 'parallel' ? '[并行]' : '[串行]';
-      return `  ${i + 1}. ${type} ${n.name}（负责：${assignedNames}）`;
+      const desc = n.desc ? `：${n.desc}` : '';
+      return `  ${i + 1}. ${type} ${n.name}（负责：${assignedNames}）${desc}`;
     }).join('\n');
-
-    // ── 保存 workflowNodes 到后端，确保刷新后可以恢复 ──
-    if (backendProjectId) {
-      const workflowNodes = nodes.map(n => ({
-        id: n.id,
-        name: n.name,
-        nodeType: n.nodeType,
-        agentIds: n.agentIds,
-        taskDesc: n.name,  // 节点名称即为任务目标，存入数据库作为 AI 提示词依据
-      }));
-      projectsApi.update(backendProjectId, { workflowNodes }).catch(() => {
-        showToast('协作节点保存失败，刷新后可能丢失', 'error');
-      });
-    }
 
     // 关闭不在协作列表中的面板
     const allAgentIds = [...new Set(nodes.flatMap(n => n.agentIds))];
@@ -1107,12 +365,14 @@ function AgentPanel({
         // 构建发给该智能体的初始消息
         const lines: string[] = [];
         lines.push(`【协作任务启动】`);
-        lines.push(`你被分配到${node.nodeType === 'parallel' ? '并行' : '串行'}节点「${node.name}」。`);
-        lines.push(`\n⚑ 本节点任务目标（必须完成，完成后请明确告知）：\n${node.name}`);
+        lines.push(`你被分配到节点「${node.name}」${node.nodeType === 'parallel' ? '（并行节点）' : '（串行节点）'}。`);
+        if (node.desc) {
+          lines.push(`\n本节点任务描述：\n${node.desc}`);
+        }
         if (allNodes.length > 1) {
           lines.push(`\n整体协作流程如下：\n${contextLines}`);
         }
-        lines.push(`\n请严格围绕上述任务目标执行，完成后主动汇报结果。`);
+        lines.push(`\n请根据上述任务描述开始执行。`);
         const initialMessage = lines.join('\n');
 
         const existingPanel = openPanels.find(p => p.agentId === agentId);
@@ -1128,55 +388,37 @@ function AgentPanel({
 
   const pickerNode = pickerNodeId ? nodes.find(n => n.id === pickerNodeId) : null;
 
-  /**
-   * Tab 显示规则：
-   * - 项目模式（isProject=true）：
-   *     只显示「协作」Tab，不显示「切换智能体」
-   *     （切换智能体是任务模式的功能；项目弹窗的核心是管理协作节点分工）
-   * - 任务模式（isProject=false）：
-   *     显示「切换智能体」+ 「协作」两个 Tab
-   *     （用户可以自由切换当前对话的智能体，也可以升级为项目并配置协作）
-   */
-  const subTabs: { key: 'switch'|'collab'; label: string }[] = isProject
-    ? [{ key: 'collab', label: '协作' }]
-    : [
-        { key: 'switch', label: '切换智能体' },
-        { key: 'collab', label: '协作' },
-      ];
+  // 任务和项目都有「切换」和「协作」两个 Tab
+  // 任务协作Tab内有升级入口，项目协作Tab内有降级入口
+  const subTabs: { key: 'switch'|'collab'; label: string }[] = [
+    { key: 'switch', label: isProject ? '切换' : '切换智能体' },
+    { key: 'collab', label: '协作' },
+  ];
 
-  /**
-   * 项目模式下只有「协作」一个 Tab，强制锁定到 'collab'；
-   * 任务模式下保持用户自选的 subTab 状态
-   */
-  const activeSubTab = isProject ? 'collab' : subTab;
+  // activeSubTab 直接等于 subTab（不再需要强制重置）
+  const activeSubTab = subTab;
 
   return (
     <div style={{ fontFamily: '"Microsoft YaHei","Segoe UI",sans-serif' }}>
 
-      {/*
-       * 子 Tab 切换条：
-       * 项目模式下只有「协作」一个 Tab，不渲染切换条（单 Tab 没必要）；
-       * 任务模式下有「切换智能体」和「协作」两个 Tab，正常渲染切换条
-       */}
-      {!isProject && (
-        <div style={{
-          display: 'flex', gap: 4, marginBottom: 14,
-          background: '#f3f4f6', borderRadius: 8, padding: 3,
-        }}>
-          {subTabs.map(t => (
-            <button key={t.key} onClick={() => setSubTab(t.key)} style={{
-              flex: 1, padding: '5px 0', borderRadius: 6, border: 'none',
-              background: activeSubTab === t.key ? '#fff' : 'transparent',
-              color: activeSubTab === t.key ? '#374151' : '#9ca3af',
-              fontWeight: activeSubTab === t.key ? 700 : 400,
-              fontSize: 13, cursor: 'pointer',
-              boxShadow: activeSubTab === t.key ? '0 1px 4px rgba(0,0,0,0.08)' : 'none',
-              transition: 'all 0.15s',
-              fontFamily: '"Microsoft YaHei","Segoe UI",sans-serif',
-            }}>{t.label}</button>
-          ))}
-        </div>
-      )}
+      {/* ── 子 Tab 切换条 ── */}
+      <div style={{
+        display: 'flex', gap: 4, marginBottom: 14,
+        background: '#f3f4f6', borderRadius: 8, padding: 3,
+      }}>
+        {subTabs.map(t => (
+          <button key={t.key} onClick={() => setSubTab(t.key)} style={{
+            flex: 1, padding: '5px 0', borderRadius: 6, border: 'none',
+            background: activeSubTab === t.key ? '#fff' : 'transparent',
+            color: activeSubTab === t.key ? '#374151' : '#9ca3af',
+            fontWeight: activeSubTab === t.key ? 700 : 400,
+            fontSize: 13, cursor: 'pointer',
+            boxShadow: activeSubTab === t.key ? '0 1px 4px rgba(0,0,0,0.08)' : 'none',
+            transition: 'all 0.15s',
+            fontFamily: '"Microsoft YaHei","Segoe UI",sans-serif',
+          }}>{t.label}</button>
+        ))}
+      </div>
 
       {/* ══════════ 切换 Tab：多列网格 ══════════ */}
       {activeSubTab === 'switch' && (
@@ -1262,20 +504,15 @@ function AgentPanel({
                       whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
                     }}>{agent.name}</div>
 
-                    {/* 模型 */}
-                    <div style={{
-                      display: 'inline-flex', alignItems: 'center', gap: 3,
-                      padding: '2px 6px', borderRadius: 4,
-                      background: isActive ? accentColor + '18' : '#f3f4f6',
-                      fontSize: 10, color: isActive ? accentColor : '#6b7280',
-                      fontWeight: 500, maxWidth: '100%',
-                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                    }}>
-                      <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                        <rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/>
-                      </svg>
-                      {agent.modelName ?? 'Auto'}
-                    </div>
+                    {/* 描述 */}
+                    {agent.description && (
+                      <div style={{
+                        fontSize: 11, color: '#9ca3af', lineHeight: 1.4,
+                        width: '100%',
+                        overflow: 'hidden', display: '-webkit-box',
+                        WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
+                      }}>{agent.description}</div>
+                    )}
                   </button>
                 );
               })}
@@ -1293,6 +530,104 @@ function AgentPanel({
               ? '管理参与协作的智能体，配置流程节点分工后开启协作。'
               : '配置协作流程节点后可升级为项目，开启多智能体协同工作。'}
           </div>
+
+          {/* ── 参与智能体管理区（项目模式：可删除；任务模式：只读展示+升级入口） ── */}
+          {(() => {
+            const agentsInSession = isProject
+              ? (participatingAgentNames && participatingAgentNames.length > 0
+                  ? (agents ?? []).filter(a => participatingAgentNames.includes(a.name))
+                  : agentList)
+              : agentList.filter(a => openPanels.some(p => p.agentId === a.id));
+
+            if (agentsInSession.length === 0) return null;
+
+            return (
+              <div style={{ marginBottom: 12 }}>
+                <div style={{ fontSize: 11, fontWeight: 600, color: '#6b7280', marginBottom: 6 }}>
+                  {isProject ? '参与协作的智能体' : '当前会话智能体'}
+                </div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                  {agentsInSession.map(agent => {
+                    const ac = agent.color ?? '#6366f1';
+                    const canRemove = isProject && agentsInSession.length > 1;
+                    const willDowngrade = isProject && agentsInSession.length === 2; // 删后只剩1个
+                    return (
+                      <div key={agent.id} style={{
+                        display: 'inline-flex', alignItems: 'center', gap: 5,
+                        padding: '4px 8px 4px 6px', borderRadius: 20,
+                        background: ac + '15', border: `1px solid ${ac}40`,
+                        fontSize: 12, color: ac, fontWeight: 600,
+                        userSelect: 'none',
+                      }}>
+                        <div style={{
+                          width: 18, height: 18, borderRadius: '50%',
+                          background: ac + '30', border: `1.5px solid ${ac}`,
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          fontSize: 8, fontWeight: 700, flexShrink: 0,
+                        }}>{agent.name.charAt(0)}</div>
+                        {agent.name}
+                        {canRemove && (
+                          <button
+                            title={willDowngrade ? '删除后降级为任务' : '移出协作'}
+                            onClick={() => {
+                              if (willDowngrade && onDowngradeToTask) {
+                                // 找到另一个智能体
+                                const keptAgent = agentsInSession.find(a => a.id !== agent.id);
+                                if (keptAgent) onDowngradeToTask(keptAgent.name);
+                              } else if (onUpgradeToProject) {
+                                // 只是移出，更新参与列表
+                                const newNames = agentsInSession
+                                  .filter(a => a.id !== agent.id)
+                                  .map(a => a.name);
+                                onUpgradeToProject(newNames.filter(() => false)); // 触发重新计算
+                                // 直接更新：通知外层减少参与智能体
+                                if (onDowngradeToTask && agentsInSession.length - 1 === 1) {
+                                  const kept = agentsInSession.find(a => a.id !== agent.id);
+                                  if (kept) onDowngradeToTask(kept.name);
+                                }
+                              }
+                              // 关闭该智能体的 Panel
+                              const panel = openPanels.find(p => p.agentId === agent.id);
+                              if (panel) onClosePanel(panel.id);
+                            }}
+                            style={{
+                              width: 14, height: 14, borderRadius: '50%',
+                              border: 'none', background: ac + '30',
+                              color: ac, cursor: 'pointer', padding: 0,
+                              display: 'flex', alignItems: 'center', justifyContent: 'center',
+                              fontSize: 10, lineHeight: 1, flexShrink: 0,
+                              transition: 'background 0.15s',
+                            }}
+                            onMouseEnter={e => { e.currentTarget.style.background = ac + '60'; }}
+                            onMouseLeave={e => { e.currentTarget.style.background = ac + '30'; }}
+                          >×</button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* 降级提示：项目只剩1个智能体时 */}
+                {isProject && agentsInSession.length === 1 && onDowngradeToTask && (
+                  <div style={{
+                    marginTop: 8, padding: '8px 10px', borderRadius: 8,
+                    background: '#fffbeb', border: '1px solid #fde68a',
+                    fontSize: 11, color: '#92400e', lineHeight: 1.5,
+                  }}>
+                    ⚠️ 只剩1个智能体，项目将降级为任务。
+                    <button
+                      onClick={() => onDowngradeToTask(agentsInSession[0].name)}
+                      style={{
+                        marginLeft: 8, padding: '2px 8px', borderRadius: 10,
+                        border: 'none', background: '#f59e0b', color: '#fff',
+                        fontSize: 11, fontWeight: 600, cursor: 'pointer',
+                      }}
+                    >确认降级</button>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
 
 
 
@@ -1368,23 +703,19 @@ function AgentPanel({
                                 </span>
                               )}
 
-                              {/* 节点名称/任务目标（必填，可编辑） */}
+                              {/* 节点名称（可编辑） */}
                               <input
                                 value={node.name}
                                 onChange={e => updateNode(node.id, { name: e.target.value })}
-                                placeholder="请描述你的节点目标（必填）"
+                                placeholder="节点名称…"
                                 style={{
-                                  flex: 1, border: 'none',
-                                  borderBottom: `1.5px solid ${node.name.trim() === '' ? '#fca5a5' : 'transparent'}`,
-                                  outline: 'none', minWidth: 0,
+                                  flex: 1, border: 'none', outline: 'none', minWidth: 0,
                                   fontSize: 12, fontWeight: 600, color: '#374151',
                                   background: 'transparent',
-                                  borderRadius: 0,
                                   fontFamily: '"Microsoft YaHei","Segoe UI",sans-serif',
-                                  transition: 'border-color 0.15s',
                                 }}
                                 onFocus={e => { e.currentTarget.style.background = '#f9fafb'; e.currentTarget.style.borderRadius = '4px'; e.currentTarget.style.padding = '1px 4px'; }}
-                                onBlur={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.padding = '0'; e.currentTarget.style.borderRadius = '0'; }}
+                                onBlur={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.padding = '0'; }}
                               />
 
                               {/* 上移 */}
@@ -1421,6 +752,24 @@ function AgentPanel({
 
                             {/* 节点 Body */}
                             <div style={{ padding: '9px 10px' }}>
+                              {/* 任务描述 */}
+                              <div style={{ marginBottom: 8 }}>
+                                <label style={{ display: 'block', fontSize: 11, fontWeight: 600, color: '#6b7280', marginBottom: 4 }}>节点任务描述</label>
+                                <input
+                                  value={node.desc}
+                                  onChange={e => updateNode(node.id, { desc: e.target.value })}
+                                  placeholder="描述该节点需完成的任务…"
+                                  style={{
+                                    width: '100%', padding: '5px 8px', boxSizing: 'border-box',
+                                    border: '1px solid #e5e7eb', borderRadius: 6,
+                                    fontSize: 11, color: '#374151', outline: 'none',
+                                    fontFamily: '"Microsoft YaHei","Segoe UI",sans-serif',
+                                    transition: 'border-color 0.15s',
+                                  }}
+                                  onFocus={e => { e.currentTarget.style.borderColor = '#6366f1'; }}
+                                  onBlur={e => { e.currentTarget.style.borderColor = '#e5e7eb'; }}
+                                />
+                              </div>
 
                               {/* 分配智能体 */}
                               <div>
@@ -1583,45 +932,6 @@ function AgentPanel({
             {nodes.some(n => n.agentIds.length > 0) ? '开启协作' : '请先为节点分配智能体'}
           </button>
 
-          {/* 项目模式：所有节点均无智能体时，显示降级提示 */}
-          {isProject && nodes.every(n => n.agentIds.length === 0) && onDowngradeToTask && (
-            <div style={{
-              marginTop: 10, padding: '10px 12px', borderRadius: 8,
-              background: '#fff7ed', border: '1.5px solid #fed7aa',
-              display: 'flex', alignItems: 'flex-start', gap: 8,
-            }}>
-              <svg style={{ flexShrink: 0, marginTop: 1 }} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#f97316" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
-                <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
-              </svg>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 12, fontWeight: 600, color: '#c2410c', marginBottom: 4 }}>
-                  所有节点均未分配智能体
-                </div>
-                <div style={{ fontSize: 11, color: '#9a3412', lineHeight: 1.5 }}>
-                  项目中没有任何智能体参与，将自动降级为普通任务。
-                </div>
-                <button
-                  onClick={() => {
-                    const firstAgent = allAgents[0];
-                    if (firstAgent && onDowngradeToTask) onDowngradeToTask(firstAgent.name);
-                  }}
-                  style={{
-                    marginTop: 7, padding: '4px 12px', borderRadius: 6,
-                    border: '1.5px solid #f97316', background: '#fff',
-                    color: '#c2410c', fontSize: 11, fontWeight: 600,
-                    cursor: 'pointer', fontFamily: '"Microsoft YaHei","Segoe UI",sans-serif',
-                    transition: 'all 0.15s',
-                  }}
-                  onMouseEnter={e => { e.currentTarget.style.background = '#fff7ed'; }}
-                  onMouseLeave={e => { e.currentTarget.style.background = '#fff'; }}
-                >
-                  确认降级为任务
-                </button>
-              </div>
-            </div>
-          )}
-
           {/* 任务模式：升级为项目按钮 */}
           {!isProject && onUpgradeToProject && (() => {
             // 收集节点中所有已选智能体名称
@@ -1685,14 +995,12 @@ function TabPanel({
   onOpenAgentPanel,
   onCloseAgentPanel,
   currentProjectId,
-  backendProjectId,
   collabNodes,
   setCollabNodes,
   isProject,
   participatingAgentNames,
   onUpgradeToProject,
   onDowngradeToTask,
-  onRemoveAgent,
 }: {
   tab: string;
   onClose: () => void;
@@ -1713,8 +1021,6 @@ function TabPanel({
   onOpenAgentPanel: (agentId: string, agentName: string, agentColor: string, initialMessage?: string) => void;
   onCloseAgentPanel: (panelId: string) => void;
   currentProjectId?: string;
-  /** 后端数据库中项目的真实 UUID，用于保存 workflowNodes */
-  backendProjectId?: string;
   /** 协作流程节点（持久化，由外层维护） */
   collabNodes: FlowNode[];
   setCollabNodes: React.Dispatch<React.SetStateAction<FlowNode[]>>;
@@ -1726,40 +1032,7 @@ function TabPanel({
   onUpgradeToProject?: (newAgentNames: string[]) => void;
   /** 项目降级为任务回调 */
   onDowngradeToTask?: (keptAgentName: string) => void;
-  /** 从项目中移出一个智能体（不降级）回调 */
-  onRemoveAgent?: (removedAgentName: string) => void;
 }) {
-  /* ── 消息渠道列表（飞书/企业微信/钉钉 Bot 接入状态）从后端动态读取 ── */
-  type BotChannelStatus = { name: string; channelType: ChannelType; status: string; color: string };
-  const [channelList, setChannelList] = useState<BotChannelStatus[]>([
-    { name: '飞书',   channelType: 'feishu',   status: '未连接', color: '#9ca3af' },
-    { name: '企业微信', channelType: 'wecom',  status: '未连接', color: '#9ca3af' },
-    { name: '钉钉',   channelType: 'dingtalk', status: '未连接', color: '#9ca3af' },
-  ]);
-  const [showChannelConfigFor, setShowChannelConfigFor] = useState<ChannelType | null>(null);
-
-  // 仅在消息渠道 Tab 激活时拉取后端已配置的 Bot 渠道列表
-  useEffect(() => {
-    if (tab !== '消息渠道') return;
-    fetch('/api/bot-channels')
-      .then(r => r.ok ? r.json() : null)
-      .then((json: { data: Array<{ channelType: string; botId: string; enabled: boolean }> } | null) => {
-        if (!json?.data) return;
-        const typeMap: Record<string, boolean> = {};
-        json.data.forEach(ch => { typeMap[ch.channelType] = ch.enabled && !!ch.botId; });
-        setChannelList(prev => prev.map(ch => ({
-          ...ch,
-          status: typeMap[ch.channelType] ? '已连接' : '未连接',
-          color: typeMap[ch.channelType] ? '#22c55e' : '#9ca3af',
-        })));
-      })
-      .catch(() => {});
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab]);
-
-  // CHANNEL_LIST 兼容性别名（渲染时使用 channelList）
-  const CHANNEL_LIST = channelList;
-
   /* 文件快传状态 */
   const [uploadedFiles, setUploadedFiles] = useState<{ name: string; size: string; type: string }[]>([]);
   const [dragOver, setDragOver] = useState(false);
@@ -1871,41 +1144,15 @@ function TabPanel({
                   <span style={{ fontWeight: 500 }}>{ch.name}</span>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <span style={badgeStyle(ch.color)}>{ch.status}</span>
-                    <button
-                      onClick={() => setShowChannelConfigFor(ch.channelType)}
-                      style={{
-                        fontSize: 12, padding: '4px 14px', borderRadius: 6,
-                        border: '1.5px solid #e5e7eb', background: '#fff',
-                        cursor: 'pointer', color: '#374151',
-                        fontFamily: '"Microsoft YaHei","Segoe UI",sans-serif',
-                      }}
-                    >{ch.status === '已连接' ? '编辑' : '连接'}</button>
+                    <button style={{
+                      fontSize: 12, padding: '4px 14px', borderRadius: 6,
+                      border: '1.5px solid #e5e7eb', background: '#fff',
+                      cursor: 'pointer', color: '#374151',
+                      fontFamily: '"Microsoft YaHei","Segoe UI",sans-serif',
+                    }}>连接</button>
                   </div>
                 </div>
               ))}
-              {/* 在 TabPanel 内部弹出对应渠道的 Bot 配置弹窗 */}
-              {showChannelConfigFor && (
-                <ChannelConfigModal
-                  initialChannel={showChannelConfigFor}
-                  onClose={() => {
-                    setShowChannelConfigFor(null);
-                    // 关闭后重新拉取状态
-                    fetch('/api/bot-channels')
-                      .then(r => r.ok ? r.json() : null)
-                      .then((json: { data: Array<{ channelType: string; botId: string; enabled: boolean }> } | null) => {
-                        if (!json?.data) return;
-                        const typeMap: Record<string, boolean> = {};
-                        json.data.forEach(c => { typeMap[c.channelType] = c.enabled && !!c.botId; });
-                        setChannelList(prev => prev.map(c => ({
-                          ...c,
-                          status: typeMap[c.channelType] ? '已连接' : '未连接',
-                          color: typeMap[c.channelType] ? '#22c55e' : '#9ca3af',
-                        })));
-                      })
-                      .catch(() => {});
-                  }}
-                />
-              )}
             </div>
           )}
 
@@ -2059,7 +1306,6 @@ function TabPanel({
               onOpenPanel={(agentId, agentName, agentColor, initialMessage) => { onOpenAgentPanel(agentId, agentName, agentColor, initialMessage); onClose(); }}
               onClosePanel={onCloseAgentPanel}
               currentProjectId={currentProjectId}
-              backendProjectId={backendProjectId}
               onInject={text => { if (onInject) { onInject(text); onClose(); } }}
               collabNodes={collabNodes}
               setCollabNodes={setCollabNodes}
@@ -2067,7 +1313,6 @@ function TabPanel({
               participatingAgentNames={participatingAgentNames}
               onUpgradeToProject={onUpgradeToProject}
               onDowngradeToTask={onDowngradeToTask}
-              onRemoveAgent={onRemoveAgent}
             />
           )}
 
@@ -2236,51 +1481,13 @@ function PriorityModal({
 }
 
 /* ─── 消息渠道配置 Modal ───────────────────────────────────── */
-type ChannelType = 'feishu' | 'wecom' | 'dingtalk';
-
-const CHANNEL_TABS: { key: ChannelType; label: string; icon: string }[] = [
-  { key: 'feishu',   label: '飞书',   icon: '🪶' },
-  { key: 'wecom',    label: '企业微信', icon: '💬' },
-  { key: 'dingtalk', label: '钉钉',   icon: '📎' },
-];
-
-function ChannelConfigModal({ onClose, initialChannel = 'feishu' }: { onClose: () => void; initialChannel?: ChannelType }) {
-  const [channel, setChannel] = useState<ChannelType>(initialChannel);
+function ChannelConfigModal({ onClose }: { onClose: () => void }) {
+  const [channel, setChannel] = useState<ChannelType>('feishu');
   const [botId, setBotId]     = useState('');
   const [secret, setSecret]   = useState('');
   const [showSecret, setShowSecret] = useState(false);
   const [errors, setErrors]   = useState<{ botId?: string; secret?: string }>({});
   const [saved, setSaved]     = useState(false);
-  const [saving, setSaving]   = useState(false);
-  // 缓存各渠道已加载的配置，避免切换时重复请求
-  const [configCache, setConfigCache] = useState<Record<string, { botId: string; secret: string }>>({});
-
-  /** 从后端加载指定渠道的已有配置 */
-  async function loadChannelConfig(channelType: ChannelType) {
-    // 如果缓存里已有，直接用
-    if (configCache[channelType] !== undefined) {
-      setBotId(configCache[channelType].botId);
-      setSecret(configCache[channelType].secret);
-      return;
-    }
-    try {
-      const res = await fetch(`/api/bot-channels/${channelType}`);
-      const json = await res.json();
-      const data = json.data;
-      const cfg = { botId: data?.botId ?? '', secret: data?.secret ?? '' };
-      setConfigCache(prev => ({ ...prev, [channelType]: cfg }));
-      setBotId(cfg.botId);
-      setSecret(cfg.secret);
-    } catch {
-      setBotId(''); setSecret('');
-    }
-  }
-
-  // 初始化时加载默认渠道的配置
-  useEffect(() => {
-    loadChannelConfig(initialChannel);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   function validate() {
     const e: { botId?: string; secret?: string } = {};
@@ -2290,31 +1497,17 @@ function ChannelConfigModal({ onClose, initialChannel = 'feishu' }: { onClose: (
     return Object.keys(e).length === 0;
   }
 
-  async function handleConfirm() {
+  function handleConfirm() {
     if (!validate()) return;
-    setSaving(true);
-    try {
-      await fetch('/api/bot-channels', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ channelType: channel, botId: botId.trim(), secret: secret.trim(), enabled: true }),
-      });
-      // 更新缓存
-      setConfigCache(prev => ({ ...prev, [channel]: { botId: botId.trim(), secret: secret.trim() } }));
-      setSaved(true);
-      setTimeout(() => { setSaved(false); onClose(); }, 1200);
-    } catch {
-      setErrors({ botId: '保存失败，请稍后重试' });
-    } finally {
-      setSaving(false);
-    }
+    setSaved(true);
+    setTimeout(() => { setSaved(false); onClose(); }, 1200);
   }
 
-  /* 切换渠道时加载对应渠道的配置 */
+  /* 切换渠道时清空表单 */
   function switchChannel(c: ChannelType) {
     setChannel(c);
+    setBotId(''); setSecret('');
     setErrors({});
-    loadChannelConfig(c);
   }
 
   const channelLabels: Record<ChannelType, string> = {
@@ -2633,14 +1826,12 @@ function ChannelConfigModal({ onClose, initialChannel = 'feishu' }: { onClose: (
           {/* 确定：紫色实底，hover 加深，保存后变绿 */}
           <button
             onClick={handleConfirm}
-            disabled={saving}
             style={{
               height: 40, padding: '0 28px', fontSize: 14, borderRadius: 8,
               border: 'none',
               background: saved ? '#22c55e' : '#6366f1',
-              cursor: saving ? 'not-allowed' : 'pointer', color: '#fff', fontWeight: 600,
+              cursor: 'pointer', color: '#fff', fontWeight: 600,
               fontFamily: '"Microsoft YaHei","Segoe UI",sans-serif',
-              opacity: saving ? 0.75 : 1,
               transition: 'background 0.15s, box-shadow 0.15s',
               boxShadow: saved ? '0 2px 8px rgba(34,197,94,0.25)' : '0 2px 8px rgba(99,102,241,0.25)',
               display: 'inline-flex', alignItems: 'center', gap: 6,
@@ -2658,7 +1849,7 @@ function ChannelConfigModal({ onClose, initialChannel = 'feishu' }: { onClose: (
                 : '0 2px 8px rgba(99,102,241,0.25)';
             }}
           >
-            {saving ? '保存中...' : saved ? (
+            {saved ? (
               <>
                 <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
                   <path d="M2.5 7L5.5 10L11.5 4" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
@@ -2700,71 +1891,26 @@ export function ProjectWorkspace() {
   const location = useLocation();
   type NavState = { projectName?: string; projectId?: string; taskId?: string; agentNames?: string[] } | null;
   const navState = location.state as NavState;
-
-  // ── 持久化项目上下文到 sessionStorage，刷新后可恢复 ──
-  // 有新的 navState 时写入；刷新后 navState 为 null 时从 sessionStorage 读取
-  const SESSION_KEY = 'workspace_project_ctx';
-  type ProjectCtx = {
-    projectName?: string;
-    projectId?: string;
-    taskId?: string;
-    agentNames?: string[];
-    /** 项目已降级为任务：true 时刷新后 isProjectMode=false */
-    isDegraded?: boolean;
-    /** 降级后继承的标签（刷新恢复用） */
-    degradedTags?: string[];
-    /** 降级后继承的优先级（刷新恢复用） */
-    degradedPriority?: string | null;
-    /** 降级后保留的单个智能体名称（刷新恢复用） */
-    degradedAgentName?: string;
-  };
-
-  const resolvedCtx = ((): ProjectCtx => {
-    if (navState?.projectName || navState?.projectId || navState?.taskId) {
-      // 有新跳转数据：重置降级标志并写入 sessionStorage
-      const ctx: ProjectCtx = {
-        projectName: navState.projectName,
-        projectId: navState.projectId,
-        taskId: navState.taskId,
-        agentNames: navState.agentNames,
-        isDegraded: false,
-      };
-      try { sessionStorage.setItem(SESSION_KEY, JSON.stringify(ctx)); } catch {}
-      return ctx;
-    }
-    // 刷新后从 sessionStorage 恢复
-    try {
-      const saved = sessionStorage.getItem(SESSION_KEY);
-      if (saved) return JSON.parse(saved) as ProjectCtx;
-    } catch {}
-    return {};
-  })();
-
   /** 从项目协作页跳转时携带的项目名（任务/项目通用） */
-  const incomingProjectName = resolvedCtx.projectName;
+  const incomingProjectName = navState?.projectName;
   /** 从项目看板卡片跳转时携带的项目 id */
-  const incomingProjectId = resolvedCtx.projectId;
+  const incomingProjectId = navState?.projectId;
   /** 从任务看板卡片跳转时携带的任务 id */
-  const incomingTaskId = resolvedCtx.taskId;
+  const incomingTaskId = navState?.taskId;
   /**
    * 从任务/项目看板卡片点击跳转时携带的智能体名称列表
    * 用于 AgentPanel 只展示该任务/项目关联的智能体
    * 若为空/未传入，则 AgentPanel 展示所有智能体
    */
-  const incomingAgentNames = resolvedCtx.agentNames;
+  const incomingAgentNames = navState?.agentNames;
 
   /* ── Store 接入 ─────────────────────────────────────────── */
-  const { currentProject, projects, fetchProjects, createProject } = useProjectStore();
-  const {
-    openPanels, openPanel, sendMessage, connect, closePanel, wsConnected, dismissBanner,
-    sessionTabs, activeTabId, createSessionTab, switchSessionTab, closeSessionTab, bindPanelToTab,
-  } = useConversationStore();
+  const { currentProject, projects, fetchProjects } = useProjectStore();
+  const { openPanels, openPanel, sendMessage, connect, closePanel, wsConnected } = useConversationStore();
   const { agents, fetchAgents } = useAgentStore();
-  const { addTaskFromChat, tasks, updateTask, addTask } = useTaskStore();
+  const { addTaskFromChat, tasks, updateTask } = useTaskStore();
   const { projects: kanbanProjects, updateProject: updateKanbanProject, addProject: addKanbanProject } = useProjectKanbanStore();
 
-  /* ── 新建任务弹窗状态 ───────────────────────────────── */
-  const [showCreateModal, setShowCreateModal] = useState(false);
   /* ── 本地状态 ────────────────────────────────────────────── */
   const [activeTab, setActiveTab] = useState<string | null>(null);
   const [showPriorityModal, setShowPriorityModal] = useState(false);
@@ -2774,65 +1920,19 @@ export function ProjectWorkspace() {
   const [activePanelId, setActivePanelId] = useState<string | null>(null);
   /** 协作流程节点（提升到顶层，防止 TabPanel 关闭时丢失） */
   const [collabNodes, setCollabNodes] = useState<FlowNode[]>(() => [makeFlowNode(0)]);
-  /**
-   * 当前是否为项目模式（可动态升级/降级）—— 刷新后从 sessionStorage 恢复。
-   * 若 sessionStorage 里记录了 isDegraded=true，说明用户在本次会话中已将项目降级为任务，
-   * 刷新后应维持任务模式，而不是根据 incomingProjectId 重新变回项目模式。
-   */
-  const [isProjectMode, setIsProjectMode] = useState<boolean>(() => {
-    if (resolvedCtx.isDegraded) return false;
-    return !!(incomingProjectId && !incomingTaskId);
-  });
+  /** 当前是否为项目模式（可动态升级/降级） */
+  const [isProjectMode, setIsProjectMode] = useState<boolean>(() => !!incomingProjectId);
   /** 当前参与会话的智能体名称列表（项目模式下可增删，任务模式下只有1个） */
-  const [participatingAgentNames, setParticipatingAgentNames] = useState<string[]>(() => {
-    // 降级状态：恢复降级时保留的单个智能体
-    if (resolvedCtx.isDegraded && resolvedCtx.degradedAgentName) {
-      return [resolvedCtx.degradedAgentName];
-    }
-    return incomingAgentNames ?? [];
-  });
-  /**
-   * ⚠️ 降级任务数据 —— 请勿删除此 state，否则降级后标签/优先级会全部丢失！
-   *
-   * 从项目降级为任务时，将原项目的 tags/priority 继承过来，
-   * 存入此 state 作为任务模式的临时数据源。
-   *
-   * 【背景 / 根因】
-   *   本页面由"项目"跳转进入时，incomingTaskId 为 null（URL 里没有 taskId），
-   *   所以 matchedTask 永远为 null（见下方 matchedTask 定义）。
-   *   降级后 isProjectMode=false，但 taskStore 里没有对应的 task 记录，
-   *   如果 currentTags/currentPriority 只看 matchedTask，会读到空值，
-   *   标签和优先级全部丢失，且 addTag/setPriority 也无处写入。
-   *
-   * 【解决方案】
-   *   downgradeToTask() 被调用时，立即把 matchedKanbanProject.tags/priority
-   *   拷贝到 degradedTaskData，后续读写均通过此 state 完成（见 currentTags、
-   *   addTag、removeTag、setPriority 的实现）。
-   */
-  const [degradedTaskData, setDegradedTaskData] = useState<{
-    tags: string[];
-    priority: ProjectPriority | null;
-  } | null>(() => {
-    // 刷新后从 sessionStorage 恢复降级数据
-    if (resolvedCtx.isDegraded) {
-      return {
-        tags: resolvedCtx.degradedTags ?? [],
-        priority: (resolvedCtx.degradedPriority as ProjectPriority | null) ?? null,
-      };
-    }
-    return null;
-  });
-
+  const [participatingAgentNames, setParticipatingAgentNames] = useState<string[]>(
+    () => incomingAgentNames ?? []
+  );
   /** 顶部优先级下拉是否展开 */
   const [showPriorityDropdown, setShowPriorityDropdown] = useState(false);
   const priorityDropdownRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  // ── 防重说明 ────────────────────────────────────────────────────────────────
-  // addTaskFromChat 内部已做幂等校验：task.id = conversationId（panelId），
-  // 若 taskStore 中已存在同 id 的任务则直接跳过，不重复插入。
-  // 因此 ProjectWorkspace 不再需要维护任何防重集合（内存或 localStorage）。
-  // ────────────────────────────────────────────────────────────────────────────
+  /** 已自动建任务的 panelId 集合，避免同一会话重复创建 */
+  const createdTaskPanels = useRef<Set<string>>(new Set());
 
   /** 浏览器网络是否在线 */
   const [isOnline, setIsOnline] = useState(() => navigator.onLine);
@@ -2857,57 +1957,10 @@ export function ProjectWorkspace() {
     busy:    { label: '忙碌',   bg: '#fffbeb', color: '#b45309', border: '#fde68a', dotColor: '#f59e0b' },
   };
 
-  /* ── openPanels 变化时自动同步 sessionTabs ─────────────────── */
-  useEffect(() => {
-    const store = useConversationStore.getState();
-    const { sessionTabs: tabs } = store;
-    openPanels.forEach((panel) => {
-      // 若 panel 尚未绑定任何 Tab，自动创建一个并绑定
-      const bound = tabs.find((t) => t.panelId === panel.id);
-      if (!bound) {
-        const tabId = `tab-${panel.id}`;
-        // 检查是否已有此 tabId（避免重复）
-        if (!tabs.find((t) => t.id === tabId)) {
-          const newTab = {
-            id: tabId,
-            title: panel.agentName,
-            panelId: panel.id,
-            color: panel.agentColor,
-            isStreaming: panel.isStreaming,
-          };
-          useConversationStore.setState((s) => ({
-            sessionTabs: s.sessionTabs.find((t) => t.id === tabId)
-              ? s.sessionTabs
-              : [...s.sessionTabs, newTab],
-            activeTabId: s.activeTabId ?? tabId,
-          }));
-        }
-      } else {
-        // 同步 streaming 状态
-        useConversationStore.setState((s) => ({
-          sessionTabs: s.sessionTabs.map((t) =>
-            t.id === bound.id ? { ...t, isStreaming: panel.isStreaming, title: panel.agentName, color: panel.agentColor } : t
-          ),
-        }));
-      }
-    });
-  }, [openPanels]);
-
-  /* ── 根据当前激活 Tab 同步 activePanelId ─────────────────── */
-  useEffect(() => {
-    if (!activeTabId) return;
-    const tab = sessionTabs.find((t) => t.id === activeTabId);
-    if (tab?.panelId && tab.panelId !== activePanelId) {
-      setActivePanelId(tab.panelId);
-    }
-  }, [activeTabId, sessionTabs]);
-
   /* ── 取当前工作台的会话 panel（按 activePanelId 查找，兜底取第一个） ── */
   const activePanel = (activePanelId ? openPanels.find(p => p.id === activePanelId) : null) ?? openPanels[0] ?? null;
 
   /* ── 动态数据：优先用跳转传入的项目名 > currentProject > 第一个项目 ── */
-  const [editingTitle, setEditingTitle] = useState(false);
-  const [editTitleValue, setEditTitleValue] = useState('');
   const taskName = incomingProjectName ?? currentProject?.title ?? (projects[0]?.title ?? 'WorkBuddy');
   const taskProgress = 68; // 真实进度字段后端暂无，保留占位
 
@@ -2922,136 +1975,26 @@ export function ProjectWorkspace() {
   const allTasks = [...tasks.progress, ...tasks.done];
   const matchedTask = incomingTaskId ? allTasks.find(t => t.id === incomingTaskId) ?? null : null;
 
-  /* ── 统一的 tags / priority 数据源 ──────────────────────────────────────────────
-   * ⚠️ 读取优先级固定为以下顺序，请勿随意调整，否则降级场景会回归 BUG！
-   *
-   *   优先级（高 → 低）：
-   *     1. matchedTask       —— 有 incomingTaskId 时，从 taskStore 精确匹配（任务模式正常入口）
-   *     2. degradedTaskData  —— 项目降级为任务后的内存数据（无 taskId 时的唯一降级兜底）
-   *     3. matchedKanbanProject —— 项目模式，从 kanbanStore 读取
-   *     4. 默认空值
-   *
-   * 【为什么需要 degradedTaskData 这一层】
-   *   从项目页跳转进入时 incomingTaskId=null → matchedTask 永远为 null；
-   *   降级后 isProjectMode=false，若跳过 degradedTaskData 直接用
-   *   matchedKanbanProject，写入时 addTag/setPriority 又会走项目分支，
-   *   数据来源和写入目标不一致，标签/优先级展示错误。
-   * ────────────────────────────────────────────────────────────────────────── */
-  const currentTags: string[] = matchedTask?.tags ?? degradedTaskData?.tags ?? matchedKanbanProject?.tags ?? [];
-  const currentPriority: ProjectPriority | null =
-    (matchedTask?.priority as ProjectPriority | undefined)
-    ?? degradedTaskData?.priority
-    ?? matchedKanbanProject?.priority
-    ?? null;
-
-  /* ── 后端项目 UUID（用于属性修改同步到后端）──────────────── */
-  const backendProjectId = projects.find(p => p.title === taskName)?.id ?? null;
-
-  /**
-   * ⚠️ 顶部头像区的唯一数据源 —— 请勿改回 participatingAgentNames！
-   *
-   * 项目协作智能体列表：直接从 collabNodes（协作弹窗里的流程节点）实时提取。
-   *
-   * 【为什么不用 participatingAgentNames】
-   *   participatingAgentNames 只在以下三个时机写入：
-   *     1. 页面初始化（从 URL / sessionStorage 读取）
-   *     2. upgradeToProject 升级时
-   *     3. useEffect 从后端回填时
-   *   用户在协作 Tab 里实时增删节点/分配智能体，只更新 collabNodes，
-   *   participatingAgentNames 不会同步 → 顶部头像展示"旧快照"，两者产生分歧。
-   *
-   * 【正确做法】
-   *   从 collabNodes 实时 flatMap 出所有 agentId，去重后 map 成 Agent 对象。
-   *   每次 collabNodes 变化，collabAgents 自动跟随更新，顶部头像实时同步。
-   *
-   * 注意：只在项目模式（isProjectMode=true）下使用；
-   *       任务模式顶部仅显示单个当前激活智能体，不用此字段。
-   */
-  const collabAgents = isProjectMode
-    ? [...new Set(collabNodes.flatMap(n => n.agentIds))]
-        .map(id => agents.find(a => a.id === id))
-        .filter((a): a is import('../types').Agent => !!a)
-    : [];
-
-  /**
-   * 项目属性修改统一同步函数：
-   *   1. 先更新 projectKanbanStore（会话列表 / 看板 UI 立即响应）
-   *   2. 再异步调用 projectsApi.update 同步到后端（供其他端口读取）
-   * 任务属性仅更新 taskStore（当前无独立后端任务 API）
-   */
-  function syncProjectPatch(projectId: string, patch: Partial<import('../stores/projectKanbanStore').KanbanProject>) {
-    // Step 1：同步到前端 store（立即生效，UI 响应无延迟）
-    updateKanbanProject(projectId, patch);
-    // Step 2：同步到后端，让其他端口可以读到最新数据
-    if (backendProjectId) {
-      projectsApi.update(backendProjectId, patch as any).catch(() => {
-        showToast('属性同步到后端失败，刷新后可能恢复旧值', 'error');
-      });
-    }
-  }
-
-  /**
-   * ⚠️ 协作节点变化 → 同步写回 kanbanStore.agents（会话列表卡片的数据来源）
-   *
-   * 【问题根因】
-   *   会话列表卡片（AgentKanban.tsx > ProjectCard）展示的智能体头像
-   *   读取的是 kanbanStore 里 project.agents 字段，该字段在 AgentKanban
-   *   的 useEffect 初始化时从后端 workflowNodes 反查写入一次，之后不再更新。
-   *
-   *   用户在协作弹窗里实时增删节点/分配智能体时，collabNodes（本组件 state）
-   *   随之变化，但 kanbanStore.agents 没有同步，导致会话列表卡片仍显示旧数据。
-   *
-   * 【修复方式】
-   *   监听 collabNodes 变化，从中提取最新的去重 agentId 列表，
-   *   反查 agentStore 得到 { name, color }，写回 kanbanStore.agents。
-   *   这样无论用户怎么修改协作配置，会话列表卡片都能实时同步。
-   *
-   * 【只在项目模式下执行】
-   *   任务模式下没有 kanbanProject 记录，也不需要同步 agents 字段。
-   */
-  useEffect(() => {
-    if (!isProjectMode || !matchedKanbanProject) return;
-    // 从 collabNodes 提取去重 agentId，反查 agentStore 得到 { name, color }
-    const agentIds = [...new Set(collabNodes.flatMap(n => n.agentIds))];
-    const syncedAgents = agentIds
-      .map(id => agents.find(a => a.id === id))
-      .filter((a): a is import('../types').Agent => !!a)
-      .map(a => ({ name: a.name, color: a.color ?? '#6366f1' }));
-    if (syncedAgents.length === 0) return; // 节点全空时不覆盖（避免初始化时清空）
-    // 只更新前端 store，不调后端（agents 字段无对应后端 API）
-    updateKanbanProject(matchedKanbanProject.id, {
-      agents: syncedAgents,
-      memberCount: syncedAgents.length,
-    });
-  // collabNodes / isProjectMode 变化时重新同步；agents/matchedKanbanProject 变化时也要重新反查
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [collabNodes, isProjectMode]);
+  /* ── 统一的 tags / priority 数据源：任务模式用 taskStore，项目模式用 kanbanStore ── */
+  const currentTags: string[] = matchedTask?.tags ?? matchedKanbanProject?.tags ?? [];
+  const currentPriority: ProjectPriority | null = (matchedTask?.priority as ProjectPriority | undefined) ?? matchedKanbanProject?.priority ?? null;
 
   /* ── 标签编辑（写回 store，供标签管理面板使用）──────────── */
   function addTag(raw: string) {
     const tag = raw.trim();
     if (!tag || currentTags.includes(tag)) return;
     if (matchedTask) {
-      // 任务模式（有真实 task 记录）：只更新 taskStore（当前无独立后端任务 API）
       updateTask(matchedTask.id, { tags: [...currentTags, tag] });
-    } else if (!isProjectMode && degradedTaskData !== null) {
-      // 降级任务模式（无 task 记录，数据来自 degradedTaskData）：
-      // 直接更新内存 state，UI 立即响应
-      setDegradedTaskData(prev => prev && { ...prev, tags: [...prev.tags, tag] });
     } else if (matchedKanbanProject) {
-      // 项目模式：先更新 store，再同步后端
-      syncProjectPatch(matchedKanbanProject.id, { tags: [...currentTags, tag] });
+      updateKanbanProject(matchedKanbanProject.id, { tags: [...currentTags, tag] });
     }
   }
 
   function removeTag(tag: string) {
     if (matchedTask) {
       updateTask(matchedTask.id, { tags: currentTags.filter(t => t !== tag) });
-    } else if (!isProjectMode && degradedTaskData !== null) {
-      // 降级任务模式：从内存 state 中移除
-      setDegradedTaskData(prev => prev && { ...prev, tags: prev.tags.filter(t => t !== tag) });
     } else if (matchedKanbanProject) {
-      syncProjectPatch(matchedKanbanProject.id, { tags: currentTags.filter(t => t !== tag) });
+      updateKanbanProject(matchedKanbanProject.id, { tags: currentTags.filter(t => t !== tag) });
     }
   }
 
@@ -3059,11 +2002,8 @@ export function ProjectWorkspace() {
   function setPriority(p: ProjectPriority) {
     if (matchedTask) {
       updateTask(matchedTask.id, { priority: p as 'high' | 'mid' | 'low' });
-    } else if (!isProjectMode && degradedTaskData !== null) {
-      // 降级任务模式：写入内存 state，UI 立即响应
-      setDegradedTaskData(prev => prev && { ...prev, priority: p });
     } else if (matchedKanbanProject) {
-      syncProjectPatch(matchedKanbanProject.id, { priority: p });
+      updateKanbanProject(matchedKanbanProject.id, { priority: p });
     }
   }
 
@@ -3073,11 +2013,11 @@ export function ProjectWorkspace() {
     const allNames = [...new Set([...participatingAgentNames, ...newAgentNames])];
     setParticipatingAgentNames(allNames);
     setIsProjectMode(true);
-    // 在看板 store 新建或更新项目记录
-    const participantAgents = agents
-      .filter(a => allNames.includes(a.name))
-      .map(a => ({ name: a.name, color: a.color ?? '#6366f1' }));
-    if (!matchedKanbanProject || matchedKanbanProject.agents.length < 1) {
+    // 在看板 store 新建一条项目记录（如果还没有匹配项目）
+    if (!matchedKanbanProject || matchedKanbanProject.agents.length < 2) {
+      const participantAgents = agents
+        .filter(a => allNames.includes(a.name))
+        .map(a => ({ name: a.name, color: a.color ?? '#6366f1' }));
       const dueDate30 = new Date(Date.now() + 30 * 86400000);
       const mm = String(dueDate30.getMonth() + 1).padStart(2, '0');
       const dd = String(dueDate30.getDate()).padStart(2, '0');
@@ -3087,94 +2027,29 @@ export function ProjectWorkspace() {
         description: '',
         tags: currentTags,
         priority: currentPriority ?? 'low',
-        agent: participantAgents[0]?.name ?? agents[0]?.name ?? '策划助手',
-        agentColor: participantAgents[0]?.color ?? agents[0]?.color ?? '#6366f1',
-        agents: participantAgents,
+        agent: participantAgents[0]?.name ?? '策划助手',
+        agentColor: participantAgents[0]?.color ?? '#6366f1',
+        agents: participantAgents.length >= 2 ? participantAgents : [
+          ...(participantAgents.length > 0 ? participantAgents : [{ name: '策划助手', color: '#6366f1' }]),
+          { name: allNames[1] ?? allNames[0] ?? '研究员', color: '#3b82f6' },
+        ],
         progress: 0,
         dueDate: `${mm}/${dd}`,
         updatedAt: '刚刚',
         taskCount: collabNodes.length,
-        memberCount: participantAgents.length,
+        memberCount: allNames.length,
       }, 'progress');
     } else {
       // 已有项目记录则只更新 agents 列表
-      updateKanbanProject(matchedKanbanProject.id, { agents: participantAgents, memberCount: participantAgents.length });
-    }
-  }
-
-  /* ── 修改标题 ───────────────────────────────────────────── */
-  function startEditTitle() {
-    setEditTitleValue(taskName);
-    setEditingTitle(true);
-  }
-
-  function saveTitle() {
-    const trimmed = editTitleValue.trim();
-    if (!trimmed || trimmed === taskName) {
-      setEditingTitle(false);
-      return;
-    }
-    
-    // 更新任务/项目标题
-    if (matchedTask) {
-      // 任务模式：更新 taskStore
-      updateTask(matchedTask.id, { title: trimmed });
-    } else if (matchedKanbanProject) {
-      // 项目模式：更新 kanbanStore
-      updateKanbanProject(matchedKanbanProject.id, { title: trimmed });
-      // 同时更新后端项目名称
-      if (backendProjectId) {
-        projectsApi.update(backendProjectId, { title: trimmed }).catch(() => {
-          // 后端更新失败时静默处理
-        });
-      }
-    }
-    setEditingTitle(false);
-  }
-
-  /* ── 移出协作（不降级，仅减少参与智能体）─────────────────── */
-  function removeAgentFromProject(removedAgentName: string) {
-    const newNames = participatingAgentNames.filter(n => n !== removedAgentName);
-    setParticipatingAgentNames(newNames);
-    // 同步更新看板 store
-    if (matchedKanbanProject) {
       const participantAgents = agents
-        .filter(a => newNames.includes(a.name))
+        .filter(a => allNames.includes(a.name))
         .map(a => ({ name: a.name, color: a.color ?? '#6366f1' }));
-      updateKanbanProject(matchedKanbanProject.id, { agents: participantAgents, memberCount: participantAgents.length });
+      updateKanbanProject(matchedKanbanProject.id, { agents: participantAgents, memberCount: allNames.length });
     }
   }
 
   /* ── 项目降级为任务 ─────────────────────────────────────── */
   function downgradeToTask(keptAgentName: string) {
-    /**
-     * 降级时将原项目的 tags 和 priority 继承到 degradedTaskData。
-     *
-     * 原因：降级后 isProjectMode=false，但 incomingTaskId 仍为 null（进入页面时
-     * 是从项目跳转的），导致 matchedTask=null，currentTags/currentPriority 会丢失。
-     * 通过初始化 degradedTaskData，让降级后的任务模式有数据源可读写。
-     */
-    const degradedTags = matchedKanbanProject?.tags ?? [];
-    const degradedPriority = matchedKanbanProject?.priority ?? null;
-
-    setDegradedTaskData({
-      tags: degradedTags,
-      priority: degradedPriority,
-    });
-
-    // 同步写入 sessionStorage，刷新后可恢复降级状态
-    try {
-      const saved = sessionStorage.getItem(SESSION_KEY);
-      const ctx = saved ? JSON.parse(saved) : {};
-      sessionStorage.setItem(SESSION_KEY, JSON.stringify({
-        ...ctx,
-        isDegraded: true,
-        degradedTags,
-        degradedPriority,
-        degradedAgentName: keptAgentName,
-      }));
-    } catch { /* ignore */ }
-
     setParticipatingAgentNames([keptAgentName]);
     setIsProjectMode(false);
     // 关闭非保留智能体的所有 Panel
@@ -3209,62 +2084,6 @@ export function ProjectWorkspace() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  /* ── 刷新后从后端回填协作节点 ──────────────────────────── */
-  // 当后端项目列表加载完成后，按项目名/id找到对应项目，把 workflowNodes 回填到 collabNodes
-  // 只在初次加载时回填（collabNodes 还是默认的单空节点时），避免用户手动编辑后被覆盖
-  const collabNodesInitialized = useRef(false);
-  useEffect(() => {
-    if (collabNodesInitialized.current) return;
-    if (!projects.length) return;
-    if (!agents.length) return;  // 等 agents 加载完成，确保能推导名称
-
-    // 在 effect 内部重新计算 targetTitle，避免闭包过期问题
-    // 优先用 incomingProjectName（sessionStorage 恢复后依然有效）
-    // 其次在 kanban store 里通过 incomingProjectId 找到项目名
-    const allKanban = [
-      ...kanbanProjects.progress,
-      ...kanbanProjects.done,
-    ];
-    const kanbanMatch = incomingProjectId
-      ? allKanban.find(p => p.id === incomingProjectId)
-      : (incomingProjectName ? allKanban.find(p => p.title === incomingProjectName) : undefined);
-    const targetTitle = kanbanMatch?.title ?? incomingProjectName;
-
-    if (!targetTitle) return;
-
-    const backendProject = projects.find(p => p.title === targetTitle);
-    if (!backendProject) return;
-
-    const nodes = backendProject.workflowNodes;
-    if (!nodes || nodes.length === 0) return;
-
-    // 把后端 workflowNodes 转成前端 FlowNode 格式
-    const flowNodes: FlowNode[] = nodes.map(n => ({
-      id: n.id,
-      name: n.name,
-      nodeType: n.nodeType as 'serial' | 'parallel',
-      agentIds: n.agentIds,
-      desc: n.taskDesc,
-    }));
-
-    setCollabNodes(flowNodes);
-
-    // 同时从节点的 agentIds 推导出参与智能体名称列表，更新 participatingAgentNames
-    // 这样协作 tab 里"参与智能体"区域只会显示节点里实际选的那些智能体
-    const allAgentIds = [...new Set(flowNodes.flatMap(n => n.agentIds))];
-    if (allAgentIds.length > 0 && agents.length > 0) {
-      const names = allAgentIds
-        .map(id => agents.find(a => a.id === id)?.name)
-        .filter(Boolean) as string[];
-      if (names.length > 0) {
-        setParticipatingAgentNames(names);
-      }
-    }
-
-    collabNodesInitialized.current = true;
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projects, kanbanProjects, agents]);
-
   /* ── 消息列表滚动到底部 ─────────────────────────────────── */
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -3274,63 +2093,6 @@ export function ProjectWorkspace() {
   async function handleSend() {
     const text = inputValue.trim();
     if (!text) return;
-
-    // 处理 /new 命令：自动创建新任务和新会话
-    if (text === '/new') {
-      const defaultAgent = agents[0];
-      if (!defaultAgent) {
-        showToast('没有可用的智能体', 'error');
-        setInputValue('');
-        return;
-      }
-
-      // 关闭当前 panel（如果有）
-      if (activePanel) {
-        closePanel(activePanel.id);
-      }
-
-      // 生成基础数字ID（用于升级/降级时保持一致）
-      const baseNum = Date.now();
-      const taskId = `task_${baseNum}`;
-
-      // 创建新 Tab
-      const newTabId = createSessionTab('新对话');
-
-      // 创建新会话（forceNew: true 确保不继承历史）
-      await openPanel({
-        agentId: defaultAgent.id,
-        agentName: defaultAgent.name,
-        agentColor: defaultAgent.color,
-        tabId: newTabId,
-        forceNew: true,
-      });
-
-      // 获取新创建的 panel（即新的 sessionId/conversationId）
-      const freshPanel = useConversationStore.getState().openPanels.find(
-        p => p.agentId === defaultAgent.id
-      );
-      const sessionId = freshPanel?.id;
-
-      // 创建新任务，绑定完整关联：taskId + sessionId + agentId + userId
-      addTaskFromChat({
-        title: '新对话',
-        agentName: defaultAgent.name,
-        agentColor: defaultAgent.color ?? '#6366f1',
-        panelId: sessionId,
-        sessionId,
-        agentId: defaultAgent.id,
-        taskId,
-      });
-
-      if (freshPanel) {
-        setActivePanelId(freshPanel.id);
-        switchSessionTab(newTabId);
-      }
-
-      setInputValue('');
-      showToast('新对话已创建', 'success');
-      return;
-    }
 
     let panelId: string | undefined;
     let agentName = '';
@@ -3343,49 +2105,33 @@ export function ProjectWorkspace() {
       agentName = activePanel.agentName;
       agentColor = activePanel.agentColor ?? '#9ca3af';
     } else {
-      // 没有 panel：用第一个可用智能体自动开启一个新会话（forceNew: true 确保不继承历史）
+      // 没有 panel：用第一个可用智能体自动开启一个会话
       const defaultAgent = agents[0];
       if (defaultAgent) {
-        // 取当前激活 Tab id（若有），在新建 panel 后自动绑定
-        const currentTabId = useConversationStore.getState().activeTabId;
         await openPanel({
           agentId: defaultAgent.id,
           agentName: defaultAgent.name,
           agentColor: defaultAgent.color,
           projectId: currentProject?.id,
-          tabId: currentTabId ?? undefined,
-          forceNew: true, // 强制创建新会话，不复用已有会话
         });
         const freshPanel = useConversationStore.getState().openPanels[0];
         if (freshPanel) {
           sendMessage(freshPanel.id, text);
           panelId = freshPanel.id;
-          setActivePanelId(freshPanel.id);
         }
         agentName = defaultAgent.name;
         agentColor = defaultAgent.color ?? '#9ca3af';
       }
     }
 
-    // 自动为对话建任务，绑定完整关联：taskId + sessionId + agentId + userId
-    if (panelId) {
-      // 任务标题：优先用项目名（来自跳转上下文），其次用"与 AgentName 的对话"
-      const ctxTitle = resolvedCtx.projectName
-        || (resolvedCtx.taskId ? (() => {
-            const allTasks = [...(tasks['progress'] ?? []), ...(tasks['done'] ?? [])];
-            return allTasks.find(t => t.id === resolvedCtx.taskId)?.title;
-          })() : undefined);
-      const taskTitle = ctxTitle || `与 ${agentName || '智能体'} 的对话`;
-      // 获取当前 panel 的 agentId
-      const currentPanel = openPanels.find(p => p.id === panelId);
+    // 每个会话只自动建一次任务（第一条消息触发）
+    if (panelId && !createdTaskPanels.current.has(panelId)) {
+      createdTaskPanels.current.add(panelId);
       addTaskFromChat({
-        title: taskTitle,
+        title: text,
         agentName: agentName || '智能体',
         agentColor,
         panelId,
-        sessionId: panelId,
-        agentId: currentPanel?.agentId,
-        taskId: resolvedCtx.taskId ?? undefined,
       });
     }
 
@@ -3530,55 +2276,7 @@ export function ProjectWorkspace() {
               )}
               {isProjectMode ? '项目' : '任务'}
             </span>
-            <span className="brand-name" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              {editingTitle ? (
-                <input
-                  autoFocus
-                  value={editTitleValue}
-                  onChange={e => setEditTitleValue(e.target.value)}
-                  onBlur={saveTitle}
-                  onKeyDown={e => {
-                    if (e.key === 'Enter') saveTitle();
-                    if (e.key === 'Escape') setEditingTitle(false);
-                  }}
-                  style={{
-                    fontSize: 20, fontWeight: 700, color: '#1a202c',
-                    border: '1.5px solid #3b82f6', borderRadius: 6,
-                    padding: '4px 10px', outline: 'none',
-                    fontFamily: '"Microsoft YaHei","Segoe UI",sans-serif',
-                    width: Math.max(200, editTitleValue.length * 14),
-                  }}
-                />
-              ) : (
-                <>
-                  <span>{taskName}</span>
-                  <button
-                    onClick={startEditTitle}
-                    title="编辑标题"
-                    style={{
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      width: 24, height: 24, borderRadius: 5,
-                      border: '1px solid transparent',
-                      background: 'transparent', cursor: 'pointer',
-                      color: '#9ca3af', transition: 'all 0.15s',
-                    }}
-                    onMouseEnter={e => {
-                      e.currentTarget.style.background = '#f3f4f6';
-                      e.currentTarget.style.color = '#374151';
-                    }}
-                    onMouseLeave={e => {
-                      e.currentTarget.style.background = 'transparent';
-                      e.currentTarget.style.color = '#9ca3af';
-                    }}
-                  >
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
-                      <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
-                    </svg>
-                  </button>
-                </>
-              )}
-            </span>
+            <span className="brand-name">{taskName}</span>
             <span
               className="status-badge"
               style={{
@@ -3595,43 +2293,10 @@ export function ProjectWorkspace() {
               }} />
               {STATUS_CONFIG[appStatus].label}
             </span>
-
-            {/* 新建任务按钮（统一入口） */}
-            <button
-              onClick={() => setShowCreateModal(true)}
-              style={{
-                display: 'inline-flex', alignItems: 'center', gap: 4,
-                padding: '4px 10px', borderRadius: 6,
-                border: '1px solid #bae6fd',
-                background: '#e0f2fe',
-                color: '#0369a1',
-                fontSize: 12, fontWeight: 600,
-                cursor: 'pointer',
-                fontFamily: '"Microsoft YaHei","Segoe UI",sans-serif',
-                transition: 'all 0.15s',
-              }}
-              onMouseEnter={e => {
-                e.currentTarget.style.background = '#bae6fd';
-                e.currentTarget.style.borderColor = '#7dd3fc';
-              }}
-              onMouseLeave={e => {
-                e.currentTarget.style.background = '#e0f2fe';
-                e.currentTarget.style.borderColor = '#bae6fd';
-              }}
-            >
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M9 11l3 3L22 4"/>
-                <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
-                <line x1="12" y1="12" x2="12" y2="16"/>
-                <line x1="9" y1="14" x2="15" y2="14"/>
-              </svg>
-              新建任务
-            </button>
           </div>
 
           {/* 1b. 优先级标签 + 项目标签 + 参与项目的AI智能体 */}
-          {/* 显示条件：项目模式用 collabAgents 判断是否有智能体；任务模式用 openPanels */}
-          {(currentTags.length > 0 || currentPriority || (isProjectMode ? collabAgents.length > 0 : openPanels.length > 0)) && (
+          {(currentTags.length > 0 || currentPriority || agents.length > 0) && (
             <div style={{
               padding: '7px 24px',
               borderBottom: '1px solid #f0f0f0',
@@ -3687,196 +2352,130 @@ export function ProjectWorkspace() {
               )}
 
               {/* 分隔线（当左侧有内容时） */}
-              {(currentPriority || currentTags.length > 0) && (isProjectMode ? collabAgents.length > 0 : openPanels.length > 0) && (
+              {(currentPriority || currentTags.length > 0) && agents.length > 0 && (
                 <div style={{ width: 1, height: 18, background: '#e5e7eb', flexShrink: 0 }} />
               )}
 
         {/* 参与项目的AI智能体（仅展示图标，不可点击/管理） */}
-        {(() => {
-          if (isProjectMode) {
-            /* ── 项目模式：直接读 collabNodes 里分配的智能体（协作弹窗配置的真实值）──
-             *
-             * 为什么不用 participatingAgentNames：
-             *   participatingAgentNames 是从 URL / sessionStorage / 回填 useEffect 写入的，
-             *   用户在协作 Tab 实时修改节点分配后，collabNodes 已更新，
-             *   但 participatingAgentNames 不一定同步，会导致顶部头像展示滞后/错误。
-             *
-             * collabAgents 是在渲染函数体内从 collabNodes 实时计算的（已去重），
-             * 始终与协作 Tab 里的当前配置保持一致。
-             */
-            const projectAgents = collabAgents.length > 0
-              ? collabAgents
-              : agents.filter(a => openPanels.some(p => p.agentId === a.id)); // 协作节点为空时兜底用 openPanels
-            if (projectAgents.length === 0) return null;
-            const visible = projectAgents.slice(0, 6);
-            const overflow = projectAgents.length - 6;
-            return (
-              /* 智能体头像列表：gap 间距排列，不重叠 */
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                {visible.map((agent) => {
-                  const ac = agent.color ?? '#6366f1';
-                  const isActiveAgent = openPanels.some(p => p.agentId === agent.id);
+        {agents.length > 0 && (() => {
+          // 项目（isProjectMode=true）→ 显示全部参与智能体叠放
+          // 任务 → 只显示当前激活的单个智能体
+          const isProject = isProjectMode;
+
+                if (isProject) {
+                  /* ── 项目模式：全部智能体叠放 ── */
                   return (
-                    <div
-                      key={agent.id}
-                      title={agent.name}
-                      style={{
-                        width: 26, height: 26, borderRadius: '50%',
-                        background: ac + '22',
-                        /* 激活中的智能体用彩色描边，其余用浅灰描边做视觉分隔 */
-                        border: `2px solid ${isActiveAgent ? ac : '#d1d5db'}`,
-                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        color: ac, fontWeight: 700, fontSize: 10,
-                        cursor: 'default',
-                        flexShrink: 0,
-                        userSelect: 'none',
-                      }}
-                    >
-                      {agent.name.charAt(0)}
+                    <div style={{ display: 'flex', alignItems: 'center' }}>
+                      {agents.slice(0, 6).map((agent, idx) => {
+                        const ac = agent.color ?? '#6366f1';
+                        const isActiveAgent = openPanels.some(p => p.agentId === agent.id);
+                        return (
+                          <div
+                            key={agent.id}
+                            title={agent.name}
+                            style={{
+                              width: 24, height: 24, borderRadius: '50%',
+                              background: ac + '22',
+                              border: `2px solid ${isActiveAgent ? ac : '#fff'}`,
+                              display: 'flex', alignItems: 'center', justifyContent: 'center',
+                              color: ac, fontWeight: 700, fontSize: 9,
+                              marginLeft: idx > 0 ? -6 : 0,
+                              cursor: 'default',
+                              position: 'relative',
+                              zIndex: agents.slice(0, 6).length - idx,
+                              boxShadow: `0 0 0 1.5px ${isActiveAgent ? ac + '44' : '#f5f5f5'}`,
+                              userSelect: 'none',
+                            }}
+                          >
+                            {agent.name.charAt(0)}
+                          </div>
+                        );
+                      })}
+                      {agents.length > 6 && (
+                        <div style={{
+                          width: 24, height: 24, borderRadius: '50%',
+                          background: '#f3f4f6',
+                          border: '2px solid #fff',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          color: '#9ca3af', fontWeight: 700, fontSize: 9,
+                          marginLeft: -6,
+                          cursor: 'default',
+                          userSelect: 'none',
+                        }}>
+                          +{agents.length - 6}
+                        </div>
+                      )}
                     </div>
                   );
-                })}
-                {overflow > 0 && (
-                  <div style={{
-                    width: 26, height: 26, borderRadius: '50%',
-                    background: '#f3f4f6',
-                    border: '2px solid #d1d5db',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    color: '#9ca3af', fontWeight: 700, fontSize: 10,
-                    cursor: 'default',
-                    flexShrink: 0,
-                    userSelect: 'none',
-                  }}>
-                    +{overflow}
-                  </div>
-                )}
-              </div>
-            );
-          }
+                }
 
-          /* ── 任务模式：只显示当前会话中激活的智能体 ── */
-          const curAgent = activePanel
-            ? agents.find(a => a.id === activePanel.agentId) ?? null
-            : openPanels.length > 0
-              ? agents.find(a => a.id === openPanels[0].agentId) ?? null
-              : null;
-          if (!curAgent) return null;
-          const ac = curAgent.color ?? '#6366f1';
-          return (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <div style={{
-                width: 22, height: 22, borderRadius: '50%',
-                background: ac + '20',
-                border: `2px solid ${ac}`,
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                color: ac, fontWeight: 700, fontSize: 9,
-                flexShrink: 0,
-                boxShadow: `0 0 0 2px ${ac}22`,
-                userSelect: 'none',
-              }}>
-                {curAgent.name.charAt(0)}
-              </div>
-              <span style={{
-                fontSize: 12, fontWeight: 600, color: ac,
-                fontFamily: '"Microsoft YaHei","Segoe UI",sans-serif',
-                userSelect: 'none',
-              }}>
-                {curAgent.name}
-              </span>
-            </div>
-          );
-        })()}
+                /* ── 任务模式：只显示当前激活的智能体 ── */
+                const curAgent = activePanel
+                  ? agents.find(a => a.id === activePanel.agentId) ?? null
+                  : agents[0] ?? null;
+                if (!curAgent) return null;
+                const ac = curAgent.color ?? '#6366f1';
+                return (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <div style={{
+                      width: 22, height: 22, borderRadius: '50%',
+                      background: ac + '20',
+                      border: `2px solid ${ac}`,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      color: ac, fontWeight: 700, fontSize: 9,
+                      flexShrink: 0,
+                      boxShadow: `0 0 0 2px ${ac}22`,
+                      userSelect: 'none',
+                    }}>
+                      {curAgent.name.charAt(0)}
+                    </div>
+                    <span style={{
+                      fontSize: 12, fontWeight: 600, color: ac,
+                      fontFamily: '"Microsoft YaHei","Segoe UI",sans-serif',
+                      userSelect: 'none',
+                    }}>
+                      {curAgent.name}
+                    </span>
+                  </div>
+                );
+              })()}
             </div>
           )}
 
           {/* ══════════ 对话工作台 ══════════ */}
 
-          {/* 协作任务启动 Banner（仅前端，可关闭，不存入对话历史） */}
-          {activePanel?.systemBanner && (
-            <div style={{
-              margin: '10px 16px 0',
-              padding: '10px 14px',
-              background: '#eff6ff',
-              border: '1px solid #bfdbfe',
-              borderRadius: 8,
-              display: 'flex',
-              alignItems: 'flex-start',
-              gap: 8,
-              fontSize: 12,
-              color: '#1e40af',
-              lineHeight: 1.6,
-            }}>
-              <svg style={{ flexShrink: 0, marginTop: 2 }} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
-              </svg>
-              <span style={{ flex: 1, whiteSpace: 'pre-wrap' }}>{activePanel.systemBanner}</span>
-              <button
-                onClick={() => dismissBanner(activePanel.id)}
-                style={{
-                  flexShrink: 0, background: 'none', border: 'none', cursor: 'pointer',
-                  color: '#93c5fd', padding: 2, lineHeight: 1,
-                }}
-                title="关闭提示"
-              >
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                  <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
-                </svg>
-              </button>
-            </div>
-          )}
-
           {/* 2. 消息展示区 */}
-          {(() => {
-            const activeSessionTab = sessionTabs.find(t => t.id === activeTabId);
-            const isEmptyTab = activeSessionTab && !activeSessionTab.panelId;
-            return (
-              <div className="welcome-area" style={{ padding: messages.length ? '16px 24px' : 0 }}>
-                {isEmptyTab ? (
-                  /* ── 空 Tab：引导用户开始新会话 ── */
-                  <div style={{
-                    height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    flexDirection: 'column', gap: 12, color: '#c0c4ce',
-                  }}>
-                    <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.3">
-                      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
-                      <line x1="12" y1="8" x2="12" y2="16" strokeWidth="1.8"/><line x1="8" y1="12" x2="16" y2="12" strokeWidth="1.8"/>
-                    </svg>
-                    <span style={{ fontSize: 14, fontWeight: 600, color: '#a0a3ab' }}>新会话</span>
-                    <span style={{ fontSize: 12, color: '#c0c4ce', textAlign: 'center', lineHeight: 1.7 }}>
-                      在下方输入消息，或在右侧选择智能体<br/>即可开始一段全新的对话
-                    </span>
-                  </div>
-                ) : messages.length === 0 ? (
-                  <div style={{
-                    height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    flexDirection: 'column', gap: 8, color: '#c0c4ce',
-                  }}>
-                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-                      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
-                    </svg>
-                    <span style={{ fontSize: 13 }}>输入消息与智能体开始对话</span>
-                  </div>
-                ) : null}
-                {messages.map((msg) => {
-                  const msgAgent = msg.agentId
-                    ? agents.find(a => a.id === msg.agentId)
-                    : activePanel
-                      ? agents.find(a => a.id === activePanel.agentId)
-                      : undefined;
-                  return (
-                    <MessageBubble
-                      key={msg.id}
-                      message={msg}
-                      agentName={msgAgent?.name ?? activePanel?.agentName}
-                      agentColor={msgAgent?.color ?? activePanel?.agentColor ?? '#6366f1'}
-                      outputFormat={msgAgent?.outputFormat}
-                    />
-                  );
-                })}
+          <div className="welcome-area" style={{ padding: messages.length ? '16px 24px' : 0 }}>
+            {messages.length === 0 && (
+              <div style={{
+                height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                flexDirection: 'column', gap: 8, color: '#c0c4ce',
+              }}>
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                  <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                </svg>
+                <span style={{ fontSize: 13 }}>输入消息与智能体开始对话</span>
+              </div>
+            )}
+            {messages.map((msg) => (
+              <div key={msg.id} style={{
+                display: 'flex',
+                justifyContent: msg.role === 'user' ? 'flex-end' : 'flex-start',
+                marginBottom: 10,
+              }}>
+                <div style={{
+                  maxWidth: '72%', padding: '8px 14px',
+                  borderRadius: msg.role === 'user' ? '12px 12px 2px 12px' : '12px 12px 12px 2px',
+                  background: msg.role === 'user' ? '#2a3b4d' : '#f3f4f6',
+                  color: msg.role === 'user' ? '#fff' : '#1a202c',
+                  fontSize: 13, lineHeight: 1.6,
+                }}>
+                  {msg.content || <span style={{ opacity: 0.4 }}>●●●</span>}
+                </div>
+              </div>
+            ))}
             <div ref={messagesEndRef} />
           </div>
-            );
-          })()}
 
           {/* 3. 功能标签栏 */}
           <div className="function-tabs">
@@ -3959,29 +2558,11 @@ export function ProjectWorkspace() {
             const existing = openPanels.find(p => p.agentId === agentId);
             if (existing) {
               setActivePanelId(existing.id);
-              // 找到绑定此 panel 的 Tab 并激活
-              const boundTab = useConversationStore.getState().sessionTabs.find(t => t.panelId === existing.id);
-              if (boundTab) switchSessionTab(boundTab.id);
             } else {
-              const currentTabId = useConversationStore.getState().activeTabId;
-              await openPanel({ agentId, agentName, agentColor, projectId: currentProject?.id, initialMessage, tabId: currentTabId ?? undefined });
+              await openPanel({ agentId, agentName, agentColor, projectId: currentProject?.id, initialMessage });
               // 新建后取最新 panel
               const fresh = useConversationStore.getState().openPanels.find(p => p.agentId === agentId);
               if (fresh) setActivePanelId(fresh.id);
-            }
-            // 项目模式下，将新智能体加入参与列表（去重）
-            if (isProjectMode) {
-              setParticipatingAgentNames(prev =>
-                prev.includes(agentName) ? prev : [...prev, agentName]
-              );
-              // 同步更新看板 store
-              if (matchedKanbanProject) {
-                const allNames = [...new Set([...participatingAgentNames, agentName])];
-                const participantAgents = agents
-                  .filter(a => allNames.includes(a.name))
-                  .map(a => ({ name: a.name, color: a.color ?? '#6366f1' }));
-                updateKanbanProject(matchedKanbanProject.id, { agents: participantAgents, memberCount: participantAgents.length });
-              }
             }
           }}
           onCloseAgentPanel={panelId => {
@@ -3989,26 +2570,18 @@ export function ProjectWorkspace() {
             setActivePanelId(prev => prev === panelId ? (openPanels.find(p => p.id !== panelId)?.id ?? null) : prev);
           }}
           currentProjectId={matchedKanbanProject?.id}
-          backendProjectId={backendProjectId ?? undefined}
           collabNodes={collabNodes}
           setCollabNodes={setCollabNodes}
           isProject={isProjectMode}
           participatingAgentNames={participatingAgentNames}
           onUpgradeToProject={upgradeToProject}
           onDowngradeToTask={downgradeToTask}
-          onRemoveAgent={removeAgentFromProject}
         />
       )}
 
       {showChannelModal && (
         <ChannelConfigModal onClose={() => setShowChannelModal(false)} />
       )}
-
-      {/* 新建任务弹窗 */}
-      <CreateTaskModal
-        open={showCreateModal}
-        onClose={() => setShowCreateModal(false)}
-      />
     </>
   );
 }
