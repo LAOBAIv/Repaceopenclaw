@@ -81,9 +81,16 @@ function execToRows(db: any, sql: string, params?: any[]): any[] {
 }
 
 export const ProjectService = {
-  list(): Project[] {
+  list(userId?: string): Project[] {
     const db = getDb();
-    const rows = execToRows(db, "SELECT * FROM projects ORDER BY updated_at DESC");
+    let sql = "SELECT * FROM projects";
+    const params: any[] = [];
+    if (userId) {
+      sql += " WHERE user_id = ?";
+      params.push(userId);
+    }
+    sql += " ORDER BY updated_at DESC";
+    const rows = execToRows(db, sql, params.length ? params : undefined);
     return rows.map(rowToProject);
   },
 
@@ -106,13 +113,14 @@ export const ProjectService = {
     decisionMaker?: string;
     workflowNodes?: WorkflowNode[];
     createdBy?: string;
+    userId?: string;
   }): Project {
     const db = getDb();
     const id = uuidv4();
     const now = new Date().toISOString();
     const status = data.status ?? "active";
     db.run(
-      `INSERT INTO projects (id, title, description, tags, status, goal, priority, start_time, end_time, decision_maker, workflow_nodes, created_by, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      `INSERT INTO projects (id, title, description, tags, status, goal, priority, start_time, end_time, decision_maker, workflow_nodes, created_by, user_id, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [
         id, data.title, data.description, JSON.stringify(data.tags), status,
         data.goal || "", data.priority || "mid",
@@ -120,6 +128,7 @@ export const ProjectService = {
         data.decisionMaker || "",
         JSON.stringify(data.workflowNodes || []),
         data.createdBy || null,
+        data.userId || "",
         now, now,
       ]
     );

@@ -3,6 +3,8 @@ import { ProjectService, WorkflowNode } from "../services/ProjectService";
 import { getDb, saveDb } from "../db/client";
 import { v4 as uuidv4 } from "uuid";
 import { z } from "zod";
+import { authenticate } from "../middleware/auth";
+import { ensureOwnership } from "../middleware/ownership";
 
 const router = Router();
 
@@ -63,14 +65,14 @@ function execToRows(db: any, sql: string, params?: any[]): any[] {
 }
 
 /** GET /api/projects/documents/:docId/versions — 获取文档历史版本列表 */
-router.get("/documents/:docId/versions", (req: Request, res: Response) => {
+router.get("/documents/:docId/versions", authenticate, (req: Request, res: Response) => {
   const db = getDb();
   const rows = execToRows(db, "SELECT id, document_id, snapshot_at FROM document_versions WHERE document_id=? ORDER BY snapshot_at DESC", [req.params.docId]);
   res.json({ data: rows.map(r => ({ id: r.id, documentId: r.document_id, snapshotAt: r.snapshot_at })) });
 });
 
 /** POST /api/projects/documents/:docId/versions — 手动创建版本快照 */
-router.post("/documents/:docId/versions", (req: Request, res: Response) => {
+router.post("/documents/:docId/versions", authenticate, (req: Request, res: Response) => {
   const db = getDb();
   // Get current document content
   const docRows = execToRows(db, "SELECT content FROM documents WHERE id=?", [req.params.docId]);
@@ -85,7 +87,7 @@ router.post("/documents/:docId/versions", (req: Request, res: Response) => {
 });
 
 /** GET /api/projects/documents/:docId/versions/:versionId — 获取特定版本内容 */
-router.get("/documents/:docId/versions/:versionId", (req: Request, res: Response) => {
+router.get("/documents/:docId/versions/:versionId", authenticate, (req: Request, res: Response) => {
   const db = getDb();
   const rows = execToRows(db, "SELECT * FROM document_versions WHERE id=? AND document_id=?", [req.params.versionId, req.params.docId]);
   if (!rows.length) return res.status(404).json({ error: "Version not found" });
@@ -94,7 +96,7 @@ router.get("/documents/:docId/versions/:versionId", (req: Request, res: Response
 });
 
 // ── Document node CRUD (static prefix) ──────────────────────────────────────
-router.put("/documents/:docId", (req: Request, res: Response) => {
+router.put("/documents/:docId", authenticate, (req: Request, res: Response) => {
   const parsed = DocumentUpdateSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
   const doc = ProjectService.updateDocument(req.params.docId, parsed.data);
@@ -102,65 +104,60 @@ router.put("/documents/:docId", (req: Request, res: Response) => {
   res.json({ data: doc });
 });
 
-router.delete("/documents/:docId", (req: Request, res: Response) => {
+router.delete("/documents/:docId", authenticate, (req: Request, res: Response) => {
   ProjectService.deleteDocument(req.params.docId);
   res.json({ success: true });
 });
 
 // Projects CRUD
-router.get("/", (req: Request, res: Response) => {
-  res.json({ data: ProjectService.list() });
+router.get("/", authenticate, (req: Request, res: Response) => {
+  const userId = (req as any).user?.id;
+  res.json({ data: ProjectService.list(userId) });
 });
 
-router.post("/", (req: Request, res: Response) => {
+router.post("/", authenticate, (req: Request, res: Response) => {
+  const userId = (req as any).user?.id;
   const parsed = ProjectSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
   const { title, description, tags, status, goal, priority, startTime, endTime, decisionMaker, createdBy } = parsed.data;
-  // Cast workflow nodes: safe because WorkflowNodeSchema guarantees id is required string
   const workflowNodes = (parsed.data.workflowNodes || []) as WorkflowNode[];
   res.status(201).json({
-    data: ProjectService.create({ title, description, tags, status, goal, priority, startTime, endTime, decisionMaker, workflowNodes, createdBy }),
+    data: ProjectService.create({ title, description, tags, status, goal, priority, startTime, endTime, decisionMaker, workflowNodes, createdBy, userId }),
   });
 });
 
-router.get("/:id", (req: Request, res: Response) => {
+router.get("/:id", authenticate, (req: Request, res: Response) => {
+  const userId = (req as any).user?.id;
   const p = ProjectService.getById(req.params.id);
   if (!p) return res.status(404).json({ error: "Project not found" });
+  // 越权检查
+  if (p.createdBy && (req as any).user?.role !== "admin" && (req as any).user?.role !== "super_admin") {
+    if (p.createdBy !== userId && (p as any).user_id && (p as any).user_id !== userId) {
+      return res.status(403).json({ error: "无权限访问此项目" });
+    }
+  }
   res.json({ data: p });
 });
 
-router.put("/:id", (req: Request, res: Response) => {
+router.put("/:id", authenticate, ensureOwnership("project"), (req: Request, res: Response) => {
   const parsed = ProjectSchema.partial().safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
-  
-  // 权限检查：只有创建人可以修改项目名称
-  const project = ProjectService.getById(req.params.id);
-  if (!project) return res.status(404).json({ error: "Project not found" });
-  
-  const currentUserId = (req as any).user?.id;
-  const isCreator = !project.createdBy || project.createdBy === currentUserId;
-  
-  // 如果修改了 title 且不是创建人，拒绝
-  if (parsed.data.title && !isCreator) {
-    return res.status(403).json({ error: "只有创建人可以修改项目名称" });
-  }
-  
   const p = ProjectService.update(req.params.id, parsed.data as any);
   if (!p) return res.status(404).json({ error: "Project not found" });
   res.json({ data: p });
 });
 
-router.delete("/:id", (req: Request, res: Response) => {
+router.delete("/:id", authenticate, ensureOwnership("project"), (req: Request, res: Response) => {
   ProjectService.delete(req.params.id);
   res.json({ success: true });
 });
 
 // Document tree under a project
-router.get("/:id/documents", (req: Request, res: Response) => {
+router.get("/:id/documents", authenticate, (req: Request, res: Response) => {
   res.json({ data: ProjectService.getDocumentTree(req.params.id) });
 });
 
-router.post("/:id/documents", (req: Request, res: Response) => {
+router.post("/:id/documents", authenticate, (req: Request, res: Response) => {
   const parsed = DocumentSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
   const { title, parentId } = parsed.data;

@@ -69,6 +69,8 @@ function createTables(db: Database) {
   try { db.run("ALTER TABLE agents ADD COLUMN top_p REAL NOT NULL DEFAULT 1"); } catch {}
   try { db.run("ALTER TABLE agents ADD COLUMN frequency_penalty REAL NOT NULL DEFAULT 0"); } catch {}
   try { db.run("ALTER TABLE agents ADD COLUMN presence_penalty REAL NOT NULL DEFAULT 0"); } catch {}
+  // Migrate: add user_id to agents (Phase 1: 多租户隔离)
+  try { db.run("ALTER TABLE agents ADD COLUMN user_id TEXT NOT NULL DEFAULT ''"); } catch {}
   // Token 接入字段：用户为该智能体配置的私有 API Key
   try { db.run("ALTER TABLE agents ADD COLUMN token_provider TEXT NOT NULL DEFAULT ''"); } catch {}
   try { db.run("ALTER TABLE agents ADD COLUMN token_api_key TEXT NOT NULL DEFAULT ''"); } catch {}
@@ -81,6 +83,14 @@ function createTables(db: Database) {
   try { db.run("ALTER TABLE agents ADD COLUMN temperature_override REAL DEFAULT NULL"); } catch {}
   // Token 用量统计：累计该智能体消耗的 token 总数（每次 agent 回复后累加）
   try { db.run("ALTER TABLE agents ADD COLUMN token_used INTEGER NOT NULL DEFAULT 0"); } catch {}
+
+  // Phase 3: Agent 可见性 / Skill 管控 / 配额
+  try { db.run("ALTER TABLE agents ADD COLUMN visibility TEXT NOT NULL DEFAULT 'private'"); } catch {}
+  try { db.run("ALTER TABLE agents ADD COLUMN skills_config TEXT NOT NULL DEFAULT '{}'"); } catch {}
+  try { db.run("ALTER TABLE agents ADD COLUMN quota_config TEXT NOT NULL DEFAULT '{}'"); } catch {}
+
+  // Migrate: add user_id to token_channels (Phase 2: 多租户隔离)
+  try { db.run("ALTER TABLE token_channels ADD COLUMN user_id TEXT NOT NULL DEFAULT ''"); } catch {}
 
   // Token channels: stores API keys for each LLM provider
   db.run(`
@@ -117,6 +127,8 @@ function createTables(db: Database) {
     )
   `);
 
+  // Migrate: add user_id to projects (Phase 2: 多租户隔离)
+  try { db.run("ALTER TABLE projects ADD COLUMN user_id TEXT NOT NULL DEFAULT ''"); } catch {}
   // Migrate: add workflow columns to existing projects table (idempotent)
   try { db.run("ALTER TABLE projects ADD COLUMN goal TEXT NOT NULL DEFAULT ''"); } catch {}
   try { db.run("ALTER TABLE projects ADD COLUMN priority TEXT NOT NULL DEFAULT 'mid'"); } catch {}
@@ -146,6 +158,8 @@ function createTables(db: Database) {
       updated_at TEXT NOT NULL
     )
   `);
+  // Migrate: add user_id to tasks (Phase 2: 多租户隔离)
+  try { db.run("ALTER TABLE tasks ADD COLUMN user_id TEXT NOT NULL DEFAULT ''"); } catch {}
   // Migrate: add agent_id and created_by to existing tasks table (idempotent)
   try { db.run("ALTER TABLE tasks ADD COLUMN agent_id TEXT NOT NULL DEFAULT ''"); } catch {}
   try { db.run("ALTER TABLE tasks ADD COLUMN created_by TEXT"); } catch {}
@@ -187,6 +201,8 @@ function createTables(db: Database) {
       FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE SET NULL
     )
   `);
+  // Migrate: add user_id to conversations (Phase 1: 多租户隔离)
+  try { db.run("ALTER TABLE conversations ADD COLUMN user_id TEXT NOT NULL DEFAULT ''"); } catch {}
   // Migrate: add task_id and created_by columns (idempotent)
   try { db.run("ALTER TABLE conversations ADD COLUMN task_id TEXT UNIQUE"); } catch {}
   try { db.run("ALTER TABLE conversations ADD COLUMN created_by TEXT"); } catch {}
@@ -240,8 +256,45 @@ function createTables(db: Database) {
       FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
     )
   `);
+  // Migrate: add user_id to messages (Phase 1: 多租户隔离)
+  try { db.run("ALTER TABLE messages ADD COLUMN user_id TEXT NOT NULL DEFAULT ''"); } catch {}
   // Migrate: add token_count to existing messages table (idempotent)
   try { db.run("ALTER TABLE messages ADD COLUMN token_count INTEGER NOT NULL DEFAULT 0"); } catch {}
+
+  // ── Audit Logs（操作审计日志）────────────────────────────────────────────
+  db.run(`
+    CREATE TABLE IF NOT EXISTS audit_logs (
+      id         TEXT PRIMARY KEY,
+      user_id    TEXT NOT NULL,
+      action     TEXT NOT NULL,
+      resource   TEXT NOT NULL,
+      resource_id TEXT,
+      detail     TEXT NOT NULL DEFAULT '{}',
+      ip_address TEXT,
+      user_agent TEXT,
+      request_id TEXT,
+      created_at TEXT NOT NULL
+    )
+  `);
+
+  // ── Agent Templates（agency-agents 导入的专业角色模板库）───────────────
+  db.run(`
+    CREATE TABLE IF NOT EXISTS agent_templates (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      category TEXT NOT NULL DEFAULT 'engineering',
+      emoji TEXT NOT NULL DEFAULT '🤖',
+      color TEXT NOT NULL DEFAULT '#6366F1',
+      vibe TEXT NOT NULL DEFAULT '',
+      description TEXT NOT NULL DEFAULT '',
+      system_prompt TEXT NOT NULL DEFAULT '',
+      writing_style TEXT NOT NULL DEFAULT 'balanced',
+      expertise TEXT NOT NULL DEFAULT '[]',
+      output_format TEXT NOT NULL DEFAULT '纯文本',
+      github_source TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL
+    )
+  `);
 
   // ── Bot Channels（飞书 / 企业微信 / 钉钉 Bot 接入）───────────────────────────
   db.run(`

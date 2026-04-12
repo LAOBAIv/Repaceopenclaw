@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AppShell } from './components/layout/AppShell';
 import { ProjectWorkspace } from './pages/ProjectWorkspace';
 import { AgentManager } from './pages/AgentManager';
+import AgentLibrary from './pages/AgentLibrary';
 import { AgentCreate } from './pages/AgentCreate';
 import { AgentConsole } from './pages/AgentConsole';
 import { AgentKanban } from './pages/AgentKanban';
@@ -33,6 +34,7 @@ function App() {
           <Route path="/" element={<Navigate to="/workspace" replace />} />
           <Route path="/workspace" element={<ProjectWorkspace />} />
           <Route path="/agents" element={<AgentManager />} />
+          <Route path="/agent-library" element={<AgentLibrary />} />
           <Route path="/agent-create" element={<AgentCreate />} />
           <Route path="/console" element={<AgentConsole />} />
           <Route path="/kanban" element={<AgentKanban />} />

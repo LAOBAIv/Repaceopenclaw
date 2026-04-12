@@ -1,6 +1,7 @@
 import { Router, Request, Response } from "express";
 import { UserService } from "../services/UserService";
 import { authenticate, requireRole } from "../middleware/auth";
+import { AuditService } from "../services/AuditService";
 
 const router = Router();
 
@@ -15,6 +16,17 @@ router.post("/register", async (req: Request, res: Response) => {
       return res.status(400).json({ error: "密码长度不能少于6位" });
     }
     const result = await UserService.register({ username, email, password });
+    // 审计日志
+    AuditService.log({
+      userId: result.user.id,
+      action: 'register',
+      resource: 'user',
+      resourceId: result.user.id,
+      detail: { username, email },
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent'],
+      requestId: (req as any).requestId,
+    });
     res.status(201).json(result);
   } catch (err: any) {
     res.status(400).json({ error: err.message });
@@ -29,6 +41,17 @@ router.post("/login", async (req: Request, res: Response) => {
       return res.status(400).json({ error: "邮箱和密码不能为空" });
     }
     const result = await UserService.login({ email, password });
+    // 审计日志
+    AuditService.log({
+      userId: result.user.id,
+      action: 'login',
+      resource: 'user',
+      resourceId: result.user.id,
+      detail: { email },
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent'],
+      requestId: (req as any).requestId,
+    });
     res.json(result);
   } catch (err: any) {
     res.status(401).json({ error: err.message });

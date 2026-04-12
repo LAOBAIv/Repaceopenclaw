@@ -56,9 +56,16 @@ const rowToTask = (obj: any): Task => ({
 
 export const TaskService = {
   /** 获取所有任务，按列分组 */
-  listGrouped(): Record<TaskColumn, Task[]> {
+  listGrouped(userId?: string): Record<TaskColumn, Task[]> {
     const db = getDb();
-    const rows = execToRows(db, "SELECT * FROM tasks ORDER BY column_id, sort_order ASC");
+    let sql = "SELECT * FROM tasks";
+    const params: any[] = [];
+    if (userId) {
+      sql += " WHERE user_id = ?";
+      params.push(userId);
+    }
+    sql += " ORDER BY column_id, sort_order ASC";
+    const rows = execToRows(db, sql, params.length ? params : undefined);
     const tasks = rows.map(rowToTask);
     const grouped: Record<TaskColumn, Task[]> = { todo: [], progress: [], review: [], done: [] };
     for (const t of tasks) grouped[t.columnId].push(t);
@@ -66,9 +73,16 @@ export const TaskService = {
   },
 
   /** 获取单列任务 */
-  listByColumn(columnId: TaskColumn): Task[] {
+  listByColumn(columnId: TaskColumn, userId?: string): Task[] {
     const db = getDb();
-    const rows = execToRows(db, "SELECT * FROM tasks WHERE column_id=? ORDER BY sort_order ASC", [columnId]);
+    let sql = "SELECT * FROM tasks WHERE column_id=?";
+    const params: any[] = [columnId];
+    if (userId) {
+      sql += " AND user_id = ?";
+      params.push(userId);
+    }
+    sql += " ORDER BY sort_order ASC";
+    const rows = execToRows(db, sql, params);
     return rows.map(rowToTask);
   },
 
@@ -90,6 +104,7 @@ export const TaskService = {
     agentId?: string;
     dueDate?: string;
     createdBy?: string;
+    userId?: string;
   }): Task {
     const db = getDb();
     const id = uuidv4();
@@ -100,8 +115,8 @@ export const TaskService = {
     const sortOrder = (orderRows[0]?.m ?? -1) + 1;
 
     db.run(
-      `INSERT INTO tasks (id, title, description, column_id, priority, tags, agent, agent_color, agent_id, due_date, comment_count, file_count, sort_order, created_by, created_at, updated_at)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      `INSERT INTO tasks (id, title, description, column_id, priority, tags, agent, agent_color, agent_id, due_date, comment_count, file_count, sort_order, created_by, user_id, created_at, updated_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [
         id,
         data.title,
@@ -116,6 +131,7 @@ export const TaskService = {
         0, 0,
         sortOrder,
         data.createdBy || null,
+        data.userId || "",
         now, now,
       ]
     );

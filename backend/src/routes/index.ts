@@ -21,6 +21,8 @@ import doubaoRoutes from './doubao';
 import openaiCompatRoutes from './openaiCompat';
 import modelProviderRoutes from './modelProviders';
 import modelRoutes from './models';
+import agentTemplateRoutes from './agentTemplates';
+import auditLogRoutes from './auditLogs';
 
 // 路由配置项
 interface RouteConfig {
@@ -46,6 +48,8 @@ const apiRoutes: RouteConfig[] = [
   { path: '/doubao', router: doubaoRoutes },
   { path: '/model-providers', router: modelProviderRoutes },
   { path: '/models', router: modelRoutes },
+  { path: '/agent-templates', router: agentTemplateRoutes },
+  { path: '/audit-logs', router: auditLogRoutes },
 ];
 
 // 外部兼容路由列表（不使用 /api 前缀）

@@ -4,6 +4,7 @@ import { v4 as uuidv4 } from "uuid";
 import { z } from "zod";
 import https from "https";
 import http from "http";
+import { authenticate, requireRole } from "../middleware/auth";
 
 const router = Router();
 
@@ -40,13 +41,13 @@ function listChannels() {
   });
 }
 
-// GET /api/token-channels
-router.get("/", (_req: Request, res: Response) => {
+// GET /api/token-channels — 所有登录用户可查看
+router.get("/", authenticate, (_req: Request, res: Response) => {
   res.json({ data: listChannels() });
 });
 
-// POST /api/token-channels  — upsert by provider (one record per provider)
-router.post("/", (req: Request, res: Response) => {
+// POST /api/token-channels — 仅管理员可管理
+router.post("/", authenticate, requireRole(["super_admin", "admin"]), (req: Request, res: Response) => {
   const parsed = ChannelSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
 
@@ -76,8 +77,8 @@ router.post("/", (req: Request, res: Response) => {
   }
 });
 
-// DELETE /api/token-channels/:provider
-router.delete("/:provider", (req: Request, res: Response) => {
+// DELETE /api/token-channels/:provider — 仅管理员
+router.delete("/:provider", authenticate, requireRole(["super_admin", "admin"]), (req: Request, res: Response) => {
   const db = getDb();
   db.run("DELETE FROM token_channels WHERE provider=?", [req.params.provider]);
   saveDb();
@@ -89,7 +90,7 @@ router.delete("/:provider", (req: Request, res: Response) => {
  * Send a lightweight test request to the channel to verify connectivity.
  * Uses the channel's baseUrl and apiKey.
  */
-router.post("/:id/test", async (req: Request, res: Response) => {
+router.post("/:id/test", authenticate, async (req: Request, res: Response) => {
   const db = getDb();
   const result = db.exec("SELECT * FROM token_channels WHERE id=?", [req.params.id]);
   if (!result.length || !result[0].values.length) {

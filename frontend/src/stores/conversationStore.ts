@@ -110,7 +110,17 @@ export const useConversationStore = create<ConversationStore>((set, get) => ({
     if (wsInstance?.readyState === WebSocket.OPEN) return;
     try {
       const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-      const wsUrl = `${wsProtocol}//${window.location.host}/ws`;
+      // Phase 3: 携带 JWT token 用于 WebSocket 认证
+      const raw = localStorage.getItem("repaceclaw-auth");
+      let tokenParam = "";
+      if (raw) {
+        try {
+          const state = JSON.parse(raw);
+          const token = state?.state?.token;
+          if (token) tokenParam = `?token=${encodeURIComponent(token)}`;
+        } catch {}
+      }
+      const wsUrl = `${wsProtocol}//${window.location.host}/ws${tokenParam}`;
       wsInstance = new WebSocket(wsUrl);
       wsInstance.onopen = () => {
         console.log("[WS] Connected");

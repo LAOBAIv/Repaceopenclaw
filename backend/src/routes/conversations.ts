@@ -2,6 +2,7 @@ import { Router, Request, Response } from "express";
 import { ConversationService } from "../services/ConversationService";
 import { AgentService } from "../services/AgentService";
 import { TaskService } from "../services/TaskService";
+import { authenticate } from "../middleware/auth";
 import { z } from "zod";
 
 const router = Router();
@@ -20,12 +21,14 @@ const CreateConvSchema = z.object({
   { message: "agentId or agentIds (non-empty array) is required" }
 );
 
-router.get("/", (req: Request, res: Response) => {
+router.get("/", authenticate, (req: Request, res: Response) => {
+  const userId = (req as any).user?.id;
   const projectId = req.query.projectId as string | undefined;
-  res.json({ data: ConversationService.list(projectId) });
+  res.json({ data: ConversationService.list(userId, projectId) });
 });
 
-router.post("/", (req: Request, res: Response) => {
+router.post("/", authenticate, (req: Request, res: Response) => {
+  const userId = (req as any).user?.id;
   const parsed = CreateConvSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
 
@@ -44,14 +47,14 @@ router.post("/", (req: Request, res: Response) => {
 
   // 如果指定了 taskId，检查是否已存在会话（一个任务只能有一个会话）
   if (taskId) {
-    const existingConvs = ConversationService.list().filter(c => c.taskId === taskId);
+    const existingConvs = ConversationService.list(userId).filter(c => c.taskId === taskId);
     if (existingConvs.length > 0) {
       // 已有会话，返回现有会话 ID（共享模式）
       return res.status(200).json({ data: existingConvs[0] });
     }
   }
 
-  res.status(201).json({ data: ConversationService.create({ agentIds: ids, projectId, taskId, title, createdBy }) });
+  res.status(201).json({ data: ConversationService.create({ agentIds: ids, projectId, taskId, title, createdBy, userId }) });
 });
 
 /**

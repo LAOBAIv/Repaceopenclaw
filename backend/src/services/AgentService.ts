@@ -33,6 +33,10 @@ export interface Agent {
   temperatureOverride: number | null;
   // Token 用量统计：累计消耗 token 总数
   tokenUsed: number;
+  // Phase 3: 可见性 / Skill 管控 / 配额
+  visibility: 'private' | 'public' | 'template';
+  skillsConfig: Record<string, boolean>;
+  quotaConfig: { maxDailyTokens?: number; maxDailyConversations?: number; maxTokensPerMessage?: number };
   createdAt: string;
 }
 
@@ -61,14 +65,24 @@ function rowToAgent(obj: any): Agent {
     memoryTurns: obj.memory_turns ?? 0,
     temperatureOverride: obj.temperature_override ?? null,
     tokenUsed: obj.token_used ?? 0,
+    visibility: (obj.visibility || 'private') as Agent['visibility'],
+    skillsConfig: JSON.parse(obj.skills_config || '{}'),
+    quotaConfig: JSON.parse(obj.quota_config || '{}'),
     createdAt: obj.created_at,
   };
 }
 
 export const AgentService = {
-  list(): Agent[] {
+  list(userId?: string): Agent[] {
     const db = getDb();
-    const result = db.exec("SELECT * FROM agents ORDER BY created_at DESC");
+    let sql = "SELECT * FROM agents";
+    const params: any[] = [];
+    if (userId) {
+      sql += " WHERE user_id = ?";
+      params.push(userId);
+    }
+    sql += " ORDER BY created_at DESC";
+    const result = db.exec(sql, params.length ? params : undefined);
     if (!result.length) return [];
     const cols = result[0].columns;
     return result[0].values.map((row) => {
@@ -89,17 +103,34 @@ export const AgentService = {
     return rowToAgent(obj);
   },
 
-  create(data: Partial<Agent> & { name: string }): Agent {
+  create(data: Partial<Agent> & { name: string; userId?: string }): Agent {
     const db = getDb();
     const id = uuidv4();
     const now = new Date().toISOString();
+
+    // Phase 3: 高危 Skill 默认禁用
+    const defaultSkillsConfig: Record<string, boolean> = {
+      exec: false,
+      shell: false,
+      file_write: false,
+      browser: false,
+      web_search: true,
+      file_read: true,
+      image_generation: false,
+    };
+    const skillsConfig = data.skillsConfig || defaultSkillsConfig;
+
+    // Phase 3: 默认配额
+    const quotaConfig = data.quotaConfig || {};
+
     db.run(
       `INSERT INTO agents (id, name, color, system_prompt, writing_style, expertise, description, status,
         model_name, model_provider, temperature, max_tokens, top_p, frequency_penalty, presence_penalty,
         token_provider, token_api_key, token_base_url,
-        output_format, boundary, memory_turns, temperature_override,
+        output_format, boundary, memory_turns, temperature_override, user_id,
+        visibility, skills_config, quota_config,
         created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         id, data.name, data.color, data.systemPrompt, data.writingStyle,
         JSON.stringify(data.expertise), data.description || "", data.status || "idle",
@@ -109,6 +140,10 @@ export const AgentService = {
         data.tokenProvider || "", data.tokenApiKey || "", data.tokenBaseUrl || "",
         data.outputFormat || "纯文本", data.boundary || "",
         data.memoryTurns ?? 0, data.temperatureOverride ?? null,
+        data.userId || "",
+        data.visibility || "private",
+        JSON.stringify(skillsConfig),
+        JSON.stringify(quotaConfig),
         now,
       ]
     );
@@ -126,7 +161,8 @@ export const AgentService = {
       `UPDATE agents SET name=?, color=?, system_prompt=?, writing_style=?, expertise=?, description=?, status=?,
         model_name=?, model_provider=?, temperature=?, max_tokens=?, top_p=?, frequency_penalty=?, presence_penalty=?,
         token_provider=?, token_api_key=?, token_base_url=?,
-        output_format=?, boundary=?, memory_turns=?, temperature_override=?
+        output_format=?, boundary=?, memory_turns=?, temperature_override=?,
+        visibility=?, skills_config=?, quota_config=?
        WHERE id=?`,
       [
         updated.name, updated.color, updated.systemPrompt, updated.writingStyle,
@@ -137,6 +173,9 @@ export const AgentService = {
         updated.tokenProvider || "", updated.tokenApiKey || "", updated.tokenBaseUrl || "",
         updated.outputFormat || "纯文本", updated.boundary || "",
         updated.memoryTurns ?? 0, updated.temperatureOverride ?? null,
+        updated.visibility || "private",
+        JSON.stringify(updated.skillsConfig || {}),
+        JSON.stringify(updated.quotaConfig || {}),
         id,
       ]
     );

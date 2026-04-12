@@ -16,6 +16,9 @@ import path from 'path';
 import { initDb, getDb } from './db/client';
 import { registerRoutes } from './routes';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler';
+import { authenticate } from './middleware/auth';
+import { requestIdMiddleware } from './middleware/requestId';
+import { apiLimiter, authLimiter } from './middleware/rateLimiter';
 import { setupWebSocket } from './ws/wsHandler';
 
 // 环境变量配置
@@ -36,6 +39,22 @@ async function main(): Promise<void> {
 
   // 3. 全局中间件配置
   setupGlobalMiddleware(app);
+
+  // 3.5 Phase 1：全链路 Request ID
+  app.use(requestIdMiddleware);
+
+  // 3.6 Phase 1：API 全局限流（非认证接口）
+  app.use('/api/v1', authLimiter);  // OpenAI 兼容接口更严格
+
+  // 3.7 Phase 1：认证路由（登录/注册不鉴权但限流）
+  app.use('/api/auth', authLimiter);
+
+  // 3.8 Phase 1：全局 JWT 鉴权（排除登录注册和 OpenAI 兼容接口）
+  const publicPaths = ['/auth', '/v1', '/health'];
+  app.use('/api', (req, res, next) => {
+    if (publicPaths.some(p => req.path.startsWith(p))) return next();
+    authenticate(req, res, next);
+  });
 
   // 4. 注册健康检查路由（在 API 路由之前）
   setupHealthCheck(app);

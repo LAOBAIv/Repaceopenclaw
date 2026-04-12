@@ -7,6 +7,7 @@ import WebSocket, { WebSocketServer } from "ws";
 import { AgentService } from "../services/AgentService";
 import { ConversationService } from "../services/ConversationService";
 import { ProjectService } from "../services/ProjectService";
+import { UserService } from "../services/UserService";
 import http from "http";
 import https from "https";
 import { v4 as uuidv4 } from "uuid";
@@ -15,20 +16,47 @@ const GATEWAY_URL = process.env.OPENCLAW_GATEWAY_URL || "http://localhost:18789"
 const GATEWAY_TOKEN = process.env.OPENCLAW_GATEWAY_TOKEN || "021a420c0665ef2813ffe22e10725a629c58565ced1345d3";
 
 interface WSMessage {
-  type: "chat" | "multi_chat" | "ping";
+  type: "chat" | "multi_chat" | "ping" | "auth";
   conversationId?: string;
   agentId?: string;
   agentIds?: string[];
   content?: string;
   projectId?: string;
   workflowNodeId?: string;
+  token?: string;  // JWT token for auth
+}
+
+interface WSClient {
+  ws: WebSocket;
+  userId: string | null;
+  userRole: string | null;
 }
 
 export function setupWebSocket(server: http.Server) {
   const wss = new WebSocketServer({ server, path: "/ws" });
+  const clients = new Map<WebSocket, WSClient>();
 
-  wss.on("connection", (ws: WebSocket) => {
+  wss.on("connection", (ws: WebSocket, req: http.IncomingMessage) => {
     console.log("[WS] Client connected");
+
+    // 从 URL query 提取 token（支持 ?token=xxx）
+    const url = new URL(req.url || "/", `http://${req.headers.host}`);
+    const queryToken = url.searchParams.get("token");
+
+    const client: WSClient = { ws, userId: null, userRole: null };
+    clients.set(ws, client);
+
+    // 如果 URL 中有 token，直接认证
+    if (queryToken) {
+      try {
+        const payload = UserService.verifyToken(queryToken);
+        client.userId = payload.id;
+        client.userRole = payload.role;
+        console.log(`[WS] Authenticated via query: ${payload.id.slice(0, 8)}`);
+      } catch {
+        ws.send(JSON.stringify({ type: "error", message: "Invalid authentication token" }));
+      }
+    }
 
     ws.on("message", async (data: Buffer) => {
       let msg: WSMessage;
@@ -39,9 +67,31 @@ export function setupWebSocket(server: http.Server) {
         return;
       }
 
+      // ── Auth ──
+      if (msg.type === "auth") {
+        if (msg.token) {
+          try {
+            const payload = UserService.verifyToken(msg.token);
+            client.userId = payload.id;
+            client.userRole = payload.role;
+            ws.send(JSON.stringify({ type: "auth_ok", userId: payload.id, role: payload.role }));
+            console.log(`[WS] Authenticated: ${payload.id.slice(0, 8)} (${payload.role})`);
+          } catch {
+            ws.send(JSON.stringify({ type: "error", message: "Invalid token" }));
+          }
+        }
+        return;
+      }
+
       // ── Ping ──
       if (msg.type === "ping") {
         ws.send(JSON.stringify({ type: "pong" }));
+        return;
+      }
+
+      // ── 未认证拦截 ──
+      if (!client.userId) {
+        ws.send(JSON.stringify({ type: "error", message: "Not authenticated. Send { type: 'auth', token: '...' } first." }));
         return;
       }
 
@@ -55,7 +105,23 @@ export function setupWebSocket(server: http.Server) {
 
         // 确定 agentId
         const conv = ConversationService.getById(conversationId);
-        const dbAgentIds = conv?.agentIds ?? [];
+        if (!conv) {
+          ws.send(JSON.stringify({ type: "error", message: "Conversation not found" }));
+          return;
+        }
+
+        // Phase 3: 会话归属校验（非管理员必须是自己创建的会话）
+        const db = require("../db/client").getDb();
+        const ownerCheck = db.exec("SELECT user_id FROM conversations WHERE id = ?", [conversationId]);
+        if (ownerCheck.length && ownerCheck[0].values.length) {
+          const ownerId = ownerCheck[0].values[0][0] as string;
+          if (ownerId && ownerId !== client.userId && client.userRole !== "super_admin" && client.userRole !== "admin") {
+            ws.send(JSON.stringify({ type: "error", message: "无权访问此会话" }));
+            return;
+          }
+        }
+
+        const dbAgentIds = conv.agentIds ?? [];
         const targetAgentId =
           (msgAgentIds && msgAgentIds.length > 0) ? msgAgentIds[0]
           : dbAgentIds.length > 0 ? dbAgentIds[0]

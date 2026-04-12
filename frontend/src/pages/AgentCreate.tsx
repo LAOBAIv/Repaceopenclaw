@@ -321,6 +321,13 @@ export function AgentCreate() {
   const [description, setDescription] = useState('');
   const [boundary, setBoundary]     = useState('');
   const [outputFmt, setOutputFmt]   = useState('纯文本');
+  // Phase 3: 可见性
+  const [visibility, setVisibility] = useState<'private' | 'public' | 'template'>('private');
+  // Phase 3: Skill 安全管控
+  const [skillsConfig, setSkillsConfig] = useState<Record<string, boolean>>({
+    exec: false, shell: false, file_write: false, browser: false,
+    web_search: true, file_read: true, image_generation: false,
+  });
   // memoryTurns：对话记忆轮数（0 = 不限），对应 DB memory_turns
   const [memoryTurns, setMemoryTurns] = useState('');
   // tempOverride：简单温度快捷覆盖，若填写则优先于 CODE 渠道弹窗里的 customTemp
@@ -344,6 +351,10 @@ export function AgentCreate() {
     setDescription(agent.description ?? '');
     setBoundary((agent as any).boundary ?? '');
     setOutputFmt((agent as any).outputFormat ?? '纯文本');
+    // Phase 3: 回填可见性和 Skill 配置
+    setVisibility((agent as any).visibility ?? 'private');
+    const sc = (agent as any).skillsConfig;
+    if (sc && typeof sc === 'object') setSkillsConfig(sc);
     setMemoryTurns((agent as any).memoryTurns != null && (agent as any).memoryTurns !== 0 ? String((agent as any).memoryTurns) : '');
     const to = (agent as any).temperatureOverride;
     setTempOverride(to != null ? String(to) : '');
@@ -678,6 +689,9 @@ export function AgentCreate() {
         tokenProvider: isPrivateKey ? selectedChannel.id : '',
         tokenApiKey: isPrivateKey ? tokenValue : '',
         tokenBaseUrl: isPrivateKey ? customBaseUrl : '',
+        // Phase 3: 可见性 + Skill 管控
+        visibility,
+        skillsConfig,
       };
 
       let agentId: string;
@@ -1626,6 +1640,66 @@ export function AgentCreate() {
                       placeholder="明确智能体不能做的事..."
                       onFocus={focusStyle} onBlur={blurStyle}
                     />
+                  </div>
+
+                  {/* Phase 3: 可见性 */}
+                  <div style={fieldStyle}>
+                    <label style={labelStyle}>可见性</label>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      {(['private', 'public', 'template'] as const).map(v => (
+                        <button
+                          key={v}
+                          type="button"
+                          onClick={() => setVisibility(v)}
+                          style={{
+                            flex: 1, padding: '6px 0', border: `1.5px solid ${visibility === v ? '#2a3b4d' : '#d1d5db'}`,
+                            borderRadius: 6, background: visibility === v ? '#2a3b4d08' : '#fff',
+                            color: visibility === v ? '#2a3b4d' : '#6b7280', fontSize: 12, fontWeight: visibility === v ? 600 : 400,
+                            cursor: 'pointer', transition: 'all 0.15s',
+                          }}
+                        >
+                          {v === 'private' ? '🔒 私有' : v === 'public' ? '🌐 公开' : '📋 模板'}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Phase 3: Skill 安全管控 */}
+                  <div style={fieldStyle}>
+                    <label style={labelStyle}>Skill 安全管控</label>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+                      {Object.entries({
+                        exec: { label: '代码执行', risk: 'high' },
+                        shell: { label: 'Shell 命令', risk: 'high' },
+                        file_write: { label: '文件写入', risk: 'high' },
+                        browser: { label: '浏览器控制', risk: 'high' },
+                        web_search: { label: '网络搜索', risk: 'low' },
+                        file_read: { label: '文件读取', risk: 'low' },
+                        image_generation: { label: '图片生成', risk: 'medium' },
+                      }).map(([key, { label, risk }]) => (
+                        <label
+                          key={key}
+                          style={{
+                            display: 'flex', alignItems: 'center', gap: 6, padding: '4px 8px',
+                            borderRadius: 6, background: skillsConfig[key] ? '#f0fdf4' : '#fef2f2',
+                            border: `1px solid ${skillsConfig[key] ? '#bbf7d0' : '#fecaca'}`,
+                            cursor: 'pointer', fontSize: 12, userSelect: 'none',
+                          }}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={skillsConfig[key] ?? false}
+                            onChange={e => setSkillsConfig(prev => ({ ...prev, [key]: e.target.checked }))}
+                            style={{ accentColor: risk === 'high' ? '#dc2626' : risk === 'medium' ? '#f59e0b' : '#16a34a' }}
+                          />
+                          <span style={{ color: risk === 'high' ? '#dc2626' : risk === 'medium' ? '#f59e0b' : '#16a34a', fontWeight: 500 }}>
+                            {risk === 'high' ? '🔴' : risk === 'medium' ? '🟡' : '🟢'}
+                          </span>
+                          <span style={{ color: '#374151' }}>{label}</span>
+                        </label>
+                      ))}
+                    </div>
+                    <div style={{ fontSize: 10, color: '#9ca3af', marginTop: 4 }}>🔴 高危  🟡 中危  🟢 低危 · 高危 Skill 默认禁用</div>
                   </div>
 
                 </div>

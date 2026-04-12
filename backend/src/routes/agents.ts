@@ -55,6 +55,14 @@ const AgentSchema = z.object({
   memoryTurns: z.number().min(0).default(0),
   // 简单温度快捷覆盖
   temperatureOverride: z.number().min(0).max(2).nullable().default(null),
+  // Phase 3: 可见性 / Skill 管控 / 配额
+  visibility: z.enum(['private', 'public', 'template']).default('private'),
+  skillsConfig: z.record(z.string(), z.boolean()).optional(),
+  quotaConfig: z.object({
+    maxDailyTokens: z.number().optional(),
+    maxDailyConversations: z.number().optional(),
+    maxTokensPerMessage: z.number().optional(),
+  }).optional(),
 });
 
 const AgentUpdateSchema = AgentSchema.partial();
@@ -72,8 +80,9 @@ const AgentUpdateSchema = AgentSchema.partial();
 router.get(
   '/',
   authenticate,
-  asyncHandler(async (_req: Request, res: Response) => {
-    const agents = AgentService.list();
+  asyncHandler(async (req: Request, res: Response) => {
+    const userId = (req as any).user?.id;
+    const agents = AgentService.list(userId);
     sendSuccess(res, agents);
   })
 );
@@ -182,7 +191,8 @@ router.post(
       throw Errors.validation('参数验证失败', parsed.error.flatten());
     }
 
-    const agent = AgentService.create(parsed.data);
+    const userId = (req as any).user?.id;
+    const agent = AgentService.create({ ...parsed.data, name: parsed.data.name, userId });
     sendCreated(res, agent, '智能体创建成功');
   })
 );

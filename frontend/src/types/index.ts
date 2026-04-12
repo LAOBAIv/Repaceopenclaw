@@ -9,7 +9,6 @@ export interface Agent {
   expertise: string[];
   description?: string;
   status?: "active" | "idle" | "busy";
-  createdAt: string;
   // CODE 模型参数
   modelName?: string;
   modelProvider?: string;
@@ -29,6 +28,17 @@ export interface Agent {
   memoryTurns?: number;
   // 简单温度快捷覆盖（null = 使用模型默认）
   temperatureOverride?: number | null;
+  // Token 用量统计：累计消耗 token 总数
+  tokenUsed?: number;
+  // Phase 3: 可见性 / Skill 管控 / 配额
+  visibility?: 'private' | 'public' | 'template';
+  skillsConfig?: Record<string, boolean>;
+  quotaConfig?: {
+    maxDailyTokens?: number;
+    maxDailyConversations?: number;
+    maxTokensPerMessage?: number;
+  };
+  createdAt: string;
 }
 
 export interface WorkflowNode {
@@ -109,6 +119,23 @@ export interface DocumentNode {
   assignedAgentIds: string[];
   createdAt: string;
   updatedAt: string;
+}
+
+// Agent Template from agency-agents library
+export interface AgentTemplate {
+  id: string;
+  name: string;
+  category: string;
+  emoji: string;
+  color: string;
+  vibe: string;
+  description: string;
+  systemPrompt: string;
+  writingStyle: string;
+  expertise: string[];
+  outputFormat: string;
+  githubSource: string;
+  createdAt: string;
 }
 
 

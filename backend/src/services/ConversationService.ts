@@ -72,20 +72,38 @@ function rowToConversation(r: any, agentIds: string[]): Conversation {
 }
 
 export const ConversationService = {
-  list(projectId?: string): Conversation[] {
+  list(userId?: string, projectId?: string): Conversation[] {
     const db = getDb();
-    const sql = projectId
-      ? "SELECT * FROM conversations WHERE project_id=? ORDER BY created_at DESC"
-      : "SELECT * FROM conversations ORDER BY created_at DESC";
-    const rows = execToRows(db, sql, projectId ? [projectId] : undefined);
+    let sql = "SELECT * FROM conversations";
+    const params: any[] = [];
+    const conditions: string[] = [];
+    if (userId) {
+      conditions.push("user_id = ?");
+      params.push(userId);
+    }
+    if (projectId) {
+      conditions.push("project_id = ?");
+      params.push(projectId);
+    }
+    if (conditions.length) {
+      sql += " WHERE " + conditions.join(" AND ");
+    }
+    sql += " ORDER BY created_at DESC";
+    const rows = execToRows(db, sql, params.length ? params : undefined);
     if (!rows.length) return [];
     const agentMap = fetchAgentIdsMap(db, rows.map((r) => r.id));
     return rows.map((r) => rowToConversation(r, agentMap.get(r.id) ?? []));
   },
 
-  getById(id: string): Conversation | null {
+  getById(id: string, userId?: string): Conversation | null {
     const db = getDb();
-    const rows = execToRows(db, "SELECT * FROM conversations WHERE id=?", [id]);
+    let sql = "SELECT * FROM conversations WHERE id=?";
+    const params: any[] = [id];
+    if (userId) {
+      sql = "SELECT * FROM conversations WHERE id=? AND user_id=?";
+      params.push(userId);
+    }
+    const rows = execToRows(db, sql, params);
     if (!rows.length) return null;
     const r = rows[0];
     const agentMap = fetchAgentIdsMap(db, [id]);
@@ -98,14 +116,14 @@ export const ConversationService = {
    * @param taskId 关联的任务 id（可选）
    * @param createdBy 创建人 id（可选）
    */
-  create(data: { agentIds: string[]; projectId?: string; taskId?: string; title?: string; createdBy?: string }): Conversation {
+  create(data: { agentIds: string[]; projectId?: string; taskId?: string; title?: string; createdBy?: string; userId?: string }): Conversation {
     const db = getDb();
     const id = uuidv4();
     const now = new Date().toISOString();
     const title = data.title || "新对话";
     db.run(
-      `INSERT INTO conversations (id, project_id, task_id, title, created_by, created_at) VALUES (?,?,?,?,?,?)`,
-      [id, data.projectId || null, data.taskId || null, title, data.createdBy || null, now]
+      `INSERT INTO conversations (id, project_id, task_id, title, created_by, user_id, created_at) VALUES (?,?,?,?,?,?,?)`,
+      [id, data.projectId || null, data.taskId || null, title, data.createdBy || null, data.userId || "", now]
     );
     // 写入关联表
     for (const agentId of data.agentIds) {

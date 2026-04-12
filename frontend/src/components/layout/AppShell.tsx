@@ -2,12 +2,13 @@ import { useState } from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import {
   Bot, Layers,
-  ChevronLeft, ChevronRight, Settings, Network, Sparkles, PlusCircle, Wrench, Puzzle, ShieldCheck,
+  ChevronLeft, ChevronRight, Settings, Network, Sparkles, PlusCircle, Wrench, Puzzle, ShieldCheck, Library,
 } from 'lucide-react';
 import { useAuthStore } from '../../stores/authStore';
 
 const NAV_ITEMS = [
   { to: '/workspace',      icon: Sparkles,   label: 'RepaceClaw',  exact: false },
+  { to: '/agent-library',  icon: Library,    label: 'Agent 模板库', exact: false },
   { to: '/agent-create',   icon: PlusCircle, label: '智能体创建',   exact: false },
   { to: '/agents',         icon: Bot,        label: '智能体管理',   exact: false },
   { to: '/console',        icon: Network,    label: '项目协作',     exact: false },

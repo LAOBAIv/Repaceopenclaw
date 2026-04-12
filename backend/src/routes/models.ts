@@ -35,7 +35,7 @@ const ModelSchema = z.object({
 router.post("/", (req: Request, res: Response) => {
   const parsed = ModelSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
-  const model = ModelService.createModel(parsed.data);
+  const model = ModelService.createModel(parsed.data as any);
   res.status(201).json({ data: model });
 });
 

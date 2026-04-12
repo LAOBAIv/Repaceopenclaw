@@ -1,200 +1,212 @@
 /**
- * 导入 agency-agents 到 RepaceClaw 脚本
- * 
- * agency-agents 已经通过 convert.sh --tool openclaw 转换为 OpenClaw 格式
- * 我们读取每个智能体的 SOUL.md + AGENTS.md + IDENTITY.md，然后：
- * 1. 提取 system prompt = SOUL + AGENTS
- * 2. 提取名称、emoji、描述
- * 3. 插入到 RepaceClaw SQLite 数据库的 agents 表中
- * 
- * 使用：node dist/scripts/import-agency-agents.js
+ * import-agency-agents.ts
+ * 将 agency-agents 仓库的 100+ 专业角色模板导入到 RepaceClaw 的 agent_templates 表
+ *
+ * 用法: npx tsx backend/src/scripts/import-agency-agents.ts
  */
 
-import fs from 'fs';
-import path from 'path';
-import { initDb, getDb, saveDb } from '../db/client';
-import { v4 as uuidv4 } from 'uuid';
+import { initDb, getDb, saveDb } from "../db/client";
+import fs from "fs";
+import path from "path";
+import { v4 as uuidv4 } from "uuid";
 
-// agency-agents 转换后的 OpenClaw 格式路径
-const AGENCY_DIR = '/root/.openclaw/agency-agents';
+const AGENCY_DIR = path.join(__dirname, "../../../../agency-agents");
 
-interface AgencyAgent {
-  id: string;
-  name: string;
-  description: string;
-  emoji: string;
-  systemPrompt: string;
-  expertise: string[];
-}
+// 分类映射（目录名 → 中文分类名）
+const CATEGORY_MAP: Record<string, string> = {
+  engineering: "engineering",
+  design: "design",
+  "paid-media": "paid-media",
+  sales: "sales",
+  marketing: "marketing",
+  product: "product",
+  "project-management": "project-management",
+  specialized: "specialized",
+  support: "support",
+  testing: "testing",
+  academic: "academic",
+  integrations: "integrations",
+  strategy: "strategy",
+};
 
-function readAgencyAgent(agentDir: string): AgencyAgent | null {
+// 颜色映射（按分类）
+const CATEGORY_COLORS: Record<string, string> = {
+  engineering: "#3B82F6",
+  design: "#8B5CF6",
+  "paid-media": "#F59E0B",
+  sales: "#10B981",
+  marketing: "#EF4444",
+  product: "#6366F1",
+  "project-management": "#0EA5E9",
+  specialized: "#EC4899",
+  support: "#14B8A6",
+  testing: "#F97316",
+  academic: "#64748B",
+  integrations: "#A855F7",
+  strategy: "#06B6D4",
+};
+
+/**
+ * 解析 markdown 文件的 YAML frontmatter 和正文
+ */
+function parseAgentFile(
+  filePath: string,
+  category: string,
+  githubSource: string
+): { name: string; emoji: string; color: string; vibe: string; description: string; systemPrompt: string; writingStyle: string; expertise: string[]; outputFormat: string } | null {
   try {
-    const identityPath = path.join(agentDir, 'IDENTITY.md');
-    const soulPath = path.join(agentDir, 'SOUL.md');
-    const agentsPath = path.join(agentDir, 'AGENTS.md');
+    const content = fs.readFileSync(filePath, "utf-8");
 
-    if (!fs.existsSync(identityPath)) {
-      console.warn(`Skipping ${agentDir}: no IDENTITY.md`);
-      return null;
-    }
+    // 提取 YAML frontmatter
+    const fmMatch = content.match(/^---\n([\s\S]*?)\n---/);
+    if (!fmMatch) return null;
 
-    const identity = fs.readFileSync(identityPath, 'utf-8');
-    const soul = fs.existsSync(soulPath) ? fs.readFileSync(soulPath, 'utf-8') : '';
-    const agents = fs.existsSync(agentsPath) ? fs.readFileSync(agentsPath, 'utf-8') : '';
+    const fmText = fmMatch[1];
+    const parseYamlField = (key: string): string => {
+      const match = fmText.match(new RegExp(`^${key}:\\s*(.+)$`, "m"));
+      return match ? match[1].trim().replace(/^["']|["']$/g, "") : "";
+    };
 
-    // 解析名称和 emoji
-    // 格式通常是: # 🎨 Frontend Developer
-    const firstLine = identity.split('\n')[0];
-    const emojiMatch = firstLine.match(/^#\s*([^\s]+)\s*(.+)/);
-    let name = path.basename(agentDir);
-    let emoji = '🤖';
-    if (emojiMatch) {
-      emoji = emojiMatch[1];
-      name = emojiMatch[2].trim();
-    }
+    const name = parseYamlField("name");
+    if (!name) return null;
 
-    // 提取描述：IDENTITY.md 第二行通常是描述
-    const description = identity.split('\n').slice(1).find(line => line.trim()) || '';
+    const emoji = parseYamlField("emoji") || "🤖";
+    const color = CATEGORY_COLORS[category] || "#6366F1";
+    const vibe = parseYamlField("vibe");
+    const description = parseYamlField("description");
 
-    // 构建完整 system prompt
-    let systemPrompt = '';
-    if (soul) systemPrompt += soul + '\n\n';
-    if (agents) systemPrompt += agents + '\n\n';
-    systemPrompt = systemPrompt.trim();
+    // 从正文提取 identity 和 core mission 作为 system_prompt
+    const body = content.slice(fmMatch[0].length).trim();
 
-    // 如果为空，使用 identity
-    if (!systemPrompt) {
-      systemPrompt = identity;
-    }
+    // 提取 Identity & Memory 段
+    const identityMatch = body.match(/## 🧠 Your Identity & Memory\n([\s\S]*?)(?=\n## |\n### |\Z)/);
+    const identity = identityMatch ? identityMatch[1].trim() : "";
 
-    // 从描述提取 expertise 标签
+    // 提取 Core Mission 段
+    const missionMatch = body.match(/## 🎯 Your Core Mission\n([\s\S]*?)(?=\n## 🚨|\n## 📋|\Z)/);
+    const mission = missionMatch ? missionMatch[1].trim() : "";
+
+    // 提取 Critical Rules
+    const rulesMatch = body.match(/## 🚨 Critical Rules[\s\S]*?\n([\s\S]*?)(?=\n## |\Z)/);
+    const rules = rulesMatch ? rulesMatch[1].trim() : "";
+
+    // 组合 system prompt
+    const systemPrompt = [
+      `You are **${name}**. ${vibe || ""}`,
+      "",
+      "## 🧠 Identity & Memory",
+      identity,
+      "",
+      "## 🎯 Core Mission",
+      mission,
+      "",
+      "## 🚨 Critical Rules",
+      rules,
+    ].filter(Boolean).join("\n");
+
+    // 从 description 提取 expertise 关键词
     const expertise: string[] = [];
-    // 从目录名称猜测领域
-    const dirName = path.basename(agentDir);
-    const parts = dirName.split('-');
-    if (parts.length > 1) {
-      // 比如 "frontend-developer" → ["frontend", "developer"]
-      expertise.push(...parts.map(p => p.replace(/^./, c => c.toUpperCase())));
-    } else {
-      expertise.push(name.split(' ')[0]);
-    }
+    const desc = description.toLowerCase();
+    if (desc.includes("react") || desc.includes("vue") || desc.includes("angular")) expertise.push("frontend");
+    if (desc.includes("api") || desc.includes("microservice") || desc.includes("backend") || desc.includes("server-side")) expertise.push("backend");
+    if (desc.includes("cloud") || desc.includes("aws") || desc.includes("infrastructure")) expertise.push("cloud");
+    if (desc.includes("database") || desc.includes("sql") || desc.includes("schema")) expertise.push("database");
+    if (desc.includes("security") || desc.includes("threat") || desc.includes("vulnerability")) expertise.push("security");
+    if (desc.includes("ml") || desc.includes("machine learning") || desc.includes("ai ")) expertise.push("ai-ml");
+    if (desc.includes("devops") || desc.includes("ci/cd") || desc.includes("pipeline")) expertise.push("devops");
+    if (desc.includes("design") || desc.includes("ui") || desc.includes("ux")) expertise.push("design");
+    if (desc.includes("marketing") || desc.includes("seo") || desc.includes("content")) expertise.push("marketing");
+    if (desc.includes("sales") || desc.includes("revenue") || desc.includes("pipeline")) expertise.push("sales");
+    if (desc.includes("product") || desc.includes("roadmap") || desc.includes("sprint")) expertise.push("product");
+    if (!expertise.length) expertise.push(category);
 
-    const id = uuidv4();
     return {
-      id,
       name,
-      description: description.trim(),
       emoji,
+      color,
+      vibe,
+      description,
       systemPrompt,
-      expertise: expertise.slice(0, 5),
+      writingStyle: "professional",
+      expertise,
+      outputFormat: "markdown",
     };
   } catch (err) {
-    console.error(`Error reading ${agentDir}:`, err);
+    console.error(`  ❌ 解析失败: ${filePath} — ${err}`);
     return null;
   }
 }
 
-async function importAll() {
-  console.log('=== Import agency-agents to RepaceClaw ===');
-  
-  await initDb();
-  const db = getDb();
-
-  if (!fs.existsSync(AGENCY_DIR)) {
-    console.error(`agency-agents not found at ${AGENCY_DIR}`);
-    console.error('Please run: ./scripts/convert.sh --tool openclaw in agency-agents repo first');
-    process.exit(1);
-  }
-
-  const agentDirs = fs.readdirSync(AGENCY_DIR);
-  console.log(`Found ${agentDirs.length} directories in ${AGENCY_DIR}`);
-
+/**
+ * 遍历 agency-agents 目录，导入所有 agent 模板
+ */
+function importAgencyAgents(): number {
   let imported = 0;
-  let skipped = 0;
+  const db = getDb();
+  const now = new Date().toISOString();
 
-  for (const dirName of agentDirs) {
-    const fullDir = path.join(AGENCY_DIR, dirName);
-    if (!fs.statSync(fullDir).isDirectory()) continue;
+  const categories = Object.keys(CATEGORY_MAP);
 
-    // Check if it has the required files
-    if (!fs.existsSync(path.join(fullDir, 'IDENTITY.md'))) {
-      skipped++;
-      continue;
+  for (const catDir of categories) {
+    const dirPath = path.join(AGENCY_DIR, catDir);
+    if (!fs.existsSync(dirPath) || !fs.statSync(dirPath).isDirectory()) continue;
+
+    const files = fs.readdirSync(dirPath).filter((f) => f.endsWith(".md"));
+    console.log(`\n📂 ${catDir}/ (${files.length} 个文件)`);
+
+    for (const file of files) {
+      const filePath = path.join(dirPath, file);
+      const githubSource = `msitarzewski/agency-agents/${catDir}/${file}`;
+      const parsed = parseAgentFile(filePath, catDir, githubSource);
+
+      if (!parsed) continue;
+
+      // 检查是否已存在（按 name + category 去重）
+      const existing = db.exec(
+        "SELECT id FROM agent_templates WHERE name = ? AND category = ?",
+        [parsed.name, catDir]
+      );
+      if (existing.length && existing[0].values.length) {
+        console.log(`  ⏭️ 已存在: ${parsed.name}`);
+        continue;
+      }
+
+      const id = uuidv4();
+      db.run(
+        `INSERT INTO agent_templates (
+          id, name, category, emoji, color, vibe, description,
+          system_prompt, writing_style, expertise, output_format,
+          github_source, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          id,
+          parsed.name,
+          catDir,
+          parsed.emoji,
+          parsed.color,
+          parsed.vibe,
+          parsed.description,
+          parsed.systemPrompt,
+          parsed.writingStyle,
+          JSON.stringify(parsed.expertise),
+          parsed.outputFormat,
+          githubSource,
+          now,
+        ]
+      );
+      imported++;
+      console.log(`  ✅ ${parsed.emoji} ${parsed.name}`);
     }
-
-    const agent = readAgencyAgent(fullDir);
-    if (!agent) {
-      skipped++;
-      continue;
-    }
-
-    // Check if already exists by name (simplified check)
-    const existing = db.exec(
-      'SELECT id FROM agents WHERE name = ?',
-      [agent.name]
-    );
-    if (existing.length && existing[0].values.length > 0) {
-      console.log(`Skipped "${agent.name}" — already exists`);
-      skipped++;
-      continue;
-    }
-
-    const now = new Date().toISOString();
-    const color = getRandomColor();
-
-    db.run(`
-      INSERT INTO agents (
-        id, name, color, system_prompt, writing_style, expertise, description,
-        status, model_name, model_provider, temperature, max_tokens, top_p,
-        frequency_penalty, presence_penalty, token_used, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `, [
-      agent.id,
-      agent.name,
-      color,
-      agent.systemPrompt,
-      'balanced',
-      JSON.stringify(agent.expertise),
-      agent.description,
-      'idle',
-      '', // model_name — let user configure
-      'openclaw', // model_provider — use OpenClaw
-      0.7,
-      4096,
-      1,
-      0,
-      0,
-      0,
-      now,
-    ]);
-
-    imported++;
-    console.log(`✅ Imported: ${agent.emoji} ${agent.name} (${agent.expertise.join(', ')})`);
   }
 
   saveDb();
-  console.log('\n=== Import Complete ===');
-  console.log(`Total imported: ${imported}`);
-  console.log(`Skipped: ${skipped}`);
-  console.log(`Agency-agents is now integrated into RepaceClaw!`);
-  console.log(`\nNext steps:`);
-  console.log(`1. Go to RepaceClaw frontend → 智能体管理`);
-  console.log(`2. You will see all ${imported} agency-agents imported`);
-  console.log(`3. Each agent is configured to use OpenClaw as backend`);
-  console.log(`4. Add an OpenClaw token channel in Token Settings`);
+  return imported;
 }
 
-function getRandomColor(): string {
-  const colors = [
-    '#6366F1', '#8B5CF6', '#EC4899', '#EF4444', '#F59E0B',
-    '#10B981', '#06B6D4', '#3B82F6', '#6366F1', '#8B5CF6',
-    '#14B8A6', '#F97316', '#A855F7', '#EF4444', '#059669',
-  ];
-  return colors[Math.floor(Math.random() * colors.length)];
-}
-
-// Run
-importAll().catch(err => {
-  console.error('Import failed:', err);
-  process.exit(1);
-});
+// ── 主入口 ──
+(async () => {
+  console.log("🚀 开始导入 agency-agents 到 RepaceClaw...\n");
+  await initDb();
+  const count = importAgencyAgents();
+  console.log(`\n🎉 导入完成！共导入 ${count} 个 agent 模板。`);
+})();

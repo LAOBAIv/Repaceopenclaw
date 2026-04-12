@@ -8,13 +8,15 @@ export { errorHandler } from './errorHandler';
 export { validateBody as validate, validateBody } from './validate';
 
 // 重新导出扩展的 Request 类型
+import type { UserRole } from '../services/UserService';
+
 declare global {
   namespace Express {
     interface Request {
       user?: {
         id: string;
         email: string;
-        role: 'user' | 'admin' | string;
+        role: UserRole;
       };
     }
   }
