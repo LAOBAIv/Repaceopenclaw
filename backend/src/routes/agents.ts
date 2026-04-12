@@ -14,13 +14,14 @@ import { z } from 'zod';
 import { AgentService } from '../services/AgentService';
 import { getDb } from '../db/client';
 import { authenticate } from '../middleware/auth';
+import { asyncHandler } from '../utils/asyncHandler';
 import { 
   sendSuccess, 
   sendCreated, 
   sendNotFound, 
   sendValidationError 
 } from '../utils/response';
-import { NotFoundError, ValidationError } from '../errors/AppError';
+import { Errors } from '../utils/errors';
 import { TokenStats } from '../types';
 
 const router = Router();
@@ -70,6 +71,7 @@ const AgentUpdateSchema = AgentSchema.partial();
  */
 router.get(
   '/',
+  authenticate,
   asyncHandler(async (_req: Request, res: Response) => {
     const agents = AgentService.list();
     sendSuccess(res, agents);
@@ -82,10 +84,11 @@ router.get(
  */
 router.get(
   '/:id',
+  authenticate,
   asyncHandler(async (req: Request, res: Response) => {
     const agent = AgentService.getById(req.params.id);
     if (!agent) {
-      throw new NotFoundError('智能体');
+      throw Errors.notFound('智能体');
     }
     sendSuccess(res, agent);
   })
@@ -97,10 +100,11 @@ router.get(
  */
 router.get(
   '/:id/token-stats',
+  authenticate,
   asyncHandler(async (req: Request, res: Response) => {
     const agent = AgentService.getById(req.params.id);
     if (!agent) {
-      throw new NotFoundError('智能体');
+      throw Errors.notFound('智能体');
     }
 
     const db = getDb();
@@ -144,8 +148,8 @@ router.get(
         cols.forEach((c, i) => (obj[c] = row[i]));
         perConversation.push({
           conversationId: String(obj.conversation_id),
-          messageCount: Number(obj.msg_count) || 0,
-          totalTokens: Number(obj.total_tokens) || 0,
+          messageCount: Number(obj.msg_count),
+          totalTokens: Number(obj.total_tokens),
         });
       }
     }
@@ -170,11 +174,12 @@ router.get(
  */
 router.post(
   '/',
+  authenticate,
   asyncHandler(async (req: Request, res: Response) => {
     const parsed = AgentSchema.safeParse(req.body);
     
     if (!parsed.success) {
-      throw new ValidationError('参数验证失败', parsed.error.flatten());
+      throw Errors.validation('参数验证失败', parsed.error.flatten());
     }
 
     const agent = AgentService.create(parsed.data);
@@ -188,16 +193,17 @@ router.post(
  */
 router.put(
   '/:id',
+  authenticate,
   asyncHandler(async (req: Request, res: Response) => {
     const parsed = AgentUpdateSchema.safeParse(req.body);
     
     if (!parsed.success) {
-      throw new ValidationError('参数验证失败', parsed.error.flatten());
+      throw Errors.validation('参数验证失败', parsed.error.flatten());
     }
 
     const agent = AgentService.update(req.params.id, parsed.data);
     if (!agent) {
-      throw new NotFoundError('智能体');
+      throw Errors.notFound('智能体');
     }
 
     sendSuccess(res, agent, '智能体更新成功');
@@ -210,10 +216,11 @@ router.put(
  */
 router.delete(
   '/:id',
+  authenticate,
   asyncHandler(async (req: Request, res: Response) => {
     const agent = AgentService.getById(req.params.id);
     if (!agent) {
-      throw new NotFoundError('智能体');
+      throw Errors.notFound('智能体');
     }
 
     AgentService.delete(req.params.id);

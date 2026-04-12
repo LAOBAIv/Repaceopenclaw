@@ -1,22 +1,22 @@
 /**
- * AutoLLMAdapter — Auto 模型智能路由器
+ * AutoLLMAdapter - Auto 模型智能路由器
  *
- * 工作原理：
+ * 工作原理:
  * 1. 从 token_channels 表读取所有已启用、有 api_key 的渠道
- * 2. 按 priority 排序，依次尝试调用（主要优先级逻辑见下）
- * 3. 优先选择：有 api_key > priority 高 > 上下文长（支持长对话）
- * 4. 任一渠道调用成功即结束；失败则自动 fallback 到下一个
+ * 2. 按 priority 排序,依次尝试调用(主要优先级逻辑见下)
+ * 3. 优先选择:有 api_key > priority 高 > 上下文长(支持长对话)
+ * 4. 任一渠道调用成功即结束;失败则自动 fallback 到下一个
  * 5. 所有渠道均失败时降级到 MockLLMAdapter 保底输出
  *
- * 上下文截断：
- * - 使用简单字符数估算 token（1 token ≈ 4 字符，中文 ≈ 2 字符/token）
+ * 上下文截断:
+ * - 使用简单字符数估算 token(1 token ≈ 4 字符,中文 ≈ 2 字符/token)
  * - 保留 system message 全文 + 尽可能多的最新消息
- * - 默认 context budget = maxTokens * CONTEXT_MULTIPLIER（可配置）
+ * - 默认 context budget = maxTokens * CONTEXT_MULTIPLIER(可配置)
  *
- * Skills 注入：
- * - 调用前查询 agent_skills 表，将已绑定且启用的技能描述追加到 system prompt
+ * Skills 注入:
+ * - 调用前查询 agent_skills 表,将已绑定且启用的技能描述追加到 system prompt
  *
- * 调用格式：OpenAI Chat Completions API（兼容 DeepSeek / Qwen / Azure 等）
+ * 调用格式:OpenAI Chat Completions API(兼容 DeepSeek / Qwen / Azure 等)
  */
 
 import { ILLMAdapter } from "./LLMAdapter";
@@ -25,6 +25,16 @@ import { getDb } from "../../db/client";
 import https from "https";
 import http from "http";
 import { URL } from "url";
+
+// ─── Gateway 配置(底层模型调用统一走 Gateway)─────────────────────────────
+const GATEWAY_URL = process.env.OPENCLAW_GATEWAY_URL || 'http://localhost:18789';
+const GATEWAY_TOKEN = process.env.OPENCLAW_GATEWAY_TOKEN || '021a420c0665ef2813ffe22e10725a629c58565ced1345d3';
+
+/** 判断是否是 Gateway 地址 */
+function isGatewayUrl(baseUrl: string): boolean {
+  const normalized = baseUrl.replace(/\/$/, '');
+  return normalized === GATEWAY_URL.replace(/\/$/, '');
+}
 
 interface TokenChannel {
   id: string;
@@ -57,9 +67,9 @@ interface AgentConfig {
   // 输出格式 & 能力边界
   outputFormat?: string;
   boundary?: string;
-  // 对话记忆轮数（0 = 不限）
+  // 对话记忆轮数(0 = 不限)
   memoryTurns?: number;
-  // 简单温度快捷覆盖（null 表示使用模型默认）
+  // 简单温度快捷覆盖(null 表示使用模型默认)
   temperatureOverride?: number | null;
 }
 
@@ -72,7 +82,7 @@ const CONTEXT_MULTIPLIER = 3;
 /**
  * Estimate token count for a string.
  * Heuristic: ASCII chars ≈ 0.25 token/char; CJK chars ≈ 0.5 token/char.
- * Accurate within ~20 % for mixed Chinese/English text — good enough for budget control.
+ * Accurate within ~20 % for mixed Chinese/English text - good enough for budget control.
  */
 function estimateTokens(text: string): number {
   let tokens = 0;
@@ -117,7 +127,7 @@ function truncateMessages(
   let remaining = contextBudget - systemTokens - maxTokens; // reserve space for response
 
   if (remaining <= 0) {
-    // System prompt alone eats most of the budget — just pass last user message
+    // System prompt alone eats most of the budget - just pass last user message
     const last = messages[messages.length - 1];
     return last ? [last] : [];
   }
@@ -128,7 +138,7 @@ function truncateMessages(
     const msg = messages[i];
     const cost = estimateTokens(msg.content) + 4; // ~4 tokens overhead per message
     if (remaining - cost < 0 && kept.length > 0) {
-      // Would overflow, but we already have at least 1 message — stop here
+      // Would overflow, but we already have at least 1 message - stop here
       break;
     }
     kept.unshift(msg);
@@ -176,9 +186,9 @@ function loadAgentSkillsPrompt(agentId: string): string {
     });
 
     const lines = skills.map(
-      (s: any) => `- 【${s.name}】（${s.category}）：${s.description}`
+      (s: any) => `- 【${s.name}】(${s.category}):${s.description}`
     );
-    return `\n\n## 可用技能\n你拥有以下技能，可在回答中酌情说明或使用：\n${lines.join("\n")}`;
+    return `\n\n## 可用技能\n你拥有以下技能,可在回答中酌情说明或使用:\n${lines.join("\n")}`;
   } catch {
     return "";
   }
@@ -199,16 +209,22 @@ const PROVIDER_MODEL_MAP: Record<string, string> = {
   doubao: "doubao-pro-32k-241215",
   volc: "doubao-pro-32k-241215",
   ark: "doubao-pro-32k-241215",
+  // OpenClaw 底层
+  openclaw: "auto",
 };
 
 // Providers that use non-OpenAI format (need special handling)
 const NON_OPENAI_PROVIDERS = new Set(["anthropic", "google"]);
+// Providers that use OpenClawAdapter directly
+const OPENCLAW_PROVIDERS = new Set(["openclaw", "open-claw"]);
 
-function loadChannels(): TokenChannel[] {
+// ─── 从 model_providers 表加载渠道 ──────────────────────────────
+// 替代旧的 token_channels,使用新的 model_providers/models 结构
+function loadProviders(): TokenChannel[] {
   try {
     const db = getDb();
     const result = db.exec(
-      "SELECT * FROM token_channels WHERE enabled=1 AND api_key != '' ORDER BY priority DESC, created_at ASC"
+      "SELECT id, name, base_url, api_format, api_key, enabled, priority FROM model_providers WHERE enabled=1 ORDER BY priority DESC, created_at ASC"
     );
     if (!result.length) return [];
     const cols = result[0].columns;
@@ -217,11 +233,11 @@ function loadChannels(): TokenChannel[] {
       cols.forEach((c, i) => (obj[c] = row[i]));
       return {
         id: obj.id,
-        provider: obj.provider,
-        modelName: obj.model_name || "",
+        provider: obj.name,
+        modelName: "",  // 从 models 表按 name 匹配
         baseUrl: obj.base_url || "",
         apiKey: obj.api_key || "",
-        authType: (obj.auth_type || "Bearer") as TokenChannel["authType"],
+        authType: "Bearer" as TokenChannel["authType"],
         enabled: !!obj.enabled,
         priority: obj.priority ?? 0,
       };
@@ -234,25 +250,25 @@ function loadChannels(): TokenChannel[] {
 function buildSystemPrompt(agent: AgentConfig): string {
   const parts: string[] = [];
   if (agent.systemPrompt) parts.push(agent.systemPrompt);
-  if (agent.writingStyle) parts.push(`写作风格：${agent.writingStyle}`);
-  if (agent.expertise?.length) parts.push(`专业领域：${agent.expertise.join("、")}`);
-  parts.push(`你的名字是 ${agent.name}，请始终以第一人称回复。`);
+  if (agent.writingStyle) parts.push(`写作风格:${agent.writingStyle}`);
+  if (agent.expertise?.length) parts.push(`专业领域:${agent.expertise.join("、")}`);
+  parts.push(`你的名字是 ${agent.name},请始终以第一人称回复。`);
 
   // 输出格式要求
   if (agent.outputFormat && agent.outputFormat !== "纯文本") {
     const fmtMap: Record<string, string> = {
       "代码优先":
-        "回复时优先以代码块展示实现，代码后补充简要说明。",
+        "回复时优先以代码块展示实现,代码后补充简要说明。",
       "预览+完整代码":
-        `回答涉及代码时，必须严格按以下结构输出，不得省略任何部分：
+        `回答涉及代码时,必须严格按以下结构输出,不得省略任何部分:
 
 【格式规范】
-1. 先用 <!-- PREVIEW_START --> 和 <!-- PREVIEW_END --> 包裹"预览说明"区块，内容包括：功能描述、使用方式、运行效果说明（如有 HTML/UI 可描述视觉效果）。
-2. 再用 <!-- CODE_START --> 和 <!-- CODE_END --> 包裹完整可运行代码块，代码必须完整，不得省略任何部分。
+1. 先用 <!-- PREVIEW_START --> 和 <!-- PREVIEW_END --> 包裹"预览说明"区块,内容包括:功能描述、使用方式、运行效果说明(如有 HTML/UI 可描述视觉效果)。
+2. 再用 <!-- CODE_START --> 和 <!-- CODE_END --> 包裹完整可运行代码块,代码必须完整,不得省略任何部分。
 
 【示例格式】
 <!-- PREVIEW_START -->
-这是一个实现 XX 功能的组件，运行后会显示 XX 效果，点击按钮可以 XX。
+这是一个实现 XX 功能的组件,运行后会显示 XX 效果,点击按钮可以 XX。
 <!-- PREVIEW_END -->
 
 <!-- CODE_START -->
@@ -261,17 +277,17 @@ function buildSystemPrompt(agent: AgentConfig): string {
 \`\`\`
 <!-- CODE_END -->
 
-【重要】：如果回复不涉及代码，则正常回复即可，不需要使用上述标记。`,
+【重要】:如果回复不涉及代码,则正常回复即可,不需要使用上述标记。`,
       "结构化JSON":
-        "所有回复以合法 JSON 格式输出，键名使用英文 camelCase。",
+        "所有回复以合法 JSON 格式输出,键名使用英文 camelCase。",
     };
-    const fmtHint = fmtMap[agent.outputFormat] ?? `输出格式：${agent.outputFormat}`;
+    const fmtHint = fmtMap[agent.outputFormat] ?? `输出格式:${agent.outputFormat}`;
     parts.push(`## 输出格式要求\n${fmtHint}`);
   }
 
   // 能力边界
   if (agent.boundary?.trim()) {
-    parts.push(`## 能力边界\n以下事项你不应处理，如用户要求请礼貌拒绝并说明原因：\n${agent.boundary.trim()}`);
+    parts.push(`## 能力边界\n以下事项你不应处理,如用户要求请礼貌拒绝并说明原因:\n${agent.boundary.trim()}`);
   }
 
   // 注入该智能体已绑定且启用的技能描述
@@ -283,7 +299,7 @@ function buildSystemPrompt(agent: AgentConfig): string {
 
 /**
  * 调用 OpenAI-compatible streaming API
- * 返回 Promise<number> 表示本次调用实际消耗的 token 数（来自 usage 字段，无则返回 0）
+ * 返回 Promise<number> 表示本次调用实际消耗的 token 数(来自 usage 字段,无则返回 0)
  * 抛出 Error 表示调用失败
  */
 function callOpenAIStream(
@@ -303,34 +319,40 @@ function callOpenAIStream(
   signal: AbortController
 ): Promise<number> {
   return new Promise((resolve, reject) => {
-    const url = new URL(`${baseUrl.replace(/\/$/, "")}/chat/completions`);
-    const body = JSON.stringify({
-      model: modelId,
+    // ── Gateway 路由:通过 Gateway 进行底层模型调用 ──
+    const useGateway = isGatewayUrl(baseUrl);
+    const actualUrl = new URL(useGateway ? `${GATEWAY_URL.replace(/\/$/, '')}/v1/chat/completions` : `${baseUrl.replace(/\/$/, '')}/chat/completions`);
+    const actualModel = useGateway ? 'openclaw' : modelId;
+    const actualAuth = useGateway ? `Bearer ${GATEWAY_TOKEN}` : (authType === "ApiKey" ? apiKey : `Bearer ${apiKey}`);
+
+    if (useGateway) {
+      console.log(`[Auto→Gateway] Routing: ${modelId} → Gateway(openclaw)`);
+    }
+
+    const bodyObj: any = {
+      model: actualModel,
       messages: [{ role: "system", content: systemPrompt }, ...messages],
-      stream: true,
-      // stream_options.include_usage: 请求服务端在流末尾返回 usage 块（OpenAI / DeepSeek 等支持）
-      stream_options: { include_usage: true },
+      stream: false,
       temperature,
       max_tokens: maxTokens,
-      top_p: topP,
       frequency_penalty: frequencyPenalty,
       presence_penalty: presencePenalty,
-    });
-
-    const authHeader =
-      authType === "ApiKey" ? `${apiKey}` : `Bearer ${apiKey}`;
+    };
+    // Claude 不支持 top_p + temperature 同时指定
+    if (!modelId.includes('claude') && !modelId.includes('Claude')) {
+      bodyObj.top_p = topP;
+    }
+    const body = JSON.stringify(bodyObj);
 
     const options = {
-      hostname: url.hostname,
-      port: url.port || (url.protocol === "https:" ? 443 : 80),
-      path: url.pathname + url.search,
+      hostname: actualUrl.hostname,
+      port: actualUrl.port || (actualUrl.protocol === "https:" ? 443 : 80),
+      path: actualUrl.pathname + actualUrl.search,
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         "Content-Length": Buffer.byteLength(body),
-        Authorization: authType === "ApiKey" ? undefined : authHeader,
-        "x-api-key": authType === "ApiKey" ? apiKey : undefined,
-        "api-key": authType === "ApiKey" ? apiKey : undefined, // Azure style
+        Authorization: actualAuth,
       },
     };
 
@@ -339,7 +361,7 @@ function callOpenAIStream(
       (k) => (options.headers as any)[k] === undefined && delete (options.headers as any)[k]
     );
 
-    const lib = url.protocol === "https:" ? https : http;
+    const lib = actualUrl.protocol === "https:" ? https : http;
     const req = lib.request(options, (res) => {
       if (res.statusCode && res.statusCode >= 400) {
         let errBody = "";
@@ -350,45 +372,34 @@ function callOpenAIStream(
         return;
       }
 
-      let buffer = "";
-      // 累计实际 token 用量（从 SSE usage 块中读取）
-      let totalTokens = 0;
+      let body = "";
 
       res.on("data", (data: Buffer) => {
-        buffer += data.toString();
-        const lines = buffer.split("\n");
-        buffer = lines.pop() ?? "";
-
-        for (const line of lines) {
-          const trimmed = line.trim();
-          if (!trimmed || trimmed === "data: [DONE]") continue;
-          if (!trimmed.startsWith("data: ")) continue;
-          try {
-            const json = JSON.parse(trimmed.slice(6));
-            // 正常 chunk：提取文本内容
-            const delta = json.choices?.[0]?.delta?.content;
-            if (delta) onChunk(delta);
-            // usage 块（通常在最后一个 SSE 帧，choices 为空时携带）：
-            // OpenAI 格式：{ usage: { prompt_tokens, completion_tokens, total_tokens } }
-            if (json.usage?.total_tokens) {
-              totalTokens = json.usage.total_tokens;
-            }
-          } catch {
-            // ignore malformed SSE lines
-          }
-        }
+        body += data.toString();
       });
 
       res.on("end", () => {
-        // 如果服务端没有返回 usage（部分兼容 API 不支持 stream_options），
-        // 降级为本地 estimateTokens 估算（system + 所有历史 + 回复，近似值）
-        if (totalTokens === 0) {
-          const systemTokens = estimateTokens(systemPrompt);
-          const historyTokens = messages.reduce((s, m) => s + estimateTokens(m.content) + 4, 0);
-          totalTokens = systemTokens + historyTokens; // 不含回复（流式输出无法事后统计 chunk）
+        try {
+          const json = JSON.parse(body);
+          const content = json.choices?.[0]?.message?.content || "";
+          const totalTokens = json.usage?.total_tokens || 0;
+
+          console.log(`[AutoLLM] Raw response:`, JSON.stringify(json).substring(0, 300));
+          console.log(`[AutoLLM] Response: ${content.length} chars, ${totalTokens} tokens`);
+
+          // 模拟流式：逐段发送内容
+          if (content) {
+            const chunkSize = 20;
+            for (let i = 0; i < content.length; i += chunkSize) {
+              onChunk(content.substring(i, i + chunkSize));
+            }
+          }
+
+          onComplete(totalTokens);
+          resolve(totalTokens);
+        } catch (e: any) {
+          reject(new Error(`Response parse error: ${e.message}. Body: ${body.slice(0, 200)}`));
         }
-        onComplete(totalTokens);
-        resolve(totalTokens);
       });
 
       res.on("error", reject);
@@ -417,7 +428,7 @@ export class AutoLLMAdapter implements ILLMAdapter {
     onError: (err: Error) => void
   ): Promise<void> {
     const systemPrompt = buildSystemPrompt(agentConfig);
-    // temperatureOverride 优先于 agentConfig.temperature（来自 CODE 弹窗的 customTemp）
+    // temperatureOverride 优先于 agentConfig.temperature(来自 CODE 弹窗的 customTemp)
     const temperature =
       agentConfig.temperatureOverride != null
         ? agentConfig.temperatureOverride
@@ -427,21 +438,21 @@ export class AutoLLMAdapter implements ILLMAdapter {
     const frequencyPenalty = agentConfig.frequencyPenalty ?? 0;
     const presencePenalty = agentConfig.presencePenalty ?? 0;
 
-    // ── 上下文截断：将过长的历史消息裁剪到 token 预算内 ──────────────────
-    // 若配置了 memoryTurns（> 0），先按轮数截断（1 轮 = 1 user + 1 assistant）；
-    // 再按 token budget 截断（两者取更严格的那个）。
+    // ── 上下文截断:将过长的历史消息裁剪到 token 预算内 ──────────────────
+    // 若配置了 memoryTurns(> 0),先按轮数截断(1 轮 = 1 user + 1 assistant);
+    // 再按 token budget 截断(两者取更严格的那个)。
     let msgsToTruncate = messages;
     const memTurns = agentConfig.memoryTurns ?? 0;
     if (memTurns > 0) {
-      // 1 轮 = 1 user + 1 assistant，共 2 条
-      // 但 history 末尾通常是当前用户消息（尚无 assistant 回复），所以实际条数是 memTurns*2 + 1
-      // 为保证末尾 user 消息始终被保留，取后 memTurns*2+1 条，再做对齐修正
+      // 1 轮 = 1 user + 1 assistant,共 2 条
+      // 但 history 末尾通常是当前用户消息(尚无 assistant 回复),所以实际条数是 memTurns*2 + 1
+      // 为保证末尾 user 消息始终被保留,取后 memTurns*2+1 条,再做对齐修正
       const maxMsgs = memTurns * 2 + 1;
       if (msgsToTruncate.length > maxMsgs) {
         msgsToTruncate = msgsToTruncate.slice(-maxMsgs);
         console.log(`[AutoLLMAdapter] Memory turns limit: keeping last ${memTurns} turns (${maxMsgs} messages)`);
       }
-      // 确保截断后第一条是 user 消息（若开头是 assistant 则去掉，避免 role 顺序异常）
+      // 确保截断后第一条是 user 消息(若开头是 assistant 则去掉,避免 role 顺序异常)
       if (msgsToTruncate.length > 0 && msgsToTruncate[0].role !== "user") {
         msgsToTruncate = msgsToTruncate.slice(1);
         console.log("[AutoLLMAdapter] Dropped leading assistant message after memory-turns truncation");
@@ -449,21 +460,41 @@ export class AutoLLMAdapter implements ILLMAdapter {
     }
     const truncated = truncateMessages(systemPrompt, msgsToTruncate, maxTokens);
 
-    // ── 优先：使用 agent 自己配置的私有 Key ──────────────────────────
+    // ── 优先:使用 agent 自己配置的私有 Key ──────────────────────────
     const privateKey = agentConfig.tokenApiKey?.trim();
     if (privateKey) {
       const provider = agentConfig.tokenProvider || "custom";
-      const isDoubao = ["doubao", "volc", "ark"].includes(provider.toLowerCase());
+      const providerLower = provider.toLowerCase();
 
-      // 确定模型 ID：优先用 agent 选的具名模型，其次用 provider 默认模型
+      // 如果是 openclaw provider,直接使用 OpenClawAdapter
+      if (OPENCLAW_PROVIDERS.has(providerLower)) {
+        const { OpenClawAdapter } = await import('./OpenClawAdapter');
+        const adapter = new OpenClawAdapter();
+        return adapter.generateStream(
+          {
+            ...agentConfig,
+            systemPrompt,
+            temperature,
+            maxTokens,
+          },
+          truncated,
+          onChunk,
+          onComplete,
+          onError
+        );
+      }
+
+      const isDoubao = ["doubao", "volc", "ark"].includes(providerLower);
+
+      // 确定模型 ID:优先用 agent 选的具名模型,其次用 provider 默认模型
       let modelId =
         (agentConfig.modelName && agentConfig.modelName !== "Auto" && agentConfig.modelName !== "auto")
           ? agentConfig.modelName
-          : PROVIDER_MODEL_MAP[provider.toLowerCase()] || "doubao-pro-32k-241215";
+          : PROVIDER_MODEL_MAP[providerLower] || "doubao-pro-32k-241215";
 
       const baseUrl =
         agentConfig.tokenBaseUrl?.trim() ||
-        (provider.toLowerCase() === "doubao" || provider.toLowerCase() === "ark"
+        (providerLower === "doubao" || providerLower === "ark"
           ? "https://ark.cn-beijing.volces.com/api/v3"
           : "https://api.openai.com/v1");
 
@@ -483,35 +514,99 @@ export class AutoLLMAdapter implements ILLMAdapter {
       }
     }
 
-    // ── 降级：从全局 token_channels 表读取渠道 ──────────────────────
-    const channels = loadChannels();
+    // ── 降级：从 model_providers 表读取提供商 ──────────────────────
+    const providers = loadProviders();
 
-    if (!channels.length) {
-      console.log("[Auto] No token channels configured, falling back to mock");
+    if (!providers.length) {
+      console.log("[Auto] No model providers configured, falling back to mock");
       return mockFallback.generateStream(agentConfig, messages, onChunk, onComplete, onError);
     }
 
-    // Try each channel in priority order
-    for (const channel of channels) {
+    // 按 agent 配置的 model_name 匹配 models 表，找到对应的 provider
+    const agentModelName = agentConfig.modelName?.trim();
+    let matchedProvider: TokenChannel | null = null;
+    let matchedModelId = agentModelName || "gpt-4o";
+
+    if (agentModelName && agentModelName.toLowerCase() !== "auto") {
+      try {
+        const db = getDb();
+        const modelRows = db.exec(
+          `SELECT m.*, mp.name as provider_name, mp.base_url, mp.api_key
+           FROM models m
+           LEFT JOIN model_providers mp ON m.provider_id = mp.id
+           WHERE m.name = ? AND m.enabled = 1 AND mp.enabled = 1
+           LIMIT 1`,
+          [agentModelName]
+        );
+        if (modelRows.length && modelRows[0].values.length) {
+          const cols = modelRows[0].columns;
+          const m: any = {};
+          cols.forEach((c, i) => (m[c] = modelRows[0].values[0][i]));
+          matchedProvider = {
+            id: m.provider_id || "",
+            provider: m.provider_name || "",
+            modelName: m.name,
+            baseUrl: m.base_url || "",
+            apiKey: m.api_key || "",
+            authType: "Bearer",
+            enabled: true,
+            priority: 0,
+          };
+          matchedModelId = m.name || agentModelName;
+          console.log(`[Auto] Model matched: ${agentModelName} → provider=${m.provider_name} url=${m.base_url}`);
+        }
+      } catch (e) {
+        console.warn(`[Auto] Model lookup failed: ${e}`);
+      }
+    }
+
+    // 如果有匹配的 provider，直接使用；否则按优先级遍历所有 provider
+    const providersToTry = matchedProvider ? [matchedProvider] : providers;
+
+    for (const provider of providersToTry) {
+      const providerLower = provider.provider.toLowerCase();
+
       // Skip providers that require special (non-OpenAI) format for now
-      if (NON_OPENAI_PROVIDERS.has(channel.provider.toLowerCase())) continue;
+      if (NON_OPENAI_PROVIDERS.has(providerLower)) continue;
 
-      const modelId =
-        channel.modelName ||
-        PROVIDER_MODEL_MAP[channel.provider.toLowerCase()] ||
-        "gpt-4o";
+      // If openclaw provider, use OpenClawAdapter directly
+      if (OPENCLAW_PROVIDERS.has(providerLower)) {
+        const { OpenClawAdapter } = await import('./OpenClawAdapter');
+        const adapter = new OpenClawAdapter();
+        try {
+          console.log(`[Auto] Trying provider: openclaw / OpenClaw native runtime`);
+          await adapter.generateStream(
+            {
+              ...agentConfig,
+              systemPrompt,
+              temperature,
+              maxTokens,
+            },
+            truncated,
+            onChunk,
+            onComplete,
+            onError
+          );
+          console.log(`[Auto] Success via openclaw provider`);
+          return;
+        } catch (err: any) {
+          console.warn(`[Auto] OpenClaw provider failed: ${err.message}, trying next...`);
+          continue;
+        }
+      }
 
-      const baseUrl = channel.baseUrl || "https://api.openai.com/v1";
+      const modelId = matchedModelId || PROVIDER_MODEL_MAP[providerLower] || "gpt-4o";
+      const baseUrl = provider.baseUrl || "https://api.openai.com/v1";
       const controller = new AbortController();
 
       try {
         console.log(
-          `[Auto] Trying channel: ${channel.provider} / ${modelId} @ ${baseUrl}`
+          `[Auto] Trying provider: ${provider.provider} / ${modelId} @ ${baseUrl}`
         );
         const tokenCount = await callOpenAIStream(
           baseUrl,
-          channel.apiKey,
-          channel.authType,
+          provider.apiKey,
+          provider.authType,
           modelId,
           systemPrompt,
           truncated,
@@ -524,18 +619,18 @@ export class AutoLLMAdapter implements ILLMAdapter {
           onComplete,
           controller
         );
-        console.log(`[Auto] Success via ${channel.provider} / ${modelId}, tokens=${tokenCount}`);
-        return; // success — stop trying
+        console.log(`[Auto] Success via ${provider.provider} / ${modelId}, tokens=${tokenCount}`);
+        return;
       } catch (err: any) {
         console.warn(
-          `[Auto] Channel ${channel.provider} failed: ${err.message}, trying next...`
+          `[Auto] Provider ${provider.provider} failed: ${err.message}, trying next...`
         );
-        // continue to next channel
+        continue;
       }
     }
 
-    // All real channels failed — fallback to mock
-    console.warn("[Auto] All channels failed, falling back to mock output");
+    // All providers failed — fallback to mock
+    console.warn("[Auto] All providers failed, falling back to mock output");
     return mockFallback.generateStream(agentConfig, messages, onChunk, onComplete, onError);
   }
 }

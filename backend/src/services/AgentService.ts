@@ -89,7 +89,7 @@ export const AgentService = {
     return rowToAgent(obj);
   },
 
-  create(data: Omit<Agent, "id" | "createdAt">): Agent {
+  create(data: Partial<Agent> & { name: string }): Agent {
     const db = getDb();
     const id = uuidv4();
     const now = new Date().toISOString();
@@ -117,7 +117,7 @@ export const AgentService = {
     return this.getById(id)!;
   },
 
-  update(id: string, data: Partial<Omit<Agent, "id" | "createdAt">>): Agent | null {
+  update(id: string, data: Record<string, any>): Agent | null {
     const db = getDb();
     const existing = this.getById(id);
     if (!existing) return null;
@@ -188,26 +188,24 @@ export const AgentService = {
       topP: agent.topP,
       frequencyPenalty: agent.frequencyPenalty,
       presencePenalty: agent.presencePenalty,
-      // 用户配置的私有 Token — 优先使用
       tokenProvider: agent.tokenProvider,
       tokenApiKey: agent.tokenApiKey,
       tokenBaseUrl: agent.tokenBaseUrl,
-      // 输出格式 & 能力边界
       outputFormat: agent.outputFormat,
       boundary: agent.boundary,
-      // 记忆轮数 & 温度覆盖
       memoryTurns: agent.memoryTurns,
       temperatureOverride: agent.temperatureOverride,
     };
 
-    // 路由策略：
-    // - modelName 为空或 "auto"：走 AutoLLMAdapter，由平台按优先级自动选渠道和模型
-    // - 其他具名模型（如 gpt-4o / deepseek-coder-v2）：也走 AutoLLMAdapter，
-    //   AutoLLMAdapter 会优先从 token_channels 中匹配对应 provider 的渠道；
-    //   全部渠道失败时降级到 Mock 保底，确保始终有输出。
-    // !! 不要改回 mockAdapter，那样具名模型永远不走真实 LLM
-    const adapter: ILLMAdapter = new AutoLLMAdapter();
+    // ── 路由策略：完全使用 RepaceClaw 自带接口 ─────────────────────────────
+    // 1. 优先：智能体有独立 API Key（tokenApiKey）→ 直接调用
+    // 2. 默认：从 RepaceClaw token_channels 表自动选择渠道
+    // 3. 兜底：全部失败 → Mock 保底
+    //
+    // 不依赖 OpenClaw Gateway，RepaceClaw 完全自包含
 
+    console.log(`[AgentService] Agent "${agent.name}" → RepaceClaw AutoLLMAdapter (self-contained)`);
+    const adapter: ILLMAdapter = new AutoLLMAdapter();
     await adapter.generateStream(agentConfig, messages, onChunk, onComplete, onError);
   },
 };

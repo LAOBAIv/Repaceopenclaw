@@ -5,7 +5,8 @@
 
 import { Response } from 'express';
 import { ApiSuccessResponse, ApiErrorResponse, ErrorCode } from '../types';
-import { AppError } from './AppError';
+export { ErrorCode };
+import { AppError } from './errors';
 
 /**
  * 发送成功响应

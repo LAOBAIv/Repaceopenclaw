@@ -1,18 +1,25 @@
+// wsHandler.ts — WebSocket 处理器
+//
+// RepaceClaw 负责：智能体配置管理、会话管理、消息存储
+// OpenClaw Gateway 负责：模型路由、LLM API 调用、流式输出
+
 import WebSocket, { WebSocketServer } from "ws";
 import { AgentService } from "../services/AgentService";
 import { ConversationService } from "../services/ConversationService";
 import { ProjectService } from "../services/ProjectService";
 import http from "http";
+import https from "https";
 import { v4 as uuidv4 } from "uuid";
+
+const GATEWAY_URL = process.env.OPENCLAW_GATEWAY_URL || "http://localhost:18789";
+const GATEWAY_TOKEN = process.env.OPENCLAW_GATEWAY_TOKEN || "021a420c0665ef2813ffe22e10725a629c58565ced1345d3";
 
 interface WSMessage {
   type: "chat" | "multi_chat" | "ping";
   conversationId?: string;
   agentId?: string;
-  /** 多智能体：前端可传全量参与 agentIds；若不传则从 DB conversation_agents 表读取 */
   agentIds?: string[];
   content?: string;
-  // multi_chat specific
   projectId?: string;
   workflowNodeId?: string;
 }
@@ -32,13 +39,13 @@ export function setupWebSocket(server: http.Server) {
         return;
       }
 
-      // ── Ping ──────────────────────────────────────────────────────────────
+      // ── Ping ──
       if (msg.type === "ping") {
         ws.send(JSON.stringify({ type: "pong" }));
         return;
       }
 
-      // ── Single agent chat ─────────────────────────────────────────────────
+      // ── 单智能体对话 ──
       if (msg.type === "chat") {
         const { conversationId, agentId, agentIds: msgAgentIds, content } = msg;
         if (!content || !conversationId) {
@@ -46,91 +53,60 @@ export function setupWebSocket(server: http.Server) {
           return;
         }
 
-        // 解析本次参与的 agentIds，确定执行顺序：
-        //   1. 优先使用前端显式传来的 agentIds（前端可自由排序）
-        //   2. 其次从 DB conversation_agents 读取（按 joined_at ASC 排序 = 协作流程的加入顺序）
-        //   3. 最后降级为前端传来的单个 agentId
-        //
-        // 多智能体场景下，activeAgentIds[0] 即"协作流程最靠前的智能体"，
-        // 它将被第一个调用，其回复会进入 history 供后续 agent 参考。
+        // 确定 agentId
         const conv = ConversationService.getById(conversationId);
-        const dbAgentIds = conv?.agentIds ?? [];  // 已按 joined_at ASC 排序
-        let activeAgentIds: string[] =
-          (msgAgentIds && msgAgentIds.length > 0)
-            ? msgAgentIds
-            : dbAgentIds.length > 0
-              ? dbAgentIds
-              : agentId ? [agentId] : [];
+        const dbAgentIds = conv?.agentIds ?? [];
+        const targetAgentId =
+          (msgAgentIds && msgAgentIds.length > 0) ? msgAgentIds[0]
+          : dbAgentIds.length > 0 ? dbAgentIds[0]
+          : agentId || '';
 
-        if (activeAgentIds.length === 0) {
+        if (!targetAgentId) {
           ws.send(JSON.stringify({ type: "error", message: "No agent associated with this conversation" }));
           return;
         }
 
-        // Save user message
+        // 保存用户消息到 DB
         const userMsg = ConversationService.addMessage({
           conversationId,
           role: "user",
           content,
+          agentId: targetAgentId,
         });
         ws.send(JSON.stringify({ type: "user_message", message: userMsg }));
 
-        // Build history for LLM context
-        const messages = ConversationService.getMessages(conversationId);
-        const history = messages.map((m) => ({
+        // 获取智能体配置
+        const agent = AgentService.getById(targetAgentId);
+        if (!agent) {
+          ws.send(JSON.stringify({ type: "error", message: `Agent ${targetAgentId} not found` }));
+          return;
+        }
+
+        // 构建 system prompt
+        let systemPrompt = agent.systemPrompt || '';
+        if (agent.writingStyle) systemPrompt += `\n\n写作风格：${agent.writingStyle}`;
+        if (agent.expertise?.length) systemPrompt += `\n\n专业领域：${agent.expertise.join('、')}`;
+        if (agent.outputFormat && agent.outputFormat !== '纯文本') {
+          systemPrompt += `\n\n## 输出格式要求\n${agent.outputFormat}`;
+        }
+        if (agent.boundary?.trim()) {
+          systemPrompt += `\n\n## 能力边界\n${agent.boundary.trim()}`;
+        }
+        systemPrompt += `\n\n你的名字是 ${agent.name}，请始终以第一人称回复。`;
+
+        // 获取历史消息
+        const historyMessages = ConversationService.getMessages(conversationId);
+        const history = historyMessages.map((m) => ({
           role: m.role === "agent" ? "assistant" : "user",
           content: m.content,
         }));
 
-        if (activeAgentIds.length === 1) {
-          // 单智能体：直接调用
-          await runSingleAgent(ws, conversationId, activeAgentIds[0], history);
-        } else {
-          // 多智能体：串行依次回复（每个 agent 都能看到前者的回复）
-          ws.send(JSON.stringify({
-            type: "multi_agent_start",
-            nodeCount: 1,
-            agentIds: activeAgentIds,
-          }));
-
-          let currentHistory = [...history];
-          for (const aid of activeAgentIds) {
-            // 刷新 history，让后续 agent 看到前面 agent 的回复
-            const refreshed = ConversationService.getMessages(conversationId);
-            currentHistory = refreshed.map((m) => ({
-              role: m.role === "agent" ? "assistant" : "user",
-              content: m.content,
-            }));
-
-            // 防止 history 末尾出现连续 user 消息
-            const lastRole = currentHistory.length > 0
-              ? currentHistory[currentHistory.length - 1].role
-              : null;
-            const isFirst = activeAgentIds.indexOf(aid) === 0;
-            if (!isFirst && lastRole === "user") {
-              ConversationService.addMessage({
-                conversationId,
-                role: "agent",
-                content: "[上一个智能体未返回回复]",
-                agentId: activeAgentIds[activeAgentIds.indexOf(aid) - 1],
-              });
-              const fixed = ConversationService.getMessages(conversationId);
-              currentHistory = fixed.map((m) => ({
-                role: m.role === "agent" ? "assistant" : "user",
-                content: m.content,
-              }));
-            }
-
-            await runSingleAgent(ws, conversationId, aid, currentHistory);
-          }
-
-          ws.send(JSON.stringify({ type: "multi_agent_done", agentIds: activeAgentIds }));
-        }
-
+        // 调用 OpenClaw Gateway 生成回复
+        await callGateway(ws, conversationId, targetAgentId, systemPrompt, history, content);
         return;
       }
 
-      // ── Multi-agent collaboration chat ────────────────────────────────────
+      // ── 多智能体协作对话 ──
       if (msg.type === "multi_chat") {
         const { conversationId, projectId, workflowNodeId, content } = msg;
         if (!content || !conversationId || !projectId) {
@@ -138,14 +114,12 @@ export function setupWebSocket(server: http.Server) {
           return;
         }
 
-        // Load project workflow
         const project = ProjectService.getById(projectId);
         if (!project) {
           ws.send(JSON.stringify({ type: "error", message: `Project ${projectId} not found` }));
           return;
         }
 
-        // Find target workflow node (or use all nodes if not specified)
         const targetNodes = workflowNodeId
           ? project.workflowNodes.filter((n) => n.id === workflowNodeId)
           : project.workflowNodes;
@@ -155,22 +129,10 @@ export function setupWebSocket(server: http.Server) {
           return;
         }
 
-        // Save user message
-        const userMsg = ConversationService.addMessage({
-          conversationId,
-          role: "user",
-          content,
-        });
+        // 保存用户消息
+        const userMsg = ConversationService.addMessage({ conversationId, role: "user", content });
         ws.send(JSON.stringify({ type: "user_message", message: userMsg }));
 
-        // Build base history
-        const messages = ConversationService.getMessages(conversationId);
-        const baseHistory = messages.map((m) => ({
-          role: m.role === "agent" ? "assistant" : "user",
-          content: m.content,
-        }));
-
-        // Notify client that multi-agent flow is starting
         ws.send(JSON.stringify({
           type: "multi_agent_start",
           nodeCount: targetNodes.length,
@@ -178,84 +140,34 @@ export function setupWebSocket(server: http.Server) {
           workflowNodeId: workflowNodeId || null,
         }));
 
-        // Execute each workflow node
         for (const node of targetNodes) {
-          if (node.nodeType === "serial") {
-            // ── Serial: run each agent one by one ────────────────────────────
-            ws.send(JSON.stringify({
-              type: "workflow_node_start",
-              nodeId: node.id,
-              nodeName: node.name,
-              nodeType: "serial",
-              agentCount: node.agentIds.length,
+          ws.send(JSON.stringify({
+            type: "workflow_node_start",
+            nodeId: node.id,
+            nodeName: node.name,
+            nodeType: node.nodeType,
+            agentCount: node.agentIds.length,
+          }));
+
+          for (const agentId of node.agentIds) {
+            const agent = AgentService.getById(agentId);
+            if (!agent) continue;
+
+            let systemPrompt = agent.systemPrompt || '';
+            if (agent.writingStyle) systemPrompt += `\n\n写作风格：${agent.writingStyle}`;
+            if (agent.expertise?.length) systemPrompt += `\n\n专业领域：${agent.expertise.join('、')}`;
+            systemPrompt += `\n\n你的名字是 ${agent.name}，请始终以第一人称回复。`;
+
+            const historyMessages = ConversationService.getMessages(conversationId);
+            const history = historyMessages.map((m) => ({
+              role: m.role === "agent" ? "assistant" : "user",
+              content: m.content,
             }));
 
-            for (const agentId of node.agentIds) {
-              // Refresh history after each agent so next agent has full context
-              const currentMessages = ConversationService.getMessages(conversationId);
-              const currentHistory = currentMessages.map((m) => ({
-                role: m.role === "agent" ? "assistant" : "user",
-                content: m.content,
-              }));
-
-              // Guard: if history ends with a user message (no assistant reply yet),
-              // that's the expected state for the first agent. But after an agent run,
-              // if the last message is still "user" it means the previous agent errored
-              // without writing to DB — skip a broken state by continuing with what we have.
-              const lastRole = currentHistory.length > 0 ? currentHistory[currentHistory.length - 1].role : null;
-              const isFirstAgent = node.agentIds.indexOf(agentId) === 0;
-
-              if (!isFirstAgent && lastRole === "user") {
-                // Previous agent failed without saving a reply — insert an empty placeholder
-                // so history remains alternating (user → assistant → user → assistant…)
-                console.warn(`[WS] Previous agent in serial node failed silently; inserting empty placeholder for agent ${agentId}`);
-                ConversationService.addMessage({
-                  conversationId,
-                  role: "agent",
-                  content: "[上一个智能体未返回回复]",
-                  agentId: node.agentIds[node.agentIds.indexOf(agentId) - 1],
-                });
-                // Re-fetch history with the placeholder included
-                const fixedMessages = ConversationService.getMessages(conversationId);
-                currentHistory.length = 0;
-                fixedMessages.forEach((m) =>
-                  currentHistory.push({ role: m.role === "agent" ? "assistant" : "user", content: m.content })
-                );
-              }
-
-              await runSingleAgent(ws, conversationId, agentId, currentHistory);
-            }
-
-            ws.send(JSON.stringify({
-              type: "workflow_node_done",
-              nodeId: node.id,
-            }));
-
-          } else {
-            // ── Parallel: fire all agents concurrently ────────────────────────
-            ws.send(JSON.stringify({
-              type: "workflow_node_start",
-              nodeId: node.id,
-              nodeName: node.name,
-              nodeType: "parallel",
-              agentCount: node.agentIds.length,
-            }));
-
-            // All agents see the same history snapshot (including the current user message)
-            // baseHistory is built AFTER the user message is saved, so it already includes it.
-            const historySnapshot = [...baseHistory];
-
-            await Promise.all(
-              node.agentIds.map((agentId) =>
-                runSingleAgent(ws, conversationId, agentId, historySnapshot)
-              )
-            );
-
-            ws.send(JSON.stringify({
-              type: "workflow_node_done",
-              nodeId: node.id,
-            }));
+            await callGateway(ws, conversationId, agentId, systemPrompt, history, content);
           }
+
+          ws.send(JSON.stringify({ type: "workflow_node_done", nodeId: node.id }));
         }
 
         ws.send(JSON.stringify({
@@ -263,86 +175,141 @@ export function setupWebSocket(server: http.Server) {
           projectId,
           workflowNodeId: workflowNodeId || null,
         }));
-
         return;
       }
 
       ws.send(JSON.stringify({ type: "error", message: `Unknown message type: ${(msg as any).type}` }));
     });
 
-    ws.on("close", () => {
-      console.log("[WS] Client disconnected");
-    });
-
-    ws.on("error", (err) => {
-      console.error("[WS] Error:", err.message);
-    });
+    ws.on("close", () => console.log("[WS] Client disconnected"));
+    ws.on("error", (err) => console.error("[WS] Error:", err.message));
   });
 
   return wss;
 }
 
 /**
- * Run a single agent stream and save its response to the conversation.
- * Pushes agent_start / agent_chunk / agent_done WebSocket events.
- * 完成后将本次 token 用量累加到 agents.token_used。
+ * 调用 OpenClaw Gateway 生成智能体回复
+ * Gateway 负责：模型路由、LLM API 调用
+ * 我们负责：system prompt、对话历史、消息存储
  */
-async function runSingleAgent(
+async function callGateway(
   ws: WebSocket,
   conversationId: string,
   agentId: string,
-  history: Array<{ role: string; content: string }>
+  systemPrompt: string,
+  history: Array<{ role: string; content: string }>,
+  userContent: string
 ): Promise<void> {
   return new Promise((resolve) => {
     const msgId = uuidv4();
 
-    if (ws.readyState !== WebSocket.OPEN) {
-      resolve();
-      return;
-    }
+    if (ws.readyState !== WebSocket.OPEN) { resolve(); return; }
 
     ws.send(JSON.stringify({ type: "agent_start", messageId: msgId, agentId }));
 
-    let fullContent = "";
+    const messages = [
+      { role: "system", content: systemPrompt },
+      ...history,
+      { role: "user", content: userContent },
+    ];
 
-    AgentService.generateStream(
-      agentId,
-      history,
-      (chunk) => {
-        fullContent += chunk;
-        if (ws.readyState === WebSocket.OPEN) {
-          ws.send(JSON.stringify({ type: "agent_chunk", messageId: msgId, chunk, agentId }));
-        }
+    console.log(`[Gateway] Calling with model=openclaw, messages=${messages.length}, agent=${agentId}`);
+
+    const url = new URL(`${GATEWAY_URL}/v1/chat/completions`);
+    const payload = JSON.stringify({
+      model: "openclaw",
+      messages,
+      stream: false,
+    });
+
+    const lib = url.protocol === "https:" ? https : http;
+    const req = lib.request(url.toString(), {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Content-Length": Buffer.byteLength(payload),
+        "Authorization": `Bearer ${GATEWAY_TOKEN}`,
       },
-      (tokenCount) => {
-        // 保存完整 agent 消息，同时记录本次 token 用量
-        const agentMsg = ConversationService.addMessage({
-          conversationId,
-          role: "agent",
-          content: fullContent,
-          agentId,
-          tokenCount,
-        });
-        // 将本次消耗的 token 累加到 agents.token_used 统计列
-        AgentService.addTokenUsed(agentId, tokenCount);
+    }, (res) => {
+      let body = "";
+      res.on("data", (d: Buffer) => (body += d.toString()));
+      res.on("end", () => {
+        try {
+          const json = JSON.parse(body);
+          const content = json.choices?.[0]?.message?.content || "";
+          const totalTokens = json.usage?.total_tokens || 0;
 
-        if (ws.readyState === WebSocket.OPEN) {
-          ws.send(JSON.stringify({
-            type: "agent_done",
-            messageId: msgId,
-            message: agentMsg,
+          if (res.statusCode && res.statusCode >= 400) {
+            console.error(`[Gateway] Error ${res.statusCode}:`, body.substring(0, 200));
+            if (ws.readyState === WebSocket.OPEN) {
+              ws.send(JSON.stringify({ type: "error", message: `Gateway error: ${body.substring(0, 200)}`, agentId }));
+            }
+            resolve();
+            return;
+          }
+
+          // 保存到 DB
+          const agentMsg = ConversationService.addMessage({
+            conversationId,
+            role: "agent",
+            content,
             agentId,
-            tokenCount,   // 通知前端本次 token 用量
-          }));
+            tokenCount: totalTokens,
+          });
+
+          console.log(`[Gateway] Response: ${content.length} chars, ${totalTokens} tokens`);
+
+          // 模拟流式：逐段发送给前端
+          if (content && ws.readyState === WebSocket.OPEN) {
+            const chunkSize = 20;
+            for (let i = 0; i < content.length; i += chunkSize) {
+              ws.send(JSON.stringify({
+                type: "agent_chunk",
+                messageId: msgId,
+                chunk: content.substring(i, i + chunkSize),
+                agentId,
+              }));
+            }
+          }
+
+          if (ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({
+              type: "agent_done",
+              messageId: msgId,
+              message: agentMsg,
+              agentId,
+              tokenCount: totalTokens,
+            }));
+          }
+          resolve();
+        } catch (e: any) {
+          console.error(`[Gateway] Parse error:`, e.message, body.substring(0, 200));
+          if (ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ type: "error", message: e.message, agentId }));
+          }
+          resolve();
         }
-        resolve();
-      },
-      (err) => {
-        if (ws.readyState === WebSocket.OPEN) {
-          ws.send(JSON.stringify({ type: "error", message: err.message, agentId }));
-        }
-        resolve();
+      });
+    });
+
+    req.on("error", (err) => {
+      console.error(`[Gateway] Request error:`, err.message);
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: "error", message: err.message, agentId }));
       }
-    );
+      resolve();
+    });
+
+    req.setTimeout(120000, () => {
+      req.destroy();
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: "error", message: "Gateway timeout", agentId }));
+      }
+      resolve();
+    });
+
+    req.write(payload);
+    req.end();
   });
 }

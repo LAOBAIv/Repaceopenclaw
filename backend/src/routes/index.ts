@@ -19,6 +19,8 @@ import skillRoutes from './skills';
 import pluginRoutes from './plugins';
 import doubaoRoutes from './doubao';
 import openaiCompatRoutes from './openaiCompat';
+import modelProviderRoutes from './modelProviders';
+import modelRoutes from './models';
 
 // 路由配置项
 interface RouteConfig {
@@ -42,6 +44,8 @@ const apiRoutes: RouteConfig[] = [
   { path: '/skills', router: skillRoutes },
   { path: '/plugins', router: pluginRoutes },
   { path: '/doubao', router: doubaoRoutes },
+  { path: '/model-providers', router: modelProviderRoutes },
+  { path: '/models', router: modelRoutes },
 ];
 
 // 外部兼容路由列表（不使用 /api 前缀）

@@ -13,7 +13,7 @@ import cors from 'cors';
 import http from 'http';
 import path from 'path';
 
-import { initDb } from './db/client';
+import { initDb, getDb } from './db/client';
 import { registerRoutes } from './routes';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler';
 import { setupWebSocket } from './ws/wsHandler';
@@ -126,7 +126,6 @@ function setupHealthCheck(app: express.Application): void {
 
     // 数据库连接检查
     try {
-      const { getDb } = await import('../db/client');
       const db = getDb();
       // 简单查询验证连接
       db.exec('SELECT 1');
@@ -150,12 +149,12 @@ function setupHealthCheck(app: express.Application): void {
  * 配置静态文件服务
  */
 function setupStaticFiles(app: express.Application): void {
-  // 生产环境：提供前端构建文件
-  if (NODE_ENV === 'production') {
-    const staticPath = path.join(__dirname, '../../frontend/dist');
+  // 始终提供前端构建文件（开发和生产环境都需要）
+  const staticPath = path.join(__dirname, '../../frontend/dist');
+  if (require('fs').existsSync(staticPath)) {
     app.use(express.static(staticPath));
 
-    // SPA 路由回退
+    // SPA 路由回退：所有非 API 请求返回 index.html
     app.get('*', (req, res, next) => {
       // API 请求不处理
       if (
@@ -170,6 +169,8 @@ function setupStaticFiles(app: express.Application): void {
     });
 
     console.log('[Static] Serving frontend from:', staticPath);
+  } else {
+    console.log('[Static] Frontend dist not found at:', staticPath);
   }
 }
 

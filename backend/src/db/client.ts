@@ -190,6 +190,7 @@ function createTables(db: Database) {
   // Migrate: add task_id and created_by columns (idempotent)
   try { db.run("ALTER TABLE conversations ADD COLUMN task_id TEXT UNIQUE"); } catch {}
   try { db.run("ALTER TABLE conversations ADD COLUMN created_by TEXT"); } catch {}
+
   // Migrate: drop old agent_id column (SQLite does not support DROP COLUMN before 3.35;
   // we simply ignore it — the column stays but is no longer used)
   // New designs read agent list from conversation_agents table instead.

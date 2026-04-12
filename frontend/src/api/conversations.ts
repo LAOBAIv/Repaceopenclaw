@@ -22,6 +22,14 @@ export const conversationsApi = {
     return res.data.data;
   },
 
+  /**
+   * 更新会话信息（标题、项目关联等）
+   */
+  update: async (id: string, data: { title?: string; projectId?: string | null; taskId?: string | null }): Promise<Conversation> => {
+    const res = await apiClient.put(`/conversations/${id}`, data);
+    return res.data.data;
+  },
+
   delete: async (id: string): Promise<void> => {
     await apiClient.delete(`/conversations/${id}`);
   },
@@ -46,4 +54,3 @@ export const conversationsApi = {
     await apiClient.delete(`/conversations/${conversationId}/agents/${agentId}`);
   },
 };
-

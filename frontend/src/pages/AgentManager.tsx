@@ -5,10 +5,21 @@ import { useAgentStore } from '@/stores/agentStore';
 import { DEFAULT_AGENTS } from '@/data/defaultAgents';
 import { Agent } from '@/types';
 
+/** Gateway 可用模型列表 */
+export const VALID_MODELS = [
+  'claude-opus-4-6',
+  'glm-5',
+  'qwen3-max-2026-01-23',
+  'kimi-k2.5',
+  'MiniMax-M2.5',
+  'qwen3.6-plus',
+];
+
 /** 模型参数展示栏：只显示渠道（tokenProvider）和模型名（modelName） */
 function ModelParamBar({ agent }: { agent: Agent }) {
   const channel = agent.tokenProvider;
   const model   = agent.modelName;
+  const isValidModel = !model || VALID_MODELS.includes(model);
 
   if (!channel && !model) {
     return (
@@ -20,8 +31,8 @@ function ModelParamBar({ agent }: { agent: Agent }) {
   }
 
   return (
-    <div className="am-model-bar">
-      <Cpu size={11} color="#6b7280" style={{ flexShrink: 0 }} />
+    <div className="am-model-bar" style={{ justifyContent: isValidModel ? 'flex-start' : 'space-between' }}>
+      <Cpu size={11} color={isValidModel ? '#6b7280' : '#ef4444'} style={{ flexShrink: 0 }} />
 
       {/* 渠道名 */}
       {channel && (
@@ -33,7 +44,14 @@ function ModelParamBar({ agent }: { agent: Agent }) {
 
       {/* 模型名 */}
       {model && (
-        <span className="am-model-name" title={model}>{model}</span>
+        <span className="am-model-name" title={model} style={{ color: isValidModel ? undefined : '#ef4444' }}>{model}</span>
+      )}
+
+      {/* 无效模型警告标识 */}
+      {model && !isValidModel && (
+        <span title={`模型 "${model}" 无效，请在智能体管理中更新`}>
+          <AlertTriangle size={13} color="#ef4444" style={{ flexShrink: 0, marginLeft: 4 }} />
+        </span>
       )}
     </div>
   );
@@ -326,7 +344,20 @@ export function AgentManager() {
                   <div className="am-item-top">
                     <AgentAvatar agent={agent} />
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <div className="am-name">{agent.name}</div>
+                      <div className="am-name" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        {agent.name}
+                        {agent.modelName && !VALID_MODELS.includes(agent.modelName) && (
+                          <span style={{
+                            display: 'inline-flex', alignItems: 'center', gap: 3,
+                            padding: '1px 6px', borderRadius: 10,
+                            background: '#fef2f2', border: '1px solid #fecaca',
+                            fontSize: 10, color: '#dc2626', fontWeight: 500,
+                          }} title={`模型 "${agent.modelName}" 无效`}>
+                            <AlertTriangle size={10} />
+                            无效模型
+                          </span>
+                        )}
+                      </div>
                       <div className="am-style">{agent.writingStyle}</div>
                     </div>
                   </div>

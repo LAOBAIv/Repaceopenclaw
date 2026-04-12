@@ -54,6 +54,17 @@ router.post("/", (req: Request, res: Response) => {
   res.status(201).json({ data: ConversationService.create({ agentIds: ids, projectId, taskId, title, createdBy }) });
 });
 
+/**
+ * PUT /api/conversations/:id
+ * 更新会话信息（标题、项目关联等）
+ */
+router.put("/:id", (req: Request, res: Response) => {
+  const { title, projectId, taskId } = req.body;
+  const conv = ConversationService.update(req.params.id, { title, projectId, taskId });
+  if (!conv) return res.status(404).json({ error: "Conversation not found" });
+  res.json({ data: conv });
+});
+
 router.delete("/:id", (req: Request, res: Response) => {
   ConversationService.delete(req.params.id);
   res.json({ success: true });

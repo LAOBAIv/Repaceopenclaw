@@ -5,7 +5,7 @@
 
 export { authenticate, requireRole } from './auth';
 export { errorHandler } from './errorHandler';
-export { validate } from './validate';
+export { validateBody as validate, validateBody } from './validate';
 
 // 重新导出扩展的 Request 类型
 declare global {
@@ -14,7 +14,7 @@ declare global {
       user?: {
         id: string;
         email: string;
-        role: string;
+        role: 'user' | 'admin' | string;
       };
     }
   }

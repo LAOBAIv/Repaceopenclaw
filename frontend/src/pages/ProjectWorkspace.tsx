@@ -8,6 +8,7 @@ import { useAgentStore } from '@/stores/agentStore';
 import { useTaskStore } from '@/stores/taskStore';
 import { useProjectKanbanStore, type ProjectPriority } from '@/stores/projectKanbanStore';
 import { showToast } from '@/components/Toast';
+import { conversationsApi } from '@/api/conversations';
 
 /* ── 浏览器标签页类型 ── */
 interface BrowserTab {
@@ -1974,6 +1975,9 @@ export function ProjectWorkspace() {
     { key: 'home', title: '工作台' },
   ]);
   const [activeBrowserTabKey, setActiveBrowserTabKey] = useState('home');
+  /** 标签页重命名状态 */
+  const [editingTabId, setEditingTabId] = useState<string | null>(null);
+  const [editingTabTitle, setEditingTabTitle] = useState('');
 
   useEffect(() => {
     setBrowserTabs(prev => prev.map(tab =>
@@ -1995,6 +1999,40 @@ export function ProjectWorkspace() {
       if (next) setActiveBrowserTabKey(next.key);
     }
   }, [browserTabs, activeBrowserTabKey]);
+
+  /** 开始重命名标签页 */
+  const handleStartRenameTab = useCallback((key: string, currentTitle: string) => {
+    setEditingTabId(key);
+    setEditingTabTitle(currentTitle);
+  }, []);
+
+  /** 保存重命名 */
+  const handleSaveRenameTab = useCallback(async () => {
+    if (!editingTabId || !editingTabTitle.trim()) {
+      setEditingTabId(null);
+      return;
+    }
+    const newTitle = editingTabTitle.trim();
+    // 更新前端状态
+    setBrowserTabs(prev => prev.map(tab =>
+      tab.key === editingTabId ? { ...tab, title: newTitle } : tab
+    ));
+    // 同步到后端（如果 key 是会话 ID 格式的 conversationId）
+    if (editingTabId.startsWith('conv-') || editingTabId.length > 20) {
+      try {
+        await conversationsApi.update(editingTabId, { title: newTitle });
+      } catch (err) {
+        console.warn('[Rename] Failed to sync to backend:', err);
+      }
+    }
+    setEditingTabId(null);
+  }, [editingTabId, editingTabTitle]);
+
+  /** 取消重命名 */
+  const handleCancelRename = useCallback(() => {
+    setEditingTabId(null);
+    setEditingTabTitle('');
+  }, []);
   const taskProgress = 68; // 真实进度字段后端暂无，保留占位
 
   /* ── 找到 kanban 中对应的项目（项目模式用来读写 tags/priority）── */
@@ -2311,7 +2349,34 @@ export function ProjectWorkspace() {
                   onMouseEnter={(e) => { if (!isActive) { e.currentTarget.style.background = '#f3f4f6'; e.currentTarget.style.color = '#374151'; } }}
                   onMouseLeave={(e) => { if (!isActive) { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#6b7280'; } }}
                 >
-                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 160 }}>{tab.title}</span>
+                  {editingTabId === tab.key ? (
+                    <input
+                      type="text"
+                      value={editingTabTitle}
+                      onChange={(e) => setEditingTabTitle(e.target.value)}
+                      onBlur={handleSaveRenameTab}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') handleSaveRenameTab();
+                        if (e.key === 'Escape') handleCancelRename();
+                      }}
+                      onClick={(e) => e.stopPropagation()}
+                      autoFocus
+                      style={{
+                        border: 'none', outline: 'none', background: 'transparent',
+                        fontSize: 14, fontWeight: 'inherit', color: 'inherit',
+                        width: 120, padding: 0, fontFamily: 'inherit',
+                      }}
+                    />
+                  ) : (
+                    <span
+                      onDoubleClick={(e) => {
+                        e.stopPropagation();
+                        handleStartRenameTab(tab.key, tab.title);
+                      }}
+                      style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 160 }}
+                      title="双击重命名"
+                    >{tab.title}</span>
+                  )}
                   <span
                     onClick={(e) => { e.stopPropagation(); handleCloseBrowserTab(tab.key); }}
                     style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 20, height: 20, borderRadius: 6, opacity: 0.4, cursor: 'pointer', transition: 'all 0.15s', marginLeft: 4 }}

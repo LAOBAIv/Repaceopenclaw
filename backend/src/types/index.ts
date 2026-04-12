@@ -4,6 +4,7 @@
  */
 
 import { Request, Response } from 'express';
+import { UserRole } from '../services/UserService';
 
 // ============ API 响应类型 ============
 
@@ -59,7 +60,7 @@ export interface AuthenticatedRequest extends Request {
   user?: {
     id: string;
     email: string;
-    role: string;
+    role: UserRole;
   };
 }
 

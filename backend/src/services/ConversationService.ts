@@ -122,6 +122,21 @@ export const ConversationService = {
   },
 
   /**
+   * 更新会话信息（标题、项目关联等）
+   */
+  update(id: string, data: { title?: string; projectId?: string | null; taskId?: string | null }): Conversation | null {
+    const db = getDb();
+    const existing = this.getById(id);
+    if (!existing) return null;
+    const title = data.title ?? existing.title;
+    const projectId = data.projectId !== undefined ? data.projectId : existing.projectId;
+    const taskId = data.taskId !== undefined ? data.taskId : existing.taskId;
+    db.run("UPDATE conversations SET title=?, project_id=?, task_id=? WHERE id=?", [title, projectId, taskId, id]);
+    saveDb();
+    return this.getById(id);
+  },
+
+  /**
    * 向已有会话追加新的参与智能体（幂等，已存在则忽略）
    */
   addAgent(conversationId: string, agentId: string): void {

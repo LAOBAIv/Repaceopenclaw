@@ -61,7 +61,7 @@ router.post("/context-chat", async (req: Request, res: Response) => {
           name: agent.name,
           systemPrompt: agent.systemPrompt || "",
           writingStyle: agent.writingStyle || "balanced",
-          expertise: agent.expertise ? JSON.parse(agent.expertise) : [],
+          expertise: agent.expertise ? (Array.isArray(agent.expertise) ? agent.expertise : JSON.parse(agent.expertise)) : [],
           modelName: agent.modelName,
           modelProvider: agent.modelProvider,
           temperature: agent.temperature,
@@ -80,24 +80,16 @@ router.post("/context-chat", async (req: Request, res: Response) => {
         messages,
         (chunk) => {
           fullContent += chunk;
-          res.write(`data: ${JSON.stringify({ chunk, content: fullContent })}
-
-`);
+          res.write(`data: ${JSON.stringify({ chunk, content: fullContent })}\n\n`);
         },
         (tokens) => {
           tokenCount = tokens;
-          res.write(`data: ${JSON.stringify({ done: true, tokenCount, content: fullContent })}
-
-`);
-          res.write("data: [DONE]
-
-");
+          res.write(`data: ${JSON.stringify({ done: true, tokenCount, content: fullContent })}\n\n`);
+          res.write("data: [DONE]\n\n");
           res.end();
         },
         (err) => {
-          res.write(`data: ${JSON.stringify({ error: err.message })}
-
-`);
+          res.write(`data: ${JSON.stringify({ error: err.message })}\n\n`);
           res.end();
         }
       );
@@ -114,7 +106,7 @@ router.post("/context-chat", async (req: Request, res: Response) => {
           name: agent.name,
           systemPrompt: agent.systemPrompt || "",
           writingStyle: agent.writingStyle || "balanced",
-          expertise: agent.expertise ? JSON.parse(agent.expertise) : [],
+          expertise: agent.expertise ? (Array.isArray(agent.expertise) ? agent.expertise : JSON.parse(agent.expertise)) : [],
           modelName: agent.modelName,
           modelProvider: agent.modelProvider,
           temperature: agent.temperature,

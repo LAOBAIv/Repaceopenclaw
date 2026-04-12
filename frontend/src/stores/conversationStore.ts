@@ -145,19 +145,21 @@ export const useConversationStore = create<ConversationStore>((set, get) => ({
           }
 
           if (data.type === "agent_start" && data.messageId && data.agentId) {
+          console.log("[WS] agent_start:", data.messageId, data.agentId, "panels:", panels.length);
             // 找到包含此 agentId 的 panel（单智能体：主 agentId；多智能体：agentIds 包含）
             const panel = panels.find(
               (p) => p.agentId === data.agentId || p.agentIds.includes(data.agentId)
             );
-            if (panel) get().startStreaming(panel.id, data.messageId);
+            console.log("[WS] agent_start panel:", panel?.id); if (panel) get().startStreaming(panel.id, data.messageId);
           }
           if (data.type === "agent_chunk" && data.messageId && data.chunk) {
             const panel = panels.find((p) => p.streamingMessageId === data.messageId);
             if (panel) get().appendStreamChunk(panel.id, data.messageId, data.chunk);
           }
           if (data.type === "agent_done" && data.messageId && data.message) {
+          console.log("[WS] agent_done:", data.messageId, "content:", data.message?.content?.length);
             const panel = panels.find((p) => p.streamingMessageId === data.messageId);
-            if (panel) get().finishStreaming(panel.id, data.messageId, data.message);
+            console.log("[WS] agent_done panel:", panel?.id); if (panel) get().finishStreaming(panel.id, data.messageId, data.message);
           }
         } catch {}
       };
@@ -184,15 +186,45 @@ export const useConversationStore = create<ConversationStore>((set, get) => ({
       ),
     }));
 
-    if (wsInstance?.readyState === WebSocket.OPEN) {
-      wsInstance.send(JSON.stringify({
-        type: "chat",
-        conversationId: panel.conversationId,
-        agentId: panel.agentId,     // 主 agentId（向后端发送时使用，后端再按会话取全量参与者）
-        agentIds: panel.agentIds,   // 全量参与 agentIds，后端可据此扩展多智能体轮询
-        content,
-      }));
+    // 如果 WS 未连接，先尝试重连
+    if (wsInstance?.readyState !== WebSocket.OPEN) {
+      console.warn("[WS] Not connected, reconnecting...");
+      get().connect();
+      // 等待连接建立后重试发送（最多等 5 秒）
+      let retries = 0;
+      const retryInterval = setInterval(() => {
+        retries++;
+        if (wsInstance?.readyState === WebSocket.OPEN) {
+          clearInterval(retryInterval);
+          wsInstance.send(JSON.stringify({
+            type: "chat",
+            conversationId: panel.conversationId,
+            agentId: panel.agentId,
+            agentIds: panel.agentIds,
+            content,
+          }));
+          console.log("[WS] Message sent after reconnect");
+        } else if (retries > 15) {
+          clearInterval(retryInterval);
+          console.error("[WS] Failed to reconnect, message lost");
+          // 移除乐观消息，显示发送失败
+          set((s) => ({
+            openPanels: s.openPanels.map((p) =>
+              p.id === panelId ? { ...p, messages: p.messages.filter((m) => m.id !== optimisticMsg.id) } : p
+            ),
+          }));
+        }
+      }, 300);
+      return;
     }
+
+    wsInstance.send(JSON.stringify({
+      type: "chat",
+      conversationId: panel.conversationId,
+      agentId: panel.agentId,
+      agentIds: panel.agentIds,
+      content,
+    }));
   },
 
   addPanel: async (agentId, agentName, agentColor, projectId) => {
