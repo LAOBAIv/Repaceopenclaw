@@ -1,0 +1,100 @@
+{"conversations":[{"from":"user","value":"RepaceClaw 的整体工程架构是什么？"},{"from":"assistant","value":"RepaceClaw 采用三层架构：前端应用层 → 业务网关层（自研）→ OpenClaw 内核层。业务层负责用户、权限、代理、数据库；OpenClaw 负责智能体调度、会话管理、LLM 调用、Skill 执行，两层通过内网 HTTP/WebSocket 通信。"}]}
+{"conversations":[{"from":"user","value":"RepaceClaw 与原生 OpenClaw 的工程边界如何划分？"},{"from":"assistant","value":"业务层不侵入 AI 内核，只做权限校验与请求转发；OpenClaw 不感知用户体系，只按 agentId/sessionId 执行逻辑，实现职责解耦。"}]}
+{"conversations":[{"from":"user","value":"RepaceClaw 为什么采用单 Gateway 架构而不分布式？"},{"from":"assistant","value":"单实例足以支撑中小规模 SaaS，部署简单、稳定性高；后期可通过无状态改造实现集群，无需重构业务层。"}]}
+{"conversations":[{"from":"user","value":"RepaceClaw 业务服务是否必须与 OpenClaw 同机部署？"},{"from":"assistant","value":"不需要。OpenClaw 可部署在内网独立机器，业务服务通过内网 IP 调用，更安全。"}]}
+{"conversations":[{"from":"user","value":"RepaceClaw 架构如何保证高可用？"},{"from":"assistant","value":"业务层集群部署 + OpenClaw 健康检查 + 数据库主从 + Redis 缓存，单点故障不影响整体服务。"}]}
+{"conversations":[{"from":"user","value":"RepaceClaw 前后端分离模式如何对接流式输出？"},{"from":"assistant","value":"前端通过 SSE 或 WebSocket 连接业务服务，业务层透传 OpenClaw 流式数据包，实现打字机效果。"}]}
+{"conversations":[{"from":"user","value":"RepaceClaw 如何做请求流量控制？"},{"from":"assistant","value":"业务层基于 Redis 做用户级限流、IP 限流、并发会话限流，保护 OpenClaw 内核。"}]}
+{"conversations":[{"from":"user","value":"RepaceClaw 能否对接外部 API 网关？"},{"from":"assistant","value":"可以，如 Nginx、Higress、Kong，负责 HTTPS 卸载、负载均衡、WAF 防护。"}]}
+{"conversations":[{"from":"user","value":"RepaceClaw 微服务拆分方案是什么？"},{"from":"assistant","value":"可拆分为用户服务、会话服务、代理服务、管理后台服务，统一调用 OpenClaw 内核。"}]}
+{"conversations":[{"from":"user","value":"RepaceClaw 工程化最大优势是什么？"},{"from":"assistant","value":"跳过 AI 内核研发，90%复杂逻辑由 OpenClaw 提供，业务层只做轻量化封装。"}]}
+{"conversations":[{"from":"user","value":"RepaceClaw 用户与智能体的数据库映射关系？"},{"from":"assistant","value":"一对多关系，user_id 关联多个 agent_id，通过 agent 表的 user_id 外键实现强绑定。"}]}
+{"conversations":[{"from":"user","value":"RepaceClaw 如何实现用户级数据隔离？"},{"from":"assistant","value":"所有查询必须携带 user_id 条件，SQL 层面强制数据隔离，防止越权。"}]}
+{"conversations":[{"from":"user","value":"一个用户在 RepaceClaw 最多可创建多少会话？"},{"from":"assistant","value":"由业务层配额配置控制，默认无上限，OpenClaw 原生支持海量会话存储。"}]}
+{"conversations":[{"from":"user","value":"RepaceClaw 会话 ID 生成规则是什么？"},{"from":"assistant","value":"采用 UUID 或雪花算法，全局唯一，避免冲突与猜测。"}]}
+{"conversations":[{"from":"user","value":"OpenClaw 原生 session 如何与 RepaceClaw 业务会话关联？"},{"from":"assistant","value":"业务表 session 记录 openclaw_session_id，建立一一对应关系。"}]}
+{"conversations":[{"from":"user","value":"RepaceClaw 如何防止越权访问他人会话？"},{"from":"assistant","value":"接口层校验 user_id → agent_id → session_id 链路，不匹配直接返回 403。"}]}
+{"conversations":[{"from":"user","value":"RepaceClaw 支持公共智能体模板吗？"},{"from":"assistant","value":"支持，平台预设模板，用户一键创建私有实例，数据独立隔离。"}]}
+{"conversations":[{"from":"user","value":"RepaceClaw 能否实现多人协同同一个智能体？"},{"from":"assistant","value":"可以，通过权限表配置协作者 user_id 列表，实现团队共享。"}]}
+{"conversations":[{"from":"user","value":"RepaceClaw 会话上下文如何实现断点续传？"},{"from":"assistant","value":"OpenClaw 自动持久化上下文，业务层记录会话状态，重新进入自动加载。"}]}
+{"conversations":[{"from":"user","value":"RepaceClaw 如何清理过期无用会话？"},{"from":"assistant","value":"定时任务清理超过指定时间未活跃会话，释放 OpenClaw 存储资源。"}]}
+{"conversations":[{"from":"user","value":"RepaceClaw 多用户并发请求会阻塞 OpenClaw 吗？"},{"from":"assistant","value":"不会，OpenClaw 采用异步非阻塞架构，支持高并发会话调度。"}]}
+{"conversations":[{"from":"user","value":"RepaceClaw 智能体配置是否支持动态修改？"},{"from":"assistant","value":"支持，业务层更新配置后，OpenClaw 无需重启即可生效。"}]}
+{"conversations":[{"from":"user","value":"RepaceClaw 如何实现会话消息漫游？"},{"from":"assistant","value":"业务数据库存储完整消息记录，跨设备登录自动同步。"}]}
+{"conversations":[{"from":"user","value":"RepaceClaw 能否暂停/恢复某个智能体？"},{"from":"assistant","value":"可以，业务层标记状态，转发请求时判断是否允许执行。"}]}
+{"conversations":[{"from":"user","value":"RepaceClaw 会话上下文长度如何控制？"},{"from":"assistant","value":"通过 OpenClaw 配置 contextWindow 控制，业务层可按用户等级差异化配置。"}]}
+{"conversations":[{"from":"user","value":"RepaceClaw 业务层推荐技术栈？"},{"from":"assistant","value":"后端 NodeJS/Java/Python；前端 Vue3/React；数据库 PostgreSQL；缓存 Redis。"}]}
+{"conversations":[{"from":"user","value":"RepaceClaw 需要修改 OpenClaw 哪些源码文件？"},{"from":"assistant","value":"仅需修改 http 中间件，增加 IP 白名单与 user_id 透传，不改动核心逻辑。"}]}
+{"conversations":[{"from":"user","value":"RepaceClaw 如何安全调用 OpenClaw API？"},{"from":"assistant","value":"使用 API Key + 内网白名单双重验证，禁止公网直接访问 OpenClaw。"}]}
+{"conversations":[{"from":"user","value":"RepaceClaw 能否自定义 OpenClaw 返回数据结构？"},{"from":"assistant","value":"可以，业务层对 OpenClaw 返回结果做包装，统一前端格式。"}]}
+{"conversations":[{"from":"user","value":"RepaceClaw 如何处理 OpenClaw 异常崩溃？"},{"from":"assistant","value":"业务层捕获异常，返回友好提示，配合进程守护工具自动重启 OpenClaw。"}]}
+{"conversations":[{"from":"user","value":"RepaceClaw 开发中如何调试 OpenClaw 内核？"},{"from":"assistant","value":"开启 OpenClaw 日志级别 debug，业务层透传 requestId 全链路追踪。"}]}
+{"conversations":[{"from":"user","value":"RepaceClaw 能否扩展 OpenClaw 原生接口？"},{"from":"assistant","value":"可以，在业务层封装复合接口，组合多个 OpenClaw 原子能力。"}]}
+{"conversations":[{"from":"user","value":"RepaceClaw 如何实现文件上传与权限控制？"},{"from":"assistant","value":"业务层处理上传与鉴权，将文件路径传给 OpenClaw 读取执行。"}]}
+{"conversations":[{"from":"user","value":"RepaceClaw 自定义 Skill 存放路径？"},{"from":"assistant","value":"放在 OpenClaw skills 目录，通过配置挂载到指定智能体。"}]}
+{"conversations":[{"from":"user","value":"RepaceClaw 如何禁止用户使用高危 Skill？"},{"from":"assistant","value":"业务层创建智能体时禁用 exec、shell 等高危技能，仅开放白名单。"}]}
+{"conversations":[{"from":"user","value":"RepaceClaw 智能体系统提示词如何管理？"},{"from":"assistant","value":"存储在业务数据库，创建 OpenClaw 智能体时动态注入。"}]}
+{"conversations":[{"from":"user","value":"RepaceClaw 如何实现多语言切换？"},{"from":"assistant","value":"业务层处理国际化，OpenClaw 提示词动态适配语言。"}]}
+{"conversations":[{"from":"user","value":"RepaceClaw 能否对接 SSO 单点登录？"},{"from":"assistant","value":"可以，业务层扩展 OAuth2、LDAP 等登录方式，不影响 AI 内核。"}]}
+{"conversations":[{"from":"user","value":"RepaceClaw 部署时如何环境隔离？"},{"from":"assistant","value":"dev/test/prod 使用独立 OpenClaw 实例与数据库，通过 --profile 区分。"}]}
+{"conversations":[{"from":"user","value":"RepaceClaw 如何做 CI/CD 自动化部署？"},{"from":"assistant","value":"业务服务容器化，OpenClaw 作为基础镜像，流水线统一发布。"}]}
+{"conversations":[{"from":"user","value":"RepaceClaw 支持同时接入多少家模型厂商？"},{"from":"assistant","value":"无上限，OpenClaw providers 配置多厂商，业务层按策略路由。"}]}
+{"conversations":[{"from":"user","value":"RepaceClaw 如何配置 Qwen3.6 接入？"},{"from":"assistant","value":"在 OpenClaw 配置 api=openai-completions，填写百炼地址与密钥，指定模型 ID。"}]}
+{"conversations":[{"from":"user","value":"RepaceClaw 如何实现模型负载均衡？"},{"from":"assistant","value":"OpenClaw 原生支持多 endpoint 配置，自动轮询与故障转移。"}]}
+{"conversations":[{"from":"user","value":"RepaceClaw 不同用户能否使用不同模型？"},{"from":"assistant","value":"可以，user 或 agent 表配置 model 字段，转发时指定模型。"}]}
+{"conversations":[{"from":"user","value":"RepaceClaw 如何处理模型调用超时？"},{"from":"assistant","value":"OpenClaw 自动重试与熔断，业务层返回降级提示。"}]}
+{"conversations":[{"from":"user","value":"RepaceClaw 支持模型调用计费统计吗？"},{"from":"assistant","value":"支持，业务层记录每次调用 token 与费用，生成账单。"}]}
+{"conversations":[{"from":"user","value":"RepaceClaw 如何切换流式/非流式输出？"},{"from":"assistant","value":"业务层请求参数控制，OpenClaw 自动适配两种模式。"}]}
+{"conversations":[{"from":"user","value":"RepaceClaw 支持自定义模型参数吗？"},{"from":"assistant","value":"支持，temperature、top_p 等参数可在智能体级别配置。"}]}
+{"conversations":[{"from":"user","value":"RepaceClaw 如何对接本地 Ollama 模型？"},{"from":"assistant","value":"OpenClaw 配置本地 baseUrl，apiKey 设为 no-key 即可调用。"}]}
+{"conversations":[{"from":"user","value":"RepaceClaw 模型密钥如何安全存储？"},{"from":"assistant","value":"加密存储在业务数据库，运行时解密注入 OpenClaw，不明文落地。"}]}
+{"conversations":[{"from":"user","value":"RepaceClaw 推荐必开开发类 Skill？"},{"from":"assistant","value":"code-editor、exec、file-manager、sequential-thinking、debugger、git-assistant。"}]}
+{"conversations":[{"from":"user","value":"RepaceClaw 如何实现 Skill 使用权限控制？"},{"from":"assistant","value":"按用户等级配置 Skill 白名单，低权限用户禁用高危能力。"}]}
+{"conversations":[{"from":"user","value":"RepaceClaw Skill 执行日志如何留存？"},{"from":"assistant","value":"OpenClaw 执行日志透传到业务层，存入审计日志库。"}]}
+{"conversations":[{"from":"user","value":"RepaceClaw 能否开发私有业务 Skill？"},{"from":"assistant","value":"可以，基于 OpenClaw 插件规范编写，不暴露给外部。"}]}
+{"conversations":[{"from":"user","value":"RepaceClaw 浏览器 Skill 如何配置？"},{"from":"assistant","value":"OpenClaw 配置无头浏览器路径，业务层控制可访问域名白名单。"}]}
+{"conversations":[{"from":"user","value":"RepaceClaw 代码执行 Skill 如何安全沙箱？"},{"from":"assistant","value":"使用 Docker 隔离、资源限制、网络限制，防止恶意代码。"}]}
+{"conversations":[{"from":"user","value":"RepaceClaw 如何禁止智能体自动调用某些 Skill？"},{"from":"assistant","value":"在 OpenClaw 智能体配置中禁用对应 Skill，仅保留手动调用。"}]}
+{"conversations":[{"from":"user","value":"RepaceClaw Skill 执行超时如何处理？"},{"from":"assistant","value":"OpenClaw 自动终止超时任务，业务层返回中断提示。"}]}
+{"conversations":[{"from":"user","value":"RepaceClaw 能否接入第三方 API 作为 Skill？"},{"from":"assistant","value":"可以，封装 HTTP 请求为自定义 Skill，挂载到智能体。"}]}
+{"conversations":[{"from":"user","value":"RepaceClaw 多工具链式调用由谁控制？"},{"from":"assistant","value":"OpenClaw 内核自主规划，业务层不参与工具链决策。"}]}
+{"conversations":[{"from":"user","value":"RepaceClaw 核心数据表有哪些？"},{"from":"assistant","value":"user、agent、session、message、role、quota、log、model_config。"}]}
+{"conversations":[{"from":"user","value":"RepaceClaw 消息表如何设计优化查询？"},{"from":"assistant","value":"按 session_id 索引，分表分库，历史数据归档，提升查询速度。"}]}
+{"conversations":[{"from":"user","value":"RepaceClaw 能否替换 OpenClaw 文件存储为数据库？"},{"from":"assistant","value":"可以，修改 OpenClaw 存储层适配器，将会话数据存入 PostgreSQL。"}]}
+{"conversations":[{"from":"user","value":"RepaceClaw 如何实现数据备份与恢复？"},{"from":"assistant","value":"数据库定时备份，OpenClaw 配置文件版本管理，快速恢复。"}]}
+{"conversations":[{"from":"user","value":"RepaceClaw 支持对象存储吗？"},{"from":"assistant","value":"支持，文件上传至 MinIO/S3，业务层记录 URL 与权限。"}]}
+{"conversations":[{"from":"user","value":"RepaceClaw 如何做数据脱敏？"},{"from":"assistant","value":"日志与消息敏感信息脱敏，符合隐私合规要求。"}]}
+{"conversations":[{"from":"user","value":"RepaceClaw 会话历史支持全文检索吗？"},{"from":"assistant","value":"支持，集成 Elasticsearch，实现消息内容快速检索。"}]}
+{"conversations":[{"from":"user","value":"RepaceClaw 用户数据能否导出？"},{"from":"assistant","value":"可以，业务层提供导出接口，生成 PDF/Excel 格式。"}]}
+{"conversations":[{"from":"user","value":"RepaceClaw 如何处理大文件上下文？"},{"from":"assistant","value":"OpenClaw 分片读取，业务层控制文件大小与类型限制。"}]}
+{"conversations":[{"from":"user","value":"RepaceClaw 数据库事务如何保证一致性？"},{"from":"assistant","value":"创建智能体/会话时使用事务，确保业务数据与 OpenClaw 状态一致。"}]}
+{"conversations":[{"from":"user","value":"RepaceClaw 如何防止 OpenClaw 被未授权访问？"},{"from":"assistant","value":"内网部署 + API Key + IP 白名单 + 请求签名，四重防护。"}]}
+{"conversations":[{"from":"user","value":"RepaceClaw 支持 RBAC 权限体系吗？"},{"from":"assistant","value":"支持，管理员/普通用户/开发者多角色，细粒度权限控制。"}]}
+{"conversations":[{"from":"user","value":"RepaceClaw 敏感操作如何做二次验证？"},{"from":"assistant","value":"关键操作增加手机/邮箱验证码，日志记录操作人。"}]}
+{"conversations":[{"from":"user","value":"RepaceClaw 如何防止 SQL 注入？"},{"from":"assistant","value":"使用预编译语句、ORM 框架、参数绑定，杜绝拼接 SQL。"}]}
+{"conversations":[{"from":"user","value":"RepaceClaw 接口防重放攻击方案？"},{"from":"assistant","value":"请求 timestamp + nonce + 签名，过期失效，防止重复提交。"}]}
+{"conversations":[{"from":"user","value":"RepaceClaw 如何防止内容注入攻击？"},{"from":"assistant","value":"输入内容过滤、XSS 防护、prompt 注入检测拦截。"}]}
+{"conversations":[{"from":"user","value":"RepaceClaw 管理员能否查看用户隐私数据？"},{"from":"assistant","value":"默认不可以，需开启审计权限并留痕，满足合规要求。"}]}
+{"conversations":[{"from":"user","value":"RepaceClaw 支持 IP 黑名单吗？"},{"from":"assistant","value":"支持，Redis 存储黑名单，网关层直接拦截。"}]}
+{"conversations":[{"from":"user","value":"RepaceClaw 如何保证 API Key 不泄露？"},{"from":"assistant","value":"前端不存储密钥，后端加密传输，定期轮换。"}]}
+{"conversations":[{"from":"user","value":"RepaceClaw 操作审计日志保留多久？"},{"from":"assistant","value":"默认 180 天，可配置，满足等保与合规要求。"}]}
+{"conversations":[{"from":"user","value":"RepaceClaw 推荐部署操作系统？"},{"from":"assistant","value":"Linux CentOS 7+/Ubuntu 20.04+，稳定性与兼容性最佳。"}]}
+{"conversations":[{"from":"user","value":"RepaceClaw 如何部署为系统服务？"},{"from":"assistant","value":"制作 systemd 服务，开机自启，异常自动重启。"}]}
+{"conversations":[{"from":"user","value":"RepaceClaw 支持 Docker 容器化部署吗？"},{"from":"assistant","value":"完全支持，业务服务与 OpenClaw 分别打包镜像，docker-compose 编排。"}]}
+{"conversations":[{"from":"user","value":"RepaceClaw 服务器最低配置要求？"},{"from":"assistant","value":"2核4G，基础运行；高并发推荐 4核16G 以上。"}]}
+{"conversations":[{"from":"user","value":"RepaceClaw 如何监控服务状态？"},{"from":"assistant","value":"对接 Prometheus + Grafana，监控接口耗时、错误率、OpenClaw 状态。"}]}
+{"conversations":[{"from":"user","value":"RepaceClaw 异常告警如何配置？"},{"from":"assistant","value":"服务异常、调用失败通过邮件/钉钉/飞书推送告警。"}]}
+{"conversations":[{"from":"user","value":"RepaceClaw 日志如何分级管理？"},{"from":"assistant","value":"error/warn/info/debug 分级，按天切割，避免磁盘爆满。"}]}
+{"conversations":[{"from":"user","value":"RepaceClaw 如何平滑升级 OpenClaw？"},{"from":"assistant","value":"备份配置 → 替换二进制 → 校验启动 → 灰度放量，无感知升级。"}]}
+{"conversations":[{"from":"user","value":"RepaceClaw 支持跨机房部署吗？"},{"from":"assistant","value":"支持，业务层多机房，OpenClaw 本地部署，降低延迟。"}]}
+{"conversations":[{"from":"user","value":"RepaceClaw 如何做压力测试？"},{"from":"assistant","value":"使用 JMeter 模拟多用户并发，测试 OpenClaw 性能瓶颈。"}]}
+{"conversations":[{"from":"user","value":"RepaceClaw 如何实现会员付费体系？"},{"from":"assistant","value":"按等级配置配额、模型权限、Skill 权限，对接支付系统。"}]}
+{"conversations":[{"from":"user","value":"RepaceClaw 支持按量计费吗？"},{"from":"assistant","value":"支持，按 token 量、消息条数、调用次数统计计费。"}]}
+{"conversations":[{"from":"user","value":"RepaceClaw 能否发展为 PaaS 平台？"},{"from":"assistant","value":"可以，开放 OpenClaw 能力 API，支持第三方接入开发。"}]}
+{"conversations":[{"from":"user","value":"RepaceClaw 支持微信公众号/小程序接入吗？"},{"from":"assistant","value":"支持，业务层封装渠道适配，统一转发到 OpenClaw。"}]}
+{"conversations":[{"from":"user","value":"RepaceClaw 如何实现智能体市场？"},{"from":"assistant","value":"平台上架优质智能体模板，用户付费购买使用。"}]}
+{"conversations":[{"from":"user","value":"RepaceClaw 支持多模态能力吗？"},{"from":"assistant","value":"支持，OpenClaw 对接多模型，业务层处理图片/音频上传。"}]}
+{"conversations":[{"from":"user","value":"RepaceClaw 能否接入 RAG 知识库？"},{"from":"assistant","value":"可以，扩展 OpenClaw Skill，实现文档检索与问答。"}]}
+{"conversations":[{"from":"user","value":"RepaceClaw 支持定时任务智能体吗？"},{"from":"assistant","value":"支持，业务层调度系统触发 OpenClaw 执行指定任务。"}]}
+{"conversations":[{"from":"user","value":"RepaceClaw 如何做 A/B 测试模型效果？"},{"from":"assistant","value":"按用户分流，调用不同模型，统计满意度与效果。"}]}
+{"conversations":[{"from":"user","value":"RepaceClaw 私有化部署方案是什么？"},{"from":"assistant","value":"一体机交付，离线模型，内网隔离，定制化功能，本地运维。"}]}
