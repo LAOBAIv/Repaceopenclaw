@@ -4,6 +4,7 @@
 // OpenClaw Gateway 负责：模型路由、LLM API 调用、流式输出
 
 import WebSocket, { WebSocketServer } from "ws";
+import { logger } from '../utils/logger';
 import { AgentService } from "../services/AgentService";
 import { ConversationService } from "../services/ConversationService";
 import { ProjectService } from "../services/ProjectService";
@@ -13,7 +14,7 @@ import https from "https";
 import { v4 as uuidv4 } from "uuid";
 
 const GATEWAY_URL = process.env.OPENCLAW_GATEWAY_URL || "http://localhost:18789";
-const GATEWAY_TOKEN = process.env.OPENCLAW_GATEWAY_TOKEN || "021a420c0665ef2813ffe22e10725a629c58565ced1345d3";
+const GATEWAY_TOKEN = process.env.OPENCLAW_GATEWAY_TOKEN || "";
 
 interface WSMessage {
   type: "chat" | "multi_chat" | "ping" | "auth";
@@ -37,7 +38,7 @@ export function setupWebSocket(server: http.Server) {
   const clients = new Map<WebSocket, WSClient>();
 
   wss.on("connection", (ws: WebSocket, req: http.IncomingMessage) => {
-    console.log("[WS] Client connected");
+    logger.info("[WS] Client connected");
 
     // 从 URL query 提取 token（支持 ?token=xxx）
     const url = new URL(req.url || "/", `http://${req.headers.host}`);
@@ -52,7 +53,7 @@ export function setupWebSocket(server: http.Server) {
         const payload = UserService.verifyToken(queryToken);
         client.userId = payload.id;
         client.userRole = payload.role;
-        console.log(`[WS] Authenticated via query: ${payload.id.slice(0, 8)}`);
+        logger.info(`[WS] Authenticated via query: ${payload.id.slice(0, 8)}`);
       } catch {
         ws.send(JSON.stringify({ type: "error", message: "Invalid authentication token" }));
       }
@@ -75,7 +76,7 @@ export function setupWebSocket(server: http.Server) {
             client.userId = payload.id;
             client.userRole = payload.role;
             ws.send(JSON.stringify({ type: "auth_ok", userId: payload.id, role: payload.role }));
-            console.log(`[WS] Authenticated: ${payload.id.slice(0, 8)} (${payload.role})`);
+            logger.info(`[WS] Authenticated: ${payload.id.slice(0, 8)} (${payload.role})`);
           } catch {
             ws.send(JSON.stringify({ type: "error", message: "Invalid token" }));
           }
@@ -167,8 +168,8 @@ export function setupWebSocket(server: http.Server) {
           content: m.content,
         }));
 
-        // 调用 OpenClaw Gateway 生成回复
-        await callGateway(ws, conversationId, targetAgentId, systemPrompt, history, content);
+        // 调用 OpenClaw Gateway 生成回复（带配额检查与用量记录）
+        await callGateway(ws, conversationId, targetAgentId, systemPrompt, history, content, client.userId);
         return;
       }
 
@@ -178,6 +179,17 @@ export function setupWebSocket(server: http.Server) {
         if (!content || !conversationId || !projectId) {
           ws.send(JSON.stringify({ type: "error", message: "Missing fields: conversationId, projectId, content" }));
           return;
+        }
+
+        // Phase 4: 会话归属校验（与 chat 保持一致）
+        const db = require("../db/client").getDb();
+        const ownerCheck = db.exec("SELECT user_id FROM conversations WHERE id = ?", [conversationId]);
+        if (ownerCheck.length && ownerCheck[0].values.length) {
+          const ownerId = ownerCheck[0].values[0][0] as string;
+          if (ownerId && ownerId !== client.userId && client.userRole !== "super_admin" && client.userRole !== "admin") {
+            ws.send(JSON.stringify({ type: "error", message: "无权访问此会话" }));
+            return;
+          }
         }
 
         const project = ProjectService.getById(projectId);
@@ -230,7 +242,7 @@ export function setupWebSocket(server: http.Server) {
               content: m.content,
             }));
 
-            await callGateway(ws, conversationId, agentId, systemPrompt, history, content);
+            await callGateway(ws, conversationId, agentId, systemPrompt, history, content, client.userId);
           }
 
           ws.send(JSON.stringify({ type: "workflow_node_done", nodeId: node.id }));
@@ -247,8 +259,8 @@ export function setupWebSocket(server: http.Server) {
       ws.send(JSON.stringify({ type: "error", message: `Unknown message type: ${(msg as any).type}` }));
     });
 
-    ws.on("close", () => console.log("[WS] Client disconnected"));
-    ws.on("error", (err) => console.error("[WS] Error:", err.message));
+    ws.on("close", () => logger.info("[WS] Client disconnected"));
+    ws.on("error", (err) => logger.error("[WS] Error: " + err.message));
   });
 
   return wss;
@@ -265,8 +277,20 @@ async function callGateway(
   agentId: string,
   systemPrompt: string,
   history: Array<{ role: string; content: string }>,
-  userContent: string
+  userContent: string,
+  userId?: string
 ): Promise<void> {
+  // ── 配额检查 ──────────────────────────────────────────────────────
+  if (userId) {
+    const quotaResult = AgentService.checkQuota(agentId, userId);
+    if (!quotaResult.allowed) {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: "error", message: quotaResult.reason, agentId }));
+      }
+      return;
+    }
+  }
+
   return new Promise((resolve) => {
     const msgId = uuidv4();
 
@@ -280,7 +304,7 @@ async function callGateway(
       { role: "user", content: userContent },
     ];
 
-    console.log(`[Gateway] Calling with model=openclaw, messages=${messages.length}, agent=${agentId}`);
+    logger.info(`[Gateway] Calling with model=openclaw, messages=${messages.length}, agent=${agentId}`);
 
     const url = new URL(`${GATEWAY_URL}/v1/chat/completions`);
     const payload = JSON.stringify({
@@ -307,7 +331,7 @@ async function callGateway(
           const totalTokens = json.usage?.total_tokens || 0;
 
           if (res.statusCode && res.statusCode >= 400) {
-            console.error(`[Gateway] Error ${res.statusCode}:`, body.substring(0, 200));
+            logger.error(`[Gateway] Error ${res.statusCode}: ` + body.substring(0, 200));
             if (ws.readyState === WebSocket.OPEN) {
               ws.send(JSON.stringify({ type: "error", message: `Gateway error: ${body.substring(0, 200)}`, agentId }));
             }
@@ -315,28 +339,40 @@ async function callGateway(
             return;
           }
 
+          // ── 配额检查：maxTokensPerMessage ──────────────────────────
+          const maxTokensPerMsg = AgentService.getMaxTokensPerMessage(agentId);
+          const finalContent = maxTokensPerMsg && content.length > maxTokensPerMsg
+            ? content.substring(0, maxTokensPerMsg)
+            : content;
+
           // 保存到 DB
           const agentMsg = ConversationService.addMessage({
             conversationId,
             role: "agent",
-            content,
+            content: finalContent,
             agentId,
             tokenCount: totalTokens,
           });
 
-          console.log(`[Gateway] Response: ${content.length} chars, ${totalTokens} tokens`);
+          logger.info(`[Gateway] Response: ${finalContent.length} chars, ${totalTokens} tokens`);
 
-          // 模拟流式：逐段发送给前端
-          if (content && ws.readyState === WebSocket.OPEN) {
+          // 模拟流式：逐段发送给前端（受配额限制）
+          if (finalContent && ws.readyState === WebSocket.OPEN) {
             const chunkSize = 20;
-            for (let i = 0; i < content.length; i += chunkSize) {
+            for (let i = 0; i < finalContent.length; i += chunkSize) {
               ws.send(JSON.stringify({
                 type: "agent_chunk",
                 messageId: msgId,
-                chunk: content.substring(i, i + chunkSize),
+                chunk: finalContent.substring(i, i + chunkSize),
                 agentId,
               }));
             }
+          }
+
+          // ── 记录用量 ──────────────────────────────────────────────
+          if (userId) {
+            AgentService.recordUsage(userId, agentId, totalTokens);
+            AgentService.addTokenUsed(agentId, totalTokens);
           }
 
           if (ws.readyState === WebSocket.OPEN) {
@@ -350,7 +386,7 @@ async function callGateway(
           }
           resolve();
         } catch (e: any) {
-          console.error(`[Gateway] Parse error:`, e.message, body.substring(0, 200));
+          logger.error(`[Gateway] Parse error: ${e.message} ${body.substring(0, 200)}`);
           if (ws.readyState === WebSocket.OPEN) {
             ws.send(JSON.stringify({ type: "error", message: e.message, agentId }));
           }
@@ -360,7 +396,7 @@ async function callGateway(
     });
 
     req.on("error", (err) => {
-      console.error(`[Gateway] Request error:`, err.message);
+      logger.error(`[Gateway] Request error: ${err.message}`);
       if (ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ type: "error", message: err.message, agentId }));
       }

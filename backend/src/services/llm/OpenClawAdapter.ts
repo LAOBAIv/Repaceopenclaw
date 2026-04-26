@@ -6,6 +6,7 @@
 //  - OpenClaw Gateway: 底层模型路由 + API 对接 + 流式输出
 
 import { ILLMAdapter } from "./LLMAdapter";
+import { logger } from '../../utils/logger';
 import { MockLLMAdapter } from "./MockLLMAdapter";
 
 export class OpenClawAdapter implements ILLMAdapter {
@@ -74,10 +75,10 @@ export class OpenClawAdapter implements ILLMAdapter {
 
     // 5. OpenClaw Gateway 配置
     const gatewayUrl = process.env.OPENCLAW_GATEWAY_URL || 'http://localhost:18789';
-    const gatewayToken = process.env.OPENCLAW_GATEWAY_TOKEN || '021a420c0665ef2813ffe22e10725a629c58565ced1345d3';
+    const gatewayToken = process.env.OPENCLAW_GATEWAY_TOKEN || '';
 
     try {
-      console.log(`[OpenClawAdapter] → ${gatewayUrl}/v1/chat/completions (model=openclaw)`);
+      logger.info(`[OpenClawAdapter] → ${gatewayUrl}/v1/chat/completions (model=openclaw)`);
 
       const response = await fetch(`${gatewayUrl}/v1/chat/completions`, {
         method: 'POST',
@@ -133,11 +134,11 @@ export class OpenClawAdapter implements ILLMAdapter {
         }
       }
 
-      console.log(`[OpenClawAdapter] ✓ tokens=${totalTokens}`);
+      logger.info(`[OpenClawAdapter] ✓ tokens=${totalTokens}`);
       onComplete(totalTokens);
 
     } catch (err: any) {
-      console.error('[OpenClawAdapter] ✗', err.message);
+      logger.error('[OpenClawAdapter] ✗', err.message);
       onError(err);
       // Fallback to mock
       const mock = new MockLLMAdapter();

@@ -8,12 +8,13 @@
 //   4. 子代理编排
 
 import https from 'https';
+import { logger } from '../utils/logger';
 import http from 'http';
 import { URL } from 'url';
 
 // ─── 配置 ────────────────────────────────────────────────────────────────
 const GATEWAY_URL = process.env.OPENCLAW_GATEWAY_URL || 'http://localhost:18789';
-const GATEWAY_TOKEN = process.env.OPENCLAW_GATEWAY_TOKEN || '021a420c0665ef2813ffe22e10725a629c58565ced1345d3';
+const GATEWAY_TOKEN = process.env.OPENCLAW_GATEWAY_TOKEN || '';
 
 // ─── 类型 ────────────────────────────────────────────────────────────────
 export interface GatewaySession {
@@ -88,7 +89,7 @@ export const GatewaySessionService = {
       modelName: opts.modelName || '',
       messages: [],
     });
-    console.log(`[GatewaySession] Created session ${session.id} for agent "${opts.agentName}" model="${opts.modelName || 'default'}"`);
+    logger.info(`[GatewaySession] Created session ${session.id} for agent "${opts.agentName}" model="${opts.modelName || 'default'}"`);
     return session;
   },
 
@@ -127,7 +128,7 @@ export const GatewaySessionService = {
     session.messages.push({ id: `msg_${Date.now()}`, role: 'user', content, createdAt: new Date().toISOString() });
 
     try {
-      console.log(`[GatewaySession] → /v1/chat/completions (session=${sessionId}, messages=${messages.length})`);
+      logger.info(`[GatewaySession] → /v1/chat/completions (session=${sessionId}, messages=${messages.length})`);
 
       const url = new URL(`${GATEWAY_URL}/v1/chat/completions`);
       const payload = JSON.stringify({
@@ -195,7 +196,7 @@ export const GatewaySessionService = {
             session.messages = session.messages.slice(-40);
           }
 
-          console.log(`[GatewaySession] ✓ session=${sessionId}, tokens=${totalTokens}, length=${fullContent.length}`);
+          logger.info(`[GatewaySession] ✓ session=${sessionId}, tokens=${totalTokens}, length=${fullContent.length}`);
           onComplete(totalTokens);
         });
 

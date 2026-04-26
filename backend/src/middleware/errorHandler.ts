@@ -4,6 +4,7 @@
  */
 
 import { Request, Response, NextFunction } from 'express';
+import { logger } from '../utils/logger';
 import { AppError } from '../errors/AppError';
 import { sendAppError, sendError, ErrorCode } from '../utils/response';
 
@@ -18,7 +19,7 @@ export function errorHandler(
   next: NextFunction
 ): void {
   // 记录错误日志
-  console.error('[Error]', {
+  logger.error('[Error]', {
     message: err.message,
     stack: err.stack,
     path: req.path,

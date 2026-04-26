@@ -1,7 +1,9 @@
 import { v4 as uuidv4 } from "uuid";
+import { logger } from '../utils/logger';
 import { getDb, saveDb } from "../db/client";
 import { AutoLLMAdapter } from "./llm/AutoLLMAdapter";
 import { ILLMAdapter } from "./llm/LLMAdapter";
+import * as AgentBridge from "./AgentBridge";
 
 
 export interface Agent {
@@ -37,6 +39,8 @@ export interface Agent {
   visibility: 'private' | 'public' | 'template';
   skillsConfig: Record<string, boolean>;
   quotaConfig: { maxDailyTokens?: number; maxDailyConversations?: number; maxTokensPerMessage?: number };
+  // Route C: OpenClaw agentId 映射
+  openclawAgentId: string | null;
   createdAt: string;
 }
 
@@ -68,6 +72,7 @@ function rowToAgent(obj: any): Agent {
     visibility: (obj.visibility || 'private') as Agent['visibility'],
     skillsConfig: JSON.parse(obj.skills_config || '{}'),
     quotaConfig: JSON.parse(obj.quota_config || '{}'),
+    openclawAgentId: obj.openclaw_agent_id || null,
     createdAt: obj.created_at,
   };
 }
@@ -149,7 +154,16 @@ export const AgentService = {
     );
     saveDb();
     // 从数据库重新读取，确保返回的对象字段与 rowToAgent 完全一致（含默认值）
-    return this.getById(id)!;
+    const agent = this.getById(id)!;
+
+    // Route C Phase 1: 注册到 OpenClaw
+    if (data.userId && agent) {
+      AgentBridge.registerAgent(data.userId, agent).catch((err) => {
+        logger.error(`[AgentService] Failed to register agent ${id} to OpenClaw:`, err.message);
+      });
+    }
+
+    return agent;
   },
 
   update(id: string, data: Record<string, any>): Agent | null {
@@ -180,11 +194,36 @@ export const AgentService = {
       ]
     );
     saveDb();
+
+    // Route C Phase 1: 如果 systemPrompt、writingStyle、expertise、outputFormat、boundary、modelName 有变更，更新 OpenClaw workspace
+    const relevantFields = ['systemPrompt', 'writingStyle', 'expertise', 'outputFormat', 'boundary', 'modelName', 'modelProvider'];
+    const hasRelevantChange = relevantFields.some(f => data[f] !== undefined);
+    if (hasRelevantChange && existing.openclawAgentId) {
+      const parsed = AgentBridge.fromOpenClawAgentId(existing.openclawAgentId);
+      if (parsed) {
+        AgentBridge.updateAgent(parsed.userId, id, updated).catch((err) => {
+          logger.error(`[AgentService] Failed to update agent ${id} workspace:`, err.message);
+        });
+      }
+    }
+
     return updated;
   },
 
   delete(id: string): boolean {
     const db = getDb();
+    const existing = this.getById(id);
+
+    // Route C Phase 1: 先从 OpenClaw 注销
+    if (existing && existing.openclawAgentId) {
+      const parsed = AgentBridge.fromOpenClawAgentId(existing.openclawAgentId);
+      if (parsed) {
+        AgentBridge.unregisterAgent(parsed.userId, id).catch((err) => {
+          logger.error(`[AgentService] Failed to unregister agent ${id} from OpenClaw:`, err.message);
+        });
+      }
+    }
+
     db.run(`DELETE FROM agents WHERE id=?`, [id]);
     saveDb();
     return true;
@@ -199,6 +238,67 @@ export const AgentService = {
     const db = getDb();
     db.run(`UPDATE agents SET token_used = token_used + ? WHERE id = ?`, [delta, agentId]);
     saveDb();
+  },
+
+  // ── 配额检查与用量统计 ────────────────────────────────────────────────
+
+  /** 检查配额是否超限，返回 { allowed, reason } */
+  checkQuota(
+    agentId: string,
+    userId: string,
+  ): { allowed: boolean; reason?: string } {
+    const agent = this.getById(agentId);
+    if (!agent) return { allowed: false, reason: 'Agent 不存在' };
+    const qc = agent.quotaConfig || {};
+    if (!qc.maxDailyTokens && !qc.maxDailyConversations) return { allowed: true };
+
+    const db = getDb();
+    const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+
+    const row = db.get(
+      `SELECT tokens_used, conv_count FROM usage_stats
+       WHERE user_id = ? AND agent_id = ? AND date = ?`,
+      [userId, agentId, today],
+    ) as { tokens_used: number; conv_count: number } | undefined;
+
+    const tokensUsed = row?.tokens_used ?? 0;
+    const convCount = row?.conv_count ?? 0;
+
+    if (qc.maxDailyTokens && tokensUsed >= qc.maxDailyTokens) {
+      return { allowed: false, reason: `今日 Token 用量已达上限 (${qc.maxDailyTokens})` };
+    }
+    if (qc.maxDailyConversations && convCount >= qc.maxDailyConversations) {
+      return { allowed: false, reason: `今日对话次数已达上限 (${qc.maxDailyConversations})` };
+    }
+    return { allowed: true };
+  },
+
+  /** 获取单日 maxTokensPerMessage 限制 */
+  getMaxTokensPerMessage(agentId: string): number | null {
+    const agent = this.getById(agentId);
+    if (!agent) return null;
+    return agent.quotaConfig?.maxTokensPerMessage ?? null;
+  },
+
+  /** 记录一次对话的 token 消耗和对话次数 */
+  recordUsage(userId: string, agentId: string, tokenCount: number): void {
+    if (tokenCount <= 0) return;
+    const db = getDb();
+    const today = new Date().toISOString().slice(0, 10);
+    const now = new Date().toISOString();
+
+    try {
+      db.run(
+        `INSERT INTO usage_stats (id, user_id, agent_id, date, tokens_used, conv_count, updated_at)
+         VALUES (?, ?, ?, ?, ?, 1, ?)
+         ON CONFLICT(user_id, agent_id, date)
+         DO UPDATE SET tokens_used = tokens_used + ?, conv_count = conv_count + 1, updated_at = ?`,
+        [`usage_${userId}_${agentId}_${today}`, userId, agentId, today, tokenCount, now, tokenCount, now],
+      );
+      saveDb();
+    } catch (err) {
+      logger.error('[AgentService] recordUsage error:', err);
+    }
   },
 
   async generateStream(
@@ -243,7 +343,7 @@ export const AgentService = {
     //
     // 不依赖 OpenClaw Gateway，RepaceClaw 完全自包含
 
-    console.log(`[AgentService] Agent "${agent.name}" → RepaceClaw AutoLLMAdapter (self-contained)`);
+    logger.info(`[AgentService] Agent "${agent.name}" → RepaceClaw AutoLLMAdapter (self-contained)`);
     const adapter: ILLMAdapter = new AutoLLMAdapter();
     await adapter.generateStream(agentConfig, messages, onChunk, onComplete, onError);
   },

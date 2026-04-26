@@ -23,6 +23,7 @@ import {
 } from '../utils/response';
 import { Errors } from '../utils/errors';
 import { TokenStats } from '../types';
+import * as AgentBridge from '../services/AgentBridge';
 
 const router = Router();
 
@@ -235,6 +236,83 @@ router.delete(
 
     AgentService.delete(req.params.id);
     sendSuccess(res, { id: req.params.id }, '智能体删除成功');
+  })
+);
+
+/**
+ * POST /api/agents/sync
+ * 全量同步：确保所有 agent 都已注册到 OpenClaw
+ * 管理权限，用于服务启动后补偿
+ */
+router.post(
+  '/sync',
+  authenticate,
+  asyncHandler(async (req: Request, res: Response) => {
+    const userRole = (req as any).user?.role;
+    if (userRole !== 'super_admin' && userRole !== 'admin') {
+      throw Errors.forbidden('需要管理员权限');
+    }
+
+    const report = await AgentBridge.syncAllAgents();
+    sendSuccess(res, report, '同步完成');
+  })
+);
+
+/**
+ * GET /api/agents/registry-log
+ * 查看 Agent 注册/注销日志（管理员）
+ */
+router.get(
+  '/registry-log',
+  authenticate,
+  asyncHandler(async (req: Request, res: Response) => {
+    const userRole = (req as any).user?.role;
+    if (userRole !== 'super_admin' && userRole !== 'admin') {
+      throw Errors.forbidden('需要管理员权限');
+    }
+
+    const db = getDb();
+    const result = db.exec(
+      'SELECT * FROM agent_registry_log ORDER BY created_at DESC LIMIT 100'
+    );
+
+    const logs: Array<Record<string, unknown>> = [];
+    if (result.length && result[0].values.length) {
+      const cols = result[0].columns;
+      for (const row of result[0].values) {
+        const obj: Record<string, unknown> = {};
+        cols.forEach((c, i) => { obj[c] = row[i]; });
+        logs.push(obj);
+      }
+    }
+
+    sendSuccess(res, logs);
+  })
+);
+
+/**
+ * GET /api/agents/:id/registry-status
+ * 查看单个智能体的 OpenClaw 注册状态
+ */
+router.get(
+  '/:id/registry-status',
+  authenticate,
+  asyncHandler(async (req: Request, res: Response) => {
+    const agent = AgentService.getById(req.params.id);
+    if (!agent) {
+      throw Errors.notFound('智能体');
+    }
+
+    const registered = AgentBridge.listRegisteredAgents();
+    const isRegistered = registered.some(a => a.id === agent.openclawAgentId);
+
+    sendSuccess(res, {
+      agentId: agent.id,
+      agentName: agent.name,
+      openclawAgentId: agent.openclawAgentId,
+      isRegistered,
+      workspace: isRegistered ? registered.find(a => a.id === agent.openclawAgentId)?.workspace : null,
+    });
   })
 );
 

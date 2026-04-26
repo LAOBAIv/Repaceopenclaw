@@ -9,17 +9,20 @@
  */
 
 import express from 'express';
+import { logger } from './utils/logger';
 import cors from 'cors';
 import http from 'http';
 import path from 'path';
 
 import { initDb, getDb } from './db/client';
+import { dbConfig } from './db/config';
 import { registerRoutes } from './routes';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler';
 import { authenticate } from './middleware/auth';
 import { requestIdMiddleware } from './middleware/requestId';
 import { apiLimiter, authLimiter } from './middleware/rateLimiter';
 import { setupWebSocket } from './ws/wsHandler';
+import * as AgentBridge from './services/AgentBridge';
 
 // 环境变量配置
 const PORT = process.env.PORT || 3001;
@@ -30,9 +33,19 @@ const CORS_ORIGIN = process.env.CORS_ORIGIN || '*';
  * 启动应用主函数
  */
 async function main(): Promise<void> {
-  // 1. 初始化数据库
+  // 1. 初始化数据库（根据 DB_TYPE 自动选择 SQLite / PostgreSQL）
   await initDb();
-  console.log('[DB] Database initialized successfully');
+  logger.info(`[DB] Database initialized: ${dbConfig.type === 'postgres' ? `PG@${dbConfig.postgresHost}/${dbConfig.postgresDB}` : 'SQLite'}`);
+
+
+  // 1.5 Route C Phase 1: 全量同步 Agent 到 OpenClaw
+  try {
+    logger.info('[AgentBridge] Syncing agents to OpenClaw...');
+    const report = await AgentBridge.syncAllAgents();
+    logger.info(`[AgentBridge] Sync result: ${report.registered}/${report.total} registered, ${report.errors.length} errors`);
+  } catch (err: any) {
+    logger.error('[AgentBridge] Startup sync failed:', err.message);
+  }
 
   // 2. 创建 Express 应用
   const app = express();
@@ -61,7 +74,7 @@ async function main(): Promise<void> {
 
   // 5. 注册 API 路由
   registerRoutes(app);
-  console.log('[Router] All routes registered');
+  logger.info('[Router] All routes registered');
 
   // 6. 静态文件服务（生产环境）
   setupStaticFiles(app);
@@ -78,12 +91,12 @@ async function main(): Promise<void> {
 
   // 10. 启动服务器
   server.listen(PORT, () => {
-    console.log('='.repeat(60));
-    console.log(`[Server] RepaceClaw Backend Server`);
-    console.log(`[Server] Environment: ${NODE_ENV}`);
-    console.log(`[Server] HTTP: http://localhost:${PORT}`);
-    console.log(`[Server] WebSocket: ws://localhost:${PORT}/ws`);
-    console.log('='.repeat(60));
+    logger.info('='.repeat(60));
+    logger.info(`[Server] RepaceClaw Backend Server`);
+    logger.info(`[Server] Environment: ${NODE_ENV}`);
+    logger.info(`[Server] HTTP: http://localhost:${PORT}`);
+    logger.info(`[Server] WebSocket: ws://localhost:${PORT}/ws`);
+    logger.info('='.repeat(60));
   });
 }
 
@@ -115,7 +128,7 @@ function setupGlobalMiddleware(app: express.Application): void {
   if (NODE_ENV === 'development') {
     app.use((req, res, next) => {
       const timestamp = new Date().toISOString();
-      console.log(`[${timestamp}] ${req.method} ${req.path}`);
+      logger.info(`[${timestamp}] ${req.method} ${req.path}`);
       next();
     });
   }
@@ -187,14 +200,14 @@ function setupStaticFiles(app: express.Application): void {
       res.sendFile(path.join(staticPath, 'index.html'));
     });
 
-    console.log('[Static] Serving frontend from:', staticPath);
+    logger.info('[Static] Serving frontend from: ' + staticPath);
   } else {
-    console.log('[Static] Frontend dist not found at:', staticPath);
+    logger.info('[Static] Frontend dist not found at: ' + staticPath);
   }
 }
 
 // 启动应用
 main().catch((err) => {
-  console.error('[Fatal] Server startup failed:', err);
+  logger.error('[Fatal] Server startup failed:', err);
   process.exit(1);
 });

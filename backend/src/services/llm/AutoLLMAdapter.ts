@@ -20,6 +20,7 @@
  */
 
 import { ILLMAdapter } from "./LLMAdapter";
+import { logger } from '../../utils/logger';
 import { MockLLMAdapter } from "./MockLLMAdapter";
 import { getDb } from "../../db/client";
 import https from "https";
@@ -28,7 +29,7 @@ import { URL } from "url";
 
 // ─── Gateway 配置(底层模型调用统一走 Gateway)─────────────────────────────
 const GATEWAY_URL = process.env.OPENCLAW_GATEWAY_URL || 'http://localhost:18789';
-const GATEWAY_TOKEN = process.env.OPENCLAW_GATEWAY_TOKEN || '021a420c0665ef2813ffe22e10725a629c58565ced1345d3';
+const GATEWAY_TOKEN = process.env.OPENCLAW_GATEWAY_TOKEN || '';
 
 /** 判断是否是 Gateway 地址 */
 function isGatewayUrl(baseUrl: string): boolean {
@@ -153,7 +154,7 @@ function truncateMessages(
 
   const dropped = messages.length - kept.length;
   if (dropped > 0) {
-    console.log(`[AutoLLMAdapter] Context truncated: dropped ${dropped} oldest message(s) to fit ~${contextBudget} token budget`);
+    logger.info(`[AutoLLMAdapter] Context truncated: dropped ${dropped} oldest message(s) to fit ~${contextBudget} token budget`);
   }
 
   return kept;
@@ -326,7 +327,7 @@ function callOpenAIStream(
     const actualAuth = useGateway ? `Bearer ${GATEWAY_TOKEN}` : (authType === "ApiKey" ? apiKey : `Bearer ${apiKey}`);
 
     if (useGateway) {
-      console.log(`[Auto→Gateway] Routing: ${modelId} → Gateway(openclaw)`);
+      logger.info(`[Auto→Gateway] Routing: ${modelId} → Gateway(openclaw)`);
     }
 
     const bodyObj: any = {
@@ -384,8 +385,8 @@ function callOpenAIStream(
           const content = json.choices?.[0]?.message?.content || "";
           const totalTokens = json.usage?.total_tokens || 0;
 
-          console.log(`[AutoLLM] Raw response:`, JSON.stringify(json).substring(0, 300));
-          console.log(`[AutoLLM] Response: ${content.length} chars, ${totalTokens} tokens`);
+          logger.info('[AutoLLM] Raw response: ' + JSON.stringify(json).substring(0, 300));
+          logger.info(`[AutoLLM] Response: ${content.length} chars, ${totalTokens} tokens`);
 
           // 模拟流式：逐段发送内容
           if (content) {
@@ -450,12 +451,12 @@ export class AutoLLMAdapter implements ILLMAdapter {
       const maxMsgs = memTurns * 2 + 1;
       if (msgsToTruncate.length > maxMsgs) {
         msgsToTruncate = msgsToTruncate.slice(-maxMsgs);
-        console.log(`[AutoLLMAdapter] Memory turns limit: keeping last ${memTurns} turns (${maxMsgs} messages)`);
+        logger.info(`[AutoLLMAdapter] Memory turns limit: keeping last ${memTurns} turns (${maxMsgs} messages)`);
       }
       // 确保截断后第一条是 user 消息(若开头是 assistant 则去掉,避免 role 顺序异常)
       if (msgsToTruncate.length > 0 && msgsToTruncate[0].role !== "user") {
         msgsToTruncate = msgsToTruncate.slice(1);
-        console.log("[AutoLLMAdapter] Dropped leading assistant message after memory-turns truncation");
+        logger.info("[AutoLLMAdapter] Dropped leading assistant message after memory-turns truncation");
       }
     }
     const truncated = truncateMessages(systemPrompt, msgsToTruncate, maxTokens);
@@ -500,17 +501,17 @@ export class AutoLLMAdapter implements ILLMAdapter {
 
       const controller = new AbortController();
       try {
-        console.log(`[Auto] Using agent private key: provider=${provider} model=${modelId} url=${baseUrl}`);
+        logger.info(`[Auto] Using agent private key: provider=${provider} model=${modelId} url=${baseUrl}`);
         const tokenCount = await callOpenAIStream(
           baseUrl, privateKey, "Bearer", modelId,
           systemPrompt, truncated,
           temperature, maxTokens, topP, frequencyPenalty, presencePenalty,
           onChunk, onComplete, controller
         );
-        console.log(`[Auto] Success via agent private key (${provider}/${modelId}), tokens=${tokenCount}`);
+        logger.info(`[Auto] Success via agent private key (${provider}/${modelId}), tokens=${tokenCount}`);
         return;
       } catch (err: any) {
-        console.warn(`[Auto] Agent private key failed: ${err.message}, falling back to global channels...`);
+        logger.warn(`[Auto] Agent private key failed: ${err.message}, falling back to global channels...`);
       }
     }
 
@@ -518,7 +519,7 @@ export class AutoLLMAdapter implements ILLMAdapter {
     const providers = loadProviders();
 
     if (!providers.length) {
-      console.log("[Auto] No model providers configured, falling back to mock");
+      logger.info("[Auto] No model providers configured, falling back to mock");
       return mockFallback.generateStream(agentConfig, messages, onChunk, onComplete, onError);
     }
 
@@ -553,10 +554,10 @@ export class AutoLLMAdapter implements ILLMAdapter {
             priority: 0,
           };
           matchedModelId = m.name || agentModelName;
-          console.log(`[Auto] Model matched: ${agentModelName} → provider=${m.provider_name} url=${m.base_url}`);
+          logger.info(`[Auto] Model matched: ${agentModelName} → provider=${m.provider_name} url=${m.base_url}`);
         }
       } catch (e) {
-        console.warn(`[Auto] Model lookup failed: ${e}`);
+        logger.warn(`[Auto] Model lookup failed: ${e}`);
       }
     }
 
@@ -574,7 +575,7 @@ export class AutoLLMAdapter implements ILLMAdapter {
         const { OpenClawAdapter } = await import('./OpenClawAdapter');
         const adapter = new OpenClawAdapter();
         try {
-          console.log(`[Auto] Trying provider: openclaw / OpenClaw native runtime`);
+          logger.info(`[Auto] Trying provider: openclaw / OpenClaw native runtime`);
           await adapter.generateStream(
             {
               ...agentConfig,
@@ -587,10 +588,10 @@ export class AutoLLMAdapter implements ILLMAdapter {
             onComplete,
             onError
           );
-          console.log(`[Auto] Success via openclaw provider`);
+          logger.info(`[Auto] Success via openclaw provider`);
           return;
         } catch (err: any) {
-          console.warn(`[Auto] OpenClaw provider failed: ${err.message}, trying next...`);
+          logger.warn(`[Auto] OpenClaw provider failed: ${err.message}, trying next...`);
           continue;
         }
       }
@@ -600,7 +601,7 @@ export class AutoLLMAdapter implements ILLMAdapter {
       const controller = new AbortController();
 
       try {
-        console.log(
+        logger.info(
           `[Auto] Trying provider: ${provider.provider} / ${modelId} @ ${baseUrl}`
         );
         const tokenCount = await callOpenAIStream(
@@ -619,10 +620,10 @@ export class AutoLLMAdapter implements ILLMAdapter {
           onComplete,
           controller
         );
-        console.log(`[Auto] Success via ${provider.provider} / ${modelId}, tokens=${tokenCount}`);
+        logger.info(`[Auto] Success via ${provider.provider} / ${modelId}, tokens=${tokenCount}`);
         return;
       } catch (err: any) {
-        console.warn(
+        logger.warn(
           `[Auto] Provider ${provider.provider} failed: ${err.message}, trying next...`
         );
         continue;
@@ -630,7 +631,7 @@ export class AutoLLMAdapter implements ILLMAdapter {
     }
 
     // All providers failed — fallback to mock
-    console.warn("[Auto] All providers failed, falling back to mock output");
+    logger.warn("[Auto] All providers failed, falling back to mock output");
     return mockFallback.generateStream(agentConfig, messages, onChunk, onComplete, onError);
   }
 }

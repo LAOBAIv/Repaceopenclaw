@@ -4,6 +4,7 @@
  */
 
 import { Router, Express } from 'express';
+import { logger } from '../utils/logger';
 
 // 导入所有路由
 import authRoutes from './auth';
@@ -23,6 +24,9 @@ import modelProviderRoutes from './modelProviders';
 import modelRoutes from './models';
 import agentTemplateRoutes from './agentTemplates';
 import auditLogRoutes from './auditLogs';
+import systemStatsRoutes from './systemStats';
+import sessionTabsRoutes from './sessionTabs';
+import sessionsRoutes from './sessions';
 
 // 路由配置项
 interface RouteConfig {
@@ -50,6 +54,9 @@ const apiRoutes: RouteConfig[] = [
   { path: '/models', router: modelRoutes },
   { path: '/agent-templates', router: agentTemplateRoutes },
   { path: '/audit-logs', router: auditLogRoutes },
+  { path: '/system/stats', router: systemStatsRoutes, prefix: '/api' },
+  { path: '/session-tabs', router: sessionTabsRoutes, prefix: '/api' },
+  { path: '/sessions', router: sessionsRoutes, prefix: '/api' },
 ];
 
 // 外部兼容路由列表（不使用 /api 前缀）
@@ -67,14 +74,14 @@ export function registerRoutes(app: Express): void {
   apiRoutes.forEach(({ path, router }) => {
     const fullPath = `${apiPrefix}${path}`;
     app.use(fullPath, router);
-    console.log(`[Router] Registered: ${fullPath}`);
+    logger.info(`[Router] Registered: ${fullPath}`);
   });
 
   // 注册兼容路由（无额外前缀或自定义前缀）
   compatRoutes.forEach(({ path, router, prefix = '' }) => {
     const fullPath = `${prefix}${path}`;
     app.use(fullPath, router);
-    console.log(`[Router] Registered: ${fullPath} (compat)`);
+    logger.info(`[Router] Registered: ${fullPath} (compat)`);
   });
 }
 

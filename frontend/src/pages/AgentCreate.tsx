@@ -44,6 +44,7 @@ interface CodeChannel {
   keyLabel?: string;
   keyPlaceholder?: string;
   models: CodeModel[];
+  hasBackendKey?: boolean;  // 后台是否已配置 API Key
 }
 
 const CODE_CHANNELS: CodeChannel[] = [
@@ -226,10 +227,12 @@ export function AgentCreate() {
             if (existingIdx !== -1) {
               // 已有渠道：若后台配置了 Key 且有 baseUrl，追加一个「后台配置」子模型条目
               const existing = merged[existingIdx];
+              // 标记后台已配置 Key
+              const enhanced = bc.apiKey ? { ...existing, hasBackendKey: true } : existing;
               // 若后台的模型 ID 与静态预设中不一致，动态追加该模型
               if (bc.modelName && !existing.models.some(m => m.id === bc.modelName)) {
                 merged[existingIdx] = {
-                  ...existing,
+                  ...enhanced,
                   models: [
                     ...existing.models,
                     {
@@ -246,6 +249,8 @@ export function AgentCreate() {
                     },
                   ],
                 };
+              } else if (bc.apiKey) {
+                merged[existingIdx] = enhanced;
               }
             } else {
               // 后台独有渠道（管理员自定义的）：整体追加为新渠道
@@ -259,6 +264,7 @@ export function AgentCreate() {
                 authType: (bc.authType as 'Bearer' | 'ApiKey' | 'Basic') || 'Bearer',
                 keyLabel: 'API Key',
                 keyPlaceholder: '使用后台配置的 Key（如需覆盖请重新填写）',
+                hasBackendKey: !!bc.apiKey,  // 标记后台已配置 Key
                 models: bc.modelName
                   ? [
                       {
@@ -497,6 +503,11 @@ export function AgentCreate() {
     return found ? found.name : id;
   }
 
+  /* ── CODE 渠道弹窗 — 必须先声明，后面 hasBackendKey 要用 ─── */
+  const [codeModelOpen, setCodeModelOpen]     = useState(false);
+  const [selectedChannel, setSelectedChannel] = useState<CodeChannel>(() => CODE_CHANNELS[0]);
+  const [tempChannel, setTempChannel]         = useState<CodeChannel>(CODE_CHANNELS[0]);
+
   /* ── Token 接入弹窗 ───────────────────────────────────── */
   const [tokenModalOpen, setTokenModalOpen]   = useState(false);
   const [tokenValue, setTokenValue]           = useState(() => loadTokenCache(CODE_CHANNELS[0].id)?.apiKey  ?? '');
@@ -505,8 +516,14 @@ export function AgentCreate() {
   const [tempCustomUrl, setTempCustomUrl]     = useState('');
   const [showToken, setShowToken]             = useState(false);
   const [copied, setCopied]                   = useState(false);
-  // Token 弹窗中选择的模型（从当前渠道的 models 里选）
   const [tempTokenModel, setTempTokenModel]   = useState<CodeModel | null>(null);
+
+  // 计算当前渠道是否已在后台配置了 API Key（前端用户无需填写）
+  const hasBackendKey = (() => {
+    if (!selectedChannel) return false;
+    const bc = dynamicChannels.find(ch => ch.id === selectedChannel.id);
+    return !!(bc as any)?.hasBackendKey;
+  })();
 
   function openTokenModal() {
     // 直接使用 CODE 渠道中已选的模型作为初始值
@@ -519,10 +536,10 @@ export function AgentCreate() {
   function closeTokenModal() { setTokenModalOpen(false); }
   function confirmTokenModal() {
     if (!selectedChannel) return;
-    // 平台预设：直接确认，不需要 Key
-    if (selectedChannel.id === PLATFORM_PRESET_CHANNEL_ID) {
-      setTokenValue('');
-      setCustomBaseUrl('');
+    // 平台预设 + 后台已配置Key：直接确认，不需要 Key
+    if (selectedChannel.id === PLATFORM_PRESET_CHANNEL_ID || hasBackendKey) {
+      setTokenValue(hasBackendKey ? '__backend_key__' : '');
+      setCustomBaseUrl(hasBackendKey ? '' : '');
       setTokenModalOpen(false);
       return;
     }
@@ -568,13 +585,7 @@ export function AgentCreate() {
     setTimeout(() => setCopied(false), 1800);
   }
 
-  /* ── CODE 渠道弹窗 ────────────────────────────────────── */
-  const [codeModelOpen, setCodeModelOpen]     = useState(false);
-  // 当前已选渠道（默认平台预设）
-  const [selectedChannel, setSelectedChannel] = useState<CodeChannel>(
-    () => CODE_CHANNELS[0]
-  );
-  const [tempChannel, setTempChannel]         = useState<CodeChannel>(CODE_CHANNELS[0]);
+  /* ── 当前已选模型 ────────────────────────────────────── */
   // 当前已选模型
   const [selectedModel, setSelectedModel]     = useState<CodeModel | null>(
     () => CODE_CHANNELS[0].models[0]
@@ -1177,8 +1188,8 @@ export function AgentCreate() {
                 </div>
               </div>
 
-              {/* 填写 Key（平台预设无需填） */}
-              {selectedChannel.id !== PLATFORM_PRESET_CHANNEL_ID && (
+              {/* 填写 Key（平台预设 + 后台已配置 Key 的渠道无需填） */}
+              {selectedChannel.id !== PLATFORM_PRESET_CHANNEL_ID && !hasBackendKey && (
                 <>
                   <div className="tk-divider" />
 
@@ -1269,10 +1280,10 @@ export function AgentCreate() {
                 </>
               )}
 
-              {/* 平台预设：无需配置提示 */}
-              {selectedChannel.id === PLATFORM_PRESET_CHANNEL_ID && (
+              {/* 平台预设 + 后台已配置Key：无需配置提示 */}
+              {(selectedChannel.id === PLATFORM_PRESET_CHANNEL_ID || hasBackendKey) && (
                 <div style={{ padding: '20px 14px', textAlign: 'center', color: '#6b7280', fontSize: 13 }}>
-                  ✅ 使用平台预设，无需填写 API Key，直接确认即可
+                  ✅ {hasBackendKey ? '管理员已配置此渠道，无需填写 API Key' : '使用平台预设，无需填写 API Key，直接确认即可'}
                 </div>
               )}
             </div>
@@ -1285,7 +1296,7 @@ export function AgentCreate() {
                 <button className="ac-modal-btn-cancel" onClick={closeTokenModal}>取消</button>
                 <button
                   className="ac-modal-btn-confirm"
-                  disabled={selectedChannel.id !== PLATFORM_PRESET_CHANNEL_ID && (!tempTokenValue.trim() || !tempTokenModel)}
+                  disabled={selectedChannel.id !== PLATFORM_PRESET_CHANNEL_ID && !hasBackendKey && (!tempTokenValue.trim() || !tempTokenModel)}
                   onClick={confirmTokenModal}
                 >确认</button>
               </div>

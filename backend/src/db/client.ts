@@ -2,11 +2,23 @@
 import initSqlJs, { Database } from "sql.js";
 import path from "path";
 import fs from "fs";
+import { dbConfig } from "./config";
 
-let db: Database;
+let db: any;
 const DB_PATH = path.join(__dirname, "../../data/platform.db");
 
-export async function initDb(): Promise<Database> {
+/** 统一初始化入口：根据 DB_TYPE 选择驱动 */
+export async function initDb(): Promise<any> {
+  // PostgreSQL 模式
+  if (dbConfig.type === "postgres") {
+    const { initPostgresSync } = await import("./postgres");
+    const pgDb = await initPostgresSync();
+    // 将 pgDb 挂载到全局 _pgDb，供 getDb() 返回
+    (globalThis as any).__pgDb = pgDb;
+    return pgDb;
+  }
+
+  // SQLite 模式（默认）
   if (db) return db;
 
   const SQL = await initSqlJs();
@@ -36,7 +48,7 @@ export async function initDb(): Promise<Database> {
   return db;
 }
 
-function createTables(db: Database) {
+function createTables(db: any) {
   db.run(`
     CREATE TABLE IF NOT EXISTS agents (
       id TEXT PRIMARY KEY,
@@ -88,6 +100,10 @@ function createTables(db: Database) {
   try { db.run("ALTER TABLE agents ADD COLUMN visibility TEXT NOT NULL DEFAULT 'private'"); } catch {}
   try { db.run("ALTER TABLE agents ADD COLUMN skills_config TEXT NOT NULL DEFAULT '{}'"); } catch {}
   try { db.run("ALTER TABLE agents ADD COLUMN quota_config TEXT NOT NULL DEFAULT '{}'"); } catch {}
+  // Route C Phase 1: Agent 桥接层 — OpenClaw agentId 映射
+  try { db.run("ALTER TABLE agents ADD COLUMN openclaw_agent_id TEXT"); } catch {}
+
+  // Route C Phase 1: Agent 注册日志表
 
   // Migrate: add user_id to token_channels (Phase 2: 多租户隔离)
   try { db.run("ALTER TABLE token_channels ADD COLUMN user_id TEXT NOT NULL DEFAULT ''"); } catch {}
@@ -277,6 +293,32 @@ function createTables(db: Database) {
     )
   `);
 
+  // ── Agent Registry Log（OpenClaw 注册日志）───────────────────────
+  db.run(`
+    CREATE TABLE IF NOT EXISTS agent_registry_log (
+      id          TEXT PRIMARY KEY,
+      agent_id    TEXT NOT NULL,
+      action      TEXT NOT NULL,          -- register / unregister / update
+      result      TEXT,
+      created_at  TEXT NOT NULL
+    )
+  `);
+
+  // ── Channel Accounts（渠道账号路由）─────────────────────────────
+  db.run(`
+    CREATE TABLE IF NOT EXISTS channel_accounts (
+      id          TEXT PRIMARY KEY,
+      user_id     TEXT NOT NULL DEFAULT '',
+      agent_id    TEXT NOT NULL,
+      channel     TEXT NOT NULL,          -- feishu / telegram / discord / whatsapp
+      account_id  TEXT NOT NULL,          -- 渠道侧账号标识
+      status      TEXT NOT NULL DEFAULT 'active',
+      config      TEXT NOT NULL DEFAULT '{}',
+      created_at  TEXT NOT NULL,
+      FOREIGN KEY (agent_id) REFERENCES agents(id) ON DELETE CASCADE
+    )
+  `);
+
   // ── Agent Templates（agency-agents 导入的专业角色模板库）───────────────
   db.run(`
     CREATE TABLE IF NOT EXISTS agent_templates (
@@ -384,10 +426,58 @@ function createTables(db: Database) {
       FOREIGN KEY (plugin_id) REFERENCES plugins(id) ON DELETE CASCADE
     )
   `);
+
+  // ── Session Tabs（BrowserTab ↔ SessionTab 绑定关系）───────────────────
+  db.run(`
+    CREATE TABLE IF NOT EXISTS session_tabs (
+      id              TEXT PRIMARY KEY,
+      user_id         TEXT NOT NULL DEFAULT '',
+      browser_tab_key TEXT NOT NULL,
+      title           TEXT NOT NULL DEFAULT '',
+      conversation_id TEXT NOT NULL DEFAULT '',
+      agent_id        TEXT NOT NULL DEFAULT '',
+      agent_name      TEXT NOT NULL DEFAULT '',
+      color           TEXT NOT NULL DEFAULT '#9ca3af',
+      created_at      TEXT NOT NULL,
+      updated_at      TEXT NOT NULL
+    )
+  `);
+  // 同一用户下 browser_tab_key 唯一
+  db.run(`CREATE UNIQUE INDEX IF NOT EXISTS session_tabs_user_key ON session_tabs(user_id, browser_tab_key)`);
+
+  // ── Session Mapping（OpenClaw session ↔ RepaceClaw conversation 映射）───
+  db.run(`
+    CREATE TABLE IF NOT EXISTS session_mapping (
+      id              TEXT PRIMARY KEY,
+      oc_session_key  TEXT NOT NULL UNIQUE,
+      conversation_id TEXT NOT NULL DEFAULT '',
+      session_file    TEXT NOT NULL DEFAULT '',
+      agent_id        TEXT NOT NULL DEFAULT '',
+      agent_ids       TEXT NOT NULL DEFAULT '[]',
+      created_at      TEXT NOT NULL,
+      updated_at      TEXT NOT NULL
+    )
+  `);
+  db.run(`CREATE INDEX IF NOT EXISTS session_mapping_conv_id ON session_mapping(conversation_id)`);
+
+  // ── 用量统计（配额限制基础）─────────────────────────────────────────────
+  db.run(`
+    CREATE TABLE IF NOT EXISTS usage_stats (
+      id          TEXT PRIMARY KEY,
+      user_id     TEXT NOT NULL DEFAULT '',
+      agent_id    TEXT NOT NULL DEFAULT '',
+      date        TEXT NOT NULL,          -- YYYY-MM-DD
+      tokens_used INTEGER NOT NULL DEFAULT 0,
+      conv_count  INTEGER NOT NULL DEFAULT 0,
+      updated_at  TEXT NOT NULL,
+      UNIQUE(user_id, agent_id, date)
+    )
+  `);
+  db.run(`CREATE INDEX IF NOT EXISTS usage_stats_date ON usage_stats(date)`);
 }
 
 // ── Seed default data (idempotent: skip if already present) ─────────────────
-function seedDefaultData(db: Database) {
+function seedDefaultData(db: any) {
   const now = new Date().toISOString();
 
   // ── Default Skills ──────────────────────────────────────────────────────────
@@ -676,7 +766,123 @@ function seedDefaultData(db: Database) {
   }
 }
 
+// ── Session Tabs CRUD ─────────────────────────────────────────────────────
+export interface SessionTabRecord {
+  id: string;
+  user_id: string;
+  browser_tab_key: string;
+  title: string;
+  conversation_id: string;
+  agent_id: string;
+  agent_name: string;
+  color: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export const SessionTabService = {
+  /** 获取用户的所有 session tabs */
+  list(userId: string): SessionTabRecord[] {
+    const stmt = db.prepare(
+      "SELECT * FROM session_tabs WHERE user_id = ? ORDER BY updated_at DESC"
+    );
+    stmt.run([userId]);
+    const rows: SessionTabRecord[] = [];
+    while (stmt.step()) {
+      rows.push(stmt.getAsObject() as unknown as SessionTabRecord);
+    }
+    stmt.free();
+    return rows;
+  },
+
+  /** 创建或更新（upsert） */
+  upsert(tab: Omit<SessionTabRecord, "created_at" | "updated_at">): SessionTabRecord {
+    const now = new Date().toISOString();
+    const existing = db
+      .prepare(
+        "SELECT id FROM session_tabs WHERE user_id = ? AND browser_tab_key = ?"
+      )
+      .get([tab.user_id, tab.browser_tab_key]);
+
+    if (existing) {
+      db.run(
+        `UPDATE session_tabs SET title=?, conversation_id=?, agent_id=?, agent_name=?, color=?, updated_at=? WHERE user_id=? AND browser_tab_key=?`,
+        [
+          tab.title, tab.conversation_id, tab.agent_id, tab.agent_name,
+          tab.color, now, tab.user_id, tab.browser_tab_key,
+        ]
+      );
+    } else {
+      db.run(
+        `INSERT INTO session_tabs (id, user_id, browser_tab_key, title, conversation_id, agent_id, agent_name, color, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)`,
+        [
+          tab.id, tab.user_id, tab.browser_tab_key, tab.title,
+          tab.conversation_id, tab.agent_id, tab.agent_name, tab.color,
+          now, now,
+        ]
+      );
+    }
+
+    const row = db
+      .prepare(
+        "SELECT * FROM session_tabs WHERE user_id = ? AND browser_tab_key = ?"
+      )
+      .get([tab.user_id, tab.browser_tab_key]) as unknown as SessionTabRecord;
+    return row;
+  },
+
+  /** 删除 */
+  delete(userId: string, browserTabKey: string): void {
+    db.run(
+      "DELETE FROM session_tabs WHERE user_id = ? AND browser_tab_key = ?",
+      [userId, browserTabKey]
+    );
+  },
+
+  /** 批量 upsert */
+  batchUpsert(userId: string, tabs: Array<{ browser_tab_key: string; title: string; conversation_id: string; agent_id: string; agent_name: string; color: string }>): SessionTabRecord[] {
+    const now = new Date().toISOString();
+    const results: SessionTabRecord[] = [];
+    for (const t of tabs) {
+      const existing = db
+        .prepare(
+          "SELECT id FROM session_tabs WHERE user_id = ? AND browser_tab_key = ?"
+        )
+        .get([userId, t.browser_tab_key]);
+
+      if (existing) {
+        db.run(
+          `UPDATE session_tabs SET title=?, conversation_id=?, agent_id=?, agent_name=?, color=?, updated_at=? WHERE user_id=? AND browser_tab_key=?`,
+          [
+            t.title, t.conversation_id, t.agent_id, t.agent_name,
+            t.color, now, userId, t.browser_tab_key,
+          ]
+        );
+      } else {
+        const id = `stab_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+        db.run(
+          `INSERT INTO session_tabs (id, user_id, browser_tab_key, title, conversation_id, agent_id, agent_name, color, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)`,
+          [
+            id, userId, t.browser_tab_key, t.title,
+            t.conversation_id, t.agent_id, t.agent_name, t.color,
+            now, now,
+          ]
+        );
+      }
+
+      const row = db
+        .prepare(
+          "SELECT * FROM session_tabs WHERE user_id = ? AND browser_tab_key = ?"
+        )
+        .get([userId, t.browser_tab_key]) as unknown as SessionTabRecord;
+      results.push(row);
+    }
+    return results;
+  },
+};
+
 export function saveDb() {
+  if (dbConfig.type === "postgres") return; // PostgreSQL 不需要手动 save
   if (!db) return;
   const data = db.export();
   const dataDir = path.dirname(DB_PATH);
@@ -686,6 +892,14 @@ export function saveDb() {
   fs.writeFileSync(DB_PATH, Buffer.from(data));
 }
 
-export function getDb(): Database {
+/**
+ * 统一获取数据库实例
+ * SQLite 模式：返回 sql.js Database
+ * PostgreSQL 模式：返回 PGDatabase（兼容 sql.js 接口）
+ */
+export function getDb(): any {
+  if (dbConfig.type === "postgres") {
+    return (globalThis as any).__pgDb;
+  }
   return db;
 }

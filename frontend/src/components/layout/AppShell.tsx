@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import {
   Bot, Layers,
-  ChevronLeft, ChevronRight, Settings, Network, Sparkles, PlusCircle, Wrench, Puzzle, ShieldCheck, Library,
+  ChevronLeft, ChevronRight, Settings, Network, Sparkles, PlusCircle, Wrench, Puzzle, ShieldCheck, Library, LogOut,
 } from 'lucide-react';
 import { useAuthStore } from '../../stores/authStore';
 
@@ -158,6 +158,31 @@ export function AppShell() {
             }}
           >
             {collapsed ? <ChevronRight size={16} /> : <><ChevronLeft size={16} /><span>收起</span></>}
+          </button>
+
+          {/* 退出登录 */}
+          <button
+            onClick={() => {
+              if (confirm('确定要退出登录吗？')) {
+                useAuthStore.getState().logout();
+                navigate('/login');
+              }
+            }}
+            style={{
+              display: 'flex', alignItems: 'center',
+              gap: collapsed ? 0 : 10,
+              justifyContent: collapsed ? 'center' : 'flex-start',
+              padding: '9px 10px', borderRadius: 8,
+              background: 'transparent', border: 'none',
+              color: '#ef4444', fontSize: 13, cursor: 'pointer',
+              width: '100%',
+              marginTop: 2,
+            }}
+            onMouseEnter={e => { e.currentTarget.style.background = '#fef2f2'; }}
+            onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
+          >
+            <LogOut size={16} style={{ flexShrink: 0 }} />
+            {!collapsed && '退出登录'}
           </button>
         </div>
       </aside>

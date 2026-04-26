@@ -8,6 +8,7 @@
  */
 
 import { ILLMAdapter } from "./LLMAdapter";
+import { logger } from '../../utils/logger';
 import { MockLLMAdapter } from "./MockLLMAdapter";
 import https from "https";
 import http from "http";
@@ -195,7 +196,7 @@ export class DoubaoContextAdapter implements ILLMAdapter {
     const controller = new AbortController();
 
     try {
-      console.log(`[DoubaoContext] Using context_id: ${contextId || "new"}`);
+      logger.info(`[DoubaoContext] Using context_id: ${contextId || "new"}`);
       
       const result = await callDoubaoContextChatCompletions(
         { apiKey, baseUrl, modelId, contextId, ttl: 3600 },
@@ -211,16 +212,16 @@ export class DoubaoContextAdapter implements ILLMAdapter {
           // 保存新的 context ID
           if (newContextId) {
             this.contextCache.set(agentConfig.id, newContextId);
-            console.log(`[DoubaoContext] Saved context_id: ${newContextId}`);
+            logger.info(`[DoubaoContext] Saved context_id: ${newContextId}`);
           }
           onComplete(tokens);
         },
         controller
       );
 
-      console.log(`[DoubaoContext] Success, tokens=${result.tokenCount}`);
+      logger.info(`[DoubaoContext] Success, tokens=${result.tokenCount}`);
     } catch (err: any) {
-      console.error(`[DoubaoContext] Error: ${err.message}`);
+      logger.error(`[DoubaoContext] Error: ${err.message}`);
       onError(err);
     }
   }
@@ -248,7 +249,7 @@ export class DoubaoContextAdapter implements ILLMAdapter {
    */
   clearContext(agentId: string): void {
     this.contextCache.delete(agentId);
-    console.log(`[DoubaoContext] Cleared context for agent: ${agentId}`);
+    logger.info(`[DoubaoContext] Cleared context for agent: ${agentId}`);
   }
 
   /**
@@ -256,6 +257,6 @@ export class DoubaoContextAdapter implements ILLMAdapter {
    */
   clearAllContexts(): void {
     this.contextCache.clear();
-    console.log("[DoubaoContext] Cleared all contexts");
+    logger.info("[DoubaoContext] Cleared all contexts");
   }
 }

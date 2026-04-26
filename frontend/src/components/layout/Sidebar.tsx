@@ -1,5 +1,5 @@
 import React from "react";
-import { Link, useLocation } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard,
   Bot,
@@ -7,9 +7,11 @@ import {
   Kanban,
   Sparkles,
   Settings,
+  LogOut,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "@/components/ui/tooltip";
+import { useAuthStore } from "@/stores/authStore";
 
 const NAV_ITEMS = [
   { to: "/", icon: LayoutDashboard, label: "仪表盘" },
@@ -20,6 +22,16 @@ const NAV_ITEMS = [
 
 export function Sidebar() {
   const location = useLocation();
+  const navigate = useNavigate();
+  const { logout } = useAuthStore();
+
+  function handleLogout() {
+    if (confirm('确定要退出登录吗？')) {
+      logout();
+      navigate('/login');
+    }
+  }
+
   return (
     <TooltipProvider>
       <aside className="fixed left-0 top-0 h-full w-16 flex flex-col items-center py-4 z-40"
@@ -61,6 +73,19 @@ export function Sidebar() {
             </button>
           </TooltipTrigger>
           <TooltipContent side="right">设置</TooltipContent>
+        </Tooltip>
+
+        {/* 退出登录 */}
+        <Tooltip delayDuration={200}>
+          <TooltipTrigger asChild>
+            <button
+              onClick={handleLogout}
+              className="w-10 h-10 rounded-xl flex items-center justify-center text-slate-500 hover:text-red-400 hover:bg-red-500/10 transition-all cursor-pointer mt-2"
+            >
+              <LogOut className="w-5 h-5" />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="right">退出登录</TooltipContent>
         </Tooltip>
       </aside>
     </TooltipProvider>

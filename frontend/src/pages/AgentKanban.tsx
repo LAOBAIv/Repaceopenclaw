@@ -9,7 +9,6 @@ import {
 } from 'lucide-react';
 import { useTaskStore, Task, Column } from '@/stores/taskStore';
 import { useProjectKanbanStore, KanbanProject, ProjectColumn } from '@/stores/projectKanbanStore';
-
 /* ══════════════════════════════════════════════════════════════
    通用配置
 ══════════════════════════════════════════════════════════════ */

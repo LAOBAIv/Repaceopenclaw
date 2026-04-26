@@ -1,11 +1,31 @@
 import { useEffect, useState } from 'react';
-import { Bot, Plus, Trash2, AlertTriangle, Pencil, Cpu } from 'lucide-react';
+import { Bot, Plus, Trash2, AlertTriangle, Pencil, Cpu, Eye, EyeOff, Settings } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAgentStore } from '@/stores/agentStore';
 import { DEFAULT_AGENTS } from '@/data/defaultAgents';
 import { Agent } from '@/types';
+import apiClient from '@/api/client';
 
-/** Gateway 可用模型列表 */
+/** 可见性标签 */
+function VisibilityBadge({ visibility }: { visibility?: string }) {
+  const v = visibility || 'private';
+  const config: Record<string, { icon: any; label: string; bg: string; color: string }> = {
+    private: { icon: EyeOff, label: '私有', bg: '#f3f4f6', color: '#6b7280' },
+    public:  { icon: Eye,    label: '公开', bg: '#dcfce7', color: '#16a34a' },
+    template:{ icon: Eye,    label: '模板', bg: '#dbeafe', color: '#2563eb' },
+  };
+  const { icon: Icon, label, bg, color } = config[v] || config.private;
+  return (
+    <span style={{
+      display: 'inline-flex', alignItems: 'center', gap: 3,
+      padding: '1px 6px', borderRadius: 10,
+      background: bg, fontSize: 10, color, fontWeight: 500,
+    }} title={`可见性: ${label}`}>
+      <Icon size={9} />
+      {label}
+    </span>
+  );
+}
 export const VALID_MODELS = [
   'claude-opus-4-6',
   'glm-5',
@@ -13,6 +33,17 @@ export const VALID_MODELS = [
   'kimi-k2.5',
   'MiniMax-M2.5',
   'qwen3.6-plus',
+];
+
+/** Skill 配置项 */
+const SKILL_ITEMS: { key: string; label: string; risk: 'high' | 'medium' | 'low' }[] = [
+  { key: 'exec', label: '代码执行', risk: 'high' },
+  { key: 'shell', label: 'Shell 命令', risk: 'high' },
+  { key: 'file_write', label: '文件写入', risk: 'high' },
+  { key: 'browser', label: '浏览器控制', risk: 'high' },
+  { key: 'image_generation', label: '图片生成', risk: 'medium' },
+  { key: 'web_search', label: '网络搜索', risk: 'low' },
+  { key: 'file_read', label: '文件读取', risk: 'low' },
 ];
 
 /** 模型参数展示栏：只显示渠道（tokenProvider）和模型名（modelName） */
@@ -81,6 +112,52 @@ export function AgentManager() {
   /* ── 删除确认弹窗 ─────────────────────────── */
   const [deleteTarget, setDeleteTarget] = useState<Agent | null>(null);
   const [deleting, setDeleting] = useState(false);
+
+  /* ── Skill 配置弹窗 ───────────────────────── */
+  const [skillAgent, setSkillAgent] = useState<Agent | null>(null);
+  const [tempSkills, setTempSkills] = useState<Record<string, boolean>>({});
+  const [savingSkills, setSavingSkills] = useState(false);
+
+  /* ── 可见性切换 ───────────────────────────── */
+  const [updatingVisibility, setUpdatingVisibility] = useState<string | null>(null);
+
+  async function handleVisibilityChange(agent: Agent, visibility: string) {
+    setUpdatingVisibility(agent.id);
+    try {
+      await apiClient.put(`/agents/${agent.id}`, { visibility });
+      await fetchAgents();
+    } catch {
+      alert('更新可见性失败');
+    } finally {
+      setUpdatingVisibility(null);
+    }
+  }
+
+  function openSkillModal(agent: Agent) {
+    setSkillAgent(agent);
+    setTempSkills(agent.skillsConfig || {
+      exec: false, shell: false, file_write: false, browser: false,
+      image_generation: false, web_search: true, file_read: true,
+    });
+  }
+
+  function closeSkillModal() {
+    setSkillAgent(null);
+  }
+
+  async function saveSkillConfig() {
+    if (!skillAgent) return;
+    setSavingSkills(true);
+    try {
+      await apiClient.put(`/agents/${skillAgent.id}`, { skillsConfig: tempSkills });
+      await fetchAgents();
+      setSkillAgent(null);
+    } catch {
+      alert('保存 Skill 配置失败');
+    } finally {
+      setSavingSkills(false);
+    }
+  }
 
   function handleDeleteClick(e: React.MouseEvent, agent: Agent) {
     e.stopPropagation();
@@ -267,6 +344,58 @@ export function AgentManager() {
         .am-del-btn-confirm:hover:not(:disabled) { background: #b91c1c; }
         .am-del-btn-confirm:disabled { background: #fca5a5; cursor: not-allowed; }
 
+        /* ── Skill 配置弹窗 ── */
+        .am-skill-mask {
+          position: fixed; inset: 0; z-index: 1000;
+          background: rgba(0,0,0,0.35);
+          display: flex; align-items: center; justify-content: center;
+        }
+        .am-skill-dialog {
+          background: #fff; border-radius: 14px;
+          box-shadow: 0 8px 40px rgba(0,0,0,0.18);
+          width: 420px; padding: 24px 24px 20px;
+          display: flex; flex-direction: column; gap: 0;
+          font-family: "Microsoft YaHei", "Segoe UI", sans-serif;
+          max-height: 80vh;
+        }
+        .am-skill-title {
+          font-size: 15px; font-weight: 700; color: #1a202c; margin-bottom: 4px;
+        }
+        .am-skill-subtitle {
+          font-size: 12px; color: #9ca3af; margin-bottom: 16px;
+        }
+        .am-skill-grid {
+          display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
+          margin-bottom: 20px;
+        }
+        .am-skill-item {
+          display: flex; align-items: center; gap: 8px;
+          padding: 8px 10px; border-radius: 8px;
+          border: 1px solid #e5e7eb; cursor: pointer;
+          transition: all 0.15s; user-select: none;
+        }
+        .am-skill-item:hover { border-color: #2a3b4d; background: #f9fafb; }
+        .am-skill-item.active { border-color: #2a3b4d; background: #f0f5ff; }
+        .am-skill-dot {
+          width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+        }
+        .am-skill-item-label { font-size: 13px; color: #374151; flex: 1; }
+        .am-skill-item-status { font-size: 11px; color: #9ca3af; }
+        .am-skill-btns { display: flex; justify-content: flex-end; gap: 10px; }
+
+        /* ── 可见性选择器 ── */
+        .am-vis-selector {
+          display: flex; gap: 6px; margin-bottom: 16px;
+        }
+        .am-vis-btn {
+          flex: 1; padding: 8px 0; border-radius: 8px; border: 1.5px solid #e5e7eb;
+          background: #fff; cursor: pointer; text-align: center;
+          font-size: 12px; color: #6b7280; transition: all 0.15s;
+        }
+        .am-vis-btn:hover { border-color: #2a3b4d; }
+        .am-vis-btn.active { border-color: #2a3b4d; background: #f0f5ff; color: #2a3b4d; font-weight: 600; }
+        .am-vis-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
         /* ── 模型参数区 ── */
         .am-model-bar {
           display: flex; align-items: center; gap: 6px;
@@ -327,6 +456,13 @@ export function AgentManager() {
                   <div className="am-item-actions">
                     <button
                       className="am-action-btn am-action-btn-edit"
+                      title="Skill 配置"
+                      onClick={(e) => { e.stopPropagation(); openSkillModal(agent); }}
+                    >
+                      <Settings size={12} />
+                    </button>
+                    <button
+                      className="am-action-btn am-action-btn-edit"
                       title="编辑智能体"
                       onClick={(e) => handleEditClick(e, agent)}
                     >
@@ -344,8 +480,9 @@ export function AgentManager() {
                   <div className="am-item-top">
                     <AgentAvatar agent={agent} />
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <div className="am-name" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <div className="am-name" style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                         {agent.name}
+                        <VisibilityBadge visibility={agent.visibility} />
                         {agent.modelName && !VALID_MODELS.includes(agent.modelName) && (
                           <span style={{
                             display: 'inline-flex', alignItems: 'center', gap: 3,
@@ -404,6 +541,63 @@ export function AgentManager() {
               </button>
               <button className="am-del-btn-confirm" onClick={handleDeleteConfirm} disabled={deleting}>
                 {deleting ? '删除中...' : '确认删除'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ══════════════ Skill 配置弹窗 ══════════════ */}
+      {skillAgent && (
+        <div className="am-skill-mask" onClick={closeSkillModal}>
+          <div className="am-skill-dialog" onClick={e => e.stopPropagation()}>
+            <div className="am-skill-title">Skill 安全配置</div>
+            <div className="am-skill-subtitle">管理「{skillAgent.name}」的技能权限 · 🔴高危 🟡中危 🟢低危</div>
+
+            {/* 可见性选择 */}
+            <div style={{ fontSize: 12, fontWeight: 600, color: '#374151', marginBottom: 6 }}>可见性</div>
+            <div className="am-vis-selector">
+              {(['private', 'public', 'template'] as const).map(v => {
+                const labels = { private: '🔒 私有', public: '🌐 公开', template: '📋 模板' };
+                return (
+                  <button
+                    key={v}
+                    className={`am-vis-btn ${(skillAgent.visibility || 'private') === v ? 'active' : ''}`}
+                    disabled={updatingVisibility === skillAgent.id}
+                    onClick={async () => {
+                      await handleVisibilityChange(skillAgent, v);
+                    }}
+                  >
+                    {updatingVisibility === skillAgent.id ? '更新中...' : labels[v]}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Skill 开关 */}
+            <div style={{ fontSize: 12, fontWeight: 600, color: '#374151', marginBottom: 6 }}>技能开关</div>
+            <div className="am-skill-grid">
+              {SKILL_ITEMS.map(({ key, label, risk }) => {
+                const active = tempSkills[key] ?? false;
+                const dotColor = risk === 'high' ? '#dc2626' : risk === 'medium' ? '#f59e0b' : '#16a34a';
+                return (
+                  <div
+                    key={key}
+                    className={`am-skill-item${active ? ' active' : ''}`}
+                    onClick={() => setTempSkills(prev => ({ ...prev, [key]: !prev[key] }))}
+                  >
+                    <div className="am-skill-dot" style={{ background: dotColor }} />
+                    <span className="am-skill-item-label">{label}</span>
+                    <span className="am-skill-item-status">{active ? 'ON' : 'OFF'}</span>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="am-skill-btns">
+              <button className="am-del-btn-cancel" onClick={closeSkillModal} disabled={savingSkills}>取消</button>
+              <button className="am-del-btn-confirm" onClick={saveSkillConfig} disabled={savingSkills} style={{ background: '#2a3b4d' }}>
+                {savingSkills ? '保存中...' : '保存'}
               </button>
             </div>
           </div>

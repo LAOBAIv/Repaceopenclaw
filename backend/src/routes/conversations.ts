@@ -121,7 +121,8 @@ router.delete("/:id/agents/:agentId", (req: Request, res: Response) => {
  * Non-streaming, waits for full response before returning.
  * Body: { agentId: string }
  */
-router.post("/:id/generate", async (req: Request, res: Response) => {
+router.post("/:id/generate", authenticate, async (req: Request, res: Response) => {
+  const userId = (req as any).user?.id;
   const { agentId } = req.body;
   if (!agentId) return res.status(400).json({ error: "agentId required" });
 
@@ -130,6 +131,14 @@ router.post("/:id/generate", async (req: Request, res: Response) => {
 
   const agent = AgentService.getById(agentId);
   if (!agent) return res.status(404).json({ error: "Agent not found" });
+
+  // ── 配额检查 ──────────────────────────────────────────────────────
+  const quotaResult = AgentService.checkQuota(agentId, userId);
+  if (!quotaResult.allowed) {
+    return res.status(429).json({ error: quotaResult.reason });
+  }
+
+  const maxTokensPerMsg = AgentService.getMaxTokensPerMessage(agentId);
 
   // Build conversation history
   const messages = ConversationService.getMessages(req.params.id);
@@ -140,13 +149,18 @@ router.post("/:id/generate", async (req: Request, res: Response) => {
 
   let fullContent = "";
   let errorMsg: string | null = null;
+  let tokenCount = 0;
 
   await new Promise<void>((resolve) => {
     AgentService.generateStream(
       agentId,
       history,
-      (chunk) => { fullContent += chunk; },
-      () => resolve(),
+      (chunk) => {
+        // maxTokensPerMessage 限制：超出部分丢弃且不保存到回复中
+        if (maxTokensPerMsg && fullContent.length >= maxTokensPerMsg) return;
+        fullContent += chunk;
+      },
+      (tokens) => { tokenCount = tokens; resolve(); },
       (err) => { errorMsg = err.message; resolve(); }
     );
   });
@@ -154,6 +168,10 @@ router.post("/:id/generate", async (req: Request, res: Response) => {
   if (errorMsg) {
     return res.status(500).json({ error: errorMsg });
   }
+
+  // ── 记录用量 ──────────────────────────────────────────────────────
+  AgentService.recordUsage(userId, agentId, tokenCount);
+  AgentService.addTokenUsed(agentId, tokenCount);
 
   const agentMsg = ConversationService.addMessage({
     conversationId: req.params.id,

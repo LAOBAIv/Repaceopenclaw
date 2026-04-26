@@ -6,6 +6,7 @@
  */
 
 import { initDb, getDb, saveDb } from "../db/client";
+import { logger } from '../utils/logger';
 import fs from "fs";
 import path from "path";
 import { v4 as uuidv4 } from "uuid";
@@ -132,7 +133,7 @@ function parseAgentFile(
       outputFormat: "markdown",
     };
   } catch (err) {
-    console.error(`  ❌ 解析失败: ${filePath} — ${err}`);
+    logger.error(`  ❌ 解析失败: ${filePath} — ${err}`);
     return null;
   }
 }
@@ -152,7 +153,7 @@ function importAgencyAgents(): number {
     if (!fs.existsSync(dirPath) || !fs.statSync(dirPath).isDirectory()) continue;
 
     const files = fs.readdirSync(dirPath).filter((f) => f.endsWith(".md"));
-    console.log(`\n📂 ${catDir}/ (${files.length} 个文件)`);
+    logger.info(`\n📂 ${catDir}/ (${files.length} 个文件)`);
 
     for (const file of files) {
       const filePath = path.join(dirPath, file);
@@ -167,7 +168,7 @@ function importAgencyAgents(): number {
         [parsed.name, catDir]
       );
       if (existing.length && existing[0].values.length) {
-        console.log(`  ⏭️ 已存在: ${parsed.name}`);
+        logger.info(`  ⏭️ 已存在: ${parsed.name}`);
         continue;
       }
 
@@ -195,7 +196,7 @@ function importAgencyAgents(): number {
         ]
       );
       imported++;
-      console.log(`  ✅ ${parsed.emoji} ${parsed.name}`);
+      logger.info(`  ✅ ${parsed.emoji} ${parsed.name}`);
     }
   }
 
@@ -205,8 +206,8 @@ function importAgencyAgents(): number {
 
 // ── 主入口 ──
 (async () => {
-  console.log("🚀 开始导入 agency-agents 到 RepaceClaw...\n");
+  logger.info("🚀 开始导入 agency-agents 到 RepaceClaw...\n");
   await initDb();
   const count = importAgencyAgents();
-  console.log(`\n🎉 导入完成！共导入 ${count} 个 agent 模板。`);
+  logger.info(`\n🎉 导入完成！共导入 ${count} 个 agent 模板。`);
 })();

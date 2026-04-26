@@ -1,4 +1,5 @@
 import { v4 as uuidv4 } from "uuid";
+import { logger } from '../utils/logger';
 import { getDb, saveDb } from "../db/client";
 
 export interface AuditLogInput {
@@ -37,7 +38,7 @@ export const AuditService = {
       );
       saveDb();
     } catch (err) {
-      console.error("[AuditService] Failed to log audit:", err);
+      logger.error("[AuditService] Failed to log audit:", err);
     }
   },
 

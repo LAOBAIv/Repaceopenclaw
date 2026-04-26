@@ -79,13 +79,14 @@ export const AgentTemplateService = {
 
     const { AgentService } = require("./AgentService");
     const agent = AgentService.create({
-      name: template.name,
+      name: overrides.name || template.name,
       color: template.color,
       systemPrompt: template.systemPrompt,
       writingStyle: template.writingStyle,
       expertise: template.expertise,
       description: template.description,
       outputFormat: template.outputFormat,
+      userId: overrides.userId,  // Phase 3: 绑定当前用户
       ...overrides,
     });
     return agent;

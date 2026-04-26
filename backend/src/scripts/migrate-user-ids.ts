@@ -6,6 +6,7 @@
  */
 
 import { initDb, getDb, saveDb } from "../db/client";
+import { logger } from '../utils/logger';
 
 (async () => {
   await initDb();
@@ -16,11 +17,11 @@ import { initDb, getDb, saveDb } from "../db/client";
     "SELECT id FROM users WHERE role IN ('super_admin', 'admin') ORDER BY created_at ASC LIMIT 1"
   );
   if (!adminRes.length || !adminRes[0].values.length) {
-    console.log("❌ 未找到管理员用户，无法迁移");
+    logger.info("❌ 未找到管理员用户，无法迁移");
     return;
   }
   const adminId = adminRes[0].values[0][0] as string;
-  console.log(`📌 目标管理员: ${adminId}`);
+  logger.info(`📌 目标管理员: ${adminId}`);
 
   type Migration = { table: string; column: string };
   const migrations: Migration[] = [
@@ -42,7 +43,7 @@ import { initDb, getDb, saveDb } from "../db/client";
       if (!countRes.length) continue;
       const count = countRes[0].values[0][0] as number;
       if (count === 0) {
-        console.log(`  ⏭️  ${table}: 无需迁移`);
+        logger.info(`  ⏭️  ${table}: 无需迁移`);
         continue;
       }
 
@@ -52,12 +53,12 @@ import { initDb, getDb, saveDb } from "../db/client";
         [adminId]
       );
       totalMigrated += count;
-      console.log(`  ✅ ${table}: 迁移 ${count} 条`);
+      logger.info(`  ✅ ${table}: 迁移 ${count} 条`);
     } catch (err) {
-      console.log(`  ⚠️  ${table}: 跳过 (${err})`);
+      logger.info(`  ⚠️  ${table}: 跳过 (${err})`);
     }
   }
 
   saveDb();
-  console.log(`\n🎉 迁移完成！共迁移 ${totalMigrated} 条记录到管理员 ${adminId}`);
+  logger.info(`\n🎉 迁移完成！共迁移 ${totalMigrated} 条记录到管理员 ${adminId}`);
 })();

@@ -18,6 +18,7 @@
  */
 
 import { Router, Request, Response } from "express";
+import { logger } from '../utils/logger';
 import { AgentService } from "../services/AgentService";
 import { AutoLLMAdapter } from "../services/llm/AutoLLMAdapter";
 
@@ -263,7 +264,7 @@ router.post("/chat/completions", async (req: Request, res: Response) => {
       },
     });
   } catch (err: any) {
-    console.error("[OpenAI Compat] Unhandled error:", err);
+    logger.error("[OpenAI Compat] Unhandled error:", err);
     res.status(500).json({
       error: { message: err.message || "Internal server error", type: "internal_error" },
     });
