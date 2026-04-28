@@ -1,6 +1,8 @@
-// Core types for the multi-agent writing platform
+// Core types for the multi-agent platform
+// 架构版本: v2 — taskId/sessionId 1:1 绑定，ID 编码规范化
 
 export interface Agent {
+  /** 8 位字母数字，同一用户下唯一 */
   id: string;
   name: string;
   color: string;
@@ -9,7 +11,6 @@ export interface Agent {
   expertise: string[];
   description?: string;
   status?: "active" | "idle" | "busy";
-  // CODE 模型参数
   modelName?: string;
   modelProvider?: string;
   temperature?: number;
@@ -17,20 +18,14 @@ export interface Agent {
   topP?: number;
   frequencyPenalty?: number;
   presencePenalty?: number;
-  // 用户为该智能体配置的私有 Token 接入
   tokenProvider?: string;
   tokenApiKey?: string;
   tokenBaseUrl?: string;
-  // 输出格式 & 能力边界
   outputFormat?: string;
   boundary?: string;
-  // 对话记忆轮数（0 = 不限）
   memoryTurns?: number;
-  // 简单温度快捷覆盖（null = 使用模型默认）
   temperatureOverride?: number | null;
-  // Token 用量统计：累计消耗 token 总数
   tokenUsed?: number;
-  // Phase 3: 可见性 / Skill 管控 / 配额
   visibility?: 'private' | 'public' | 'template';
   skillsConfig?: Record<string, boolean>;
   quotaConfig?: {
@@ -65,35 +60,44 @@ export interface Project {
   updatedAt: string;
 }
 
+/**
+ * 会话（Session）
+ * taskId 与 sessionId 严格 1:1，两者同值
+ */
 export interface Conversation {
+  /** 会话 ID，格式同 taskId（21 位） */
   id: string;
+  /** 关联任务 ID（= id，1:1 冗余便于查询） */
+  taskId: string;
   projectId: string | null;
   /** 参与此会话的智能体 id 列表（≥1） */
   agentIds: string[];
-  /**
-   * @deprecated 兼容字段：等于 agentIds[0]，新代码请使用 agentIds
-   */
+  /** 当前正在对话的智能体 ID */
+  currentAgentId: string;
+  /** @deprecated 兼容字段，新代码使用 agentIds */
   agentId: string;
   title: string;
   createdAt: string;
 }
 
 export interface Message {
+  /** taskId + 6 位序号（27 位），例: u5a9B2xK7m_04281200_a3000001 */
   id: string;
+  /** 所属会话 ID（= taskId） */
   conversationId: string;
   role: "user" | "agent";
   content: string;
+  /** 发送者 agentId（用户消息为空） */
   agentId?: string;
   createdAt: string;
-  streaming?: boolean; // client-side only, for streaming state
+  streaming?: boolean;
 }
 
+/** 前端会话面板（UI 层） */
 export interface ConversationPanel {
-  id: string; // panel id (= conversationId)
+  id: string;
   conversationId: string;
-  /** 当前面板"主" agentId（单智能体对话时即为唯一 agent；多智能体时为发起者） */
   agentId: string;
-  /** 参与此会话的所有 agentIds */
   agentIds: string[];
   agentName: string;
   agentColor: string;
@@ -101,14 +105,11 @@ export interface ConversationPanel {
   isStreaming: boolean;
   streamingMessageId?: string;
   streamingContent?: string;
-  /** 协作任务启动提示，仅前端展示，不存库，用户可关闭 */
   systemBanner?: string;
 }
 
-/** Alias for ConversationPanel — used in UI components */
 export type OpenPanel = ConversationPanel;
 
-// DocumentNode for project documents
 export interface DocumentNode {
   id: string;
   projectId: string;
@@ -121,7 +122,6 @@ export interface DocumentNode {
   updatedAt: string;
 }
 
-// Agent Template from agency-agents library
 export interface AgentTemplate {
   id: string;
   name: string;
@@ -137,5 +137,3 @@ export interface AgentTemplate {
   githubSource: string;
   createdAt: string;
 }
-
-

@@ -61,6 +61,22 @@ router.post("/", authenticate, (req: Request, res: Response) => {
  * PUT /api/conversations/:id
  * 更新会话信息（标题、项目关联等）
  */
+/**
+ * POST /api/conversations/:id/switch-agent — 切换当前会话的 Agent
+ */
+router.post("/:id/switch-agent", (req: Request, res: Response) => {
+  const { agentId } = req.body;
+  if (!agentId) return res.status(400).json({ error: "agentId required" });
+  
+  const agent = AgentService.getById(agentId);
+  if (!agent) return res.status(404).json({ error: `Agent not found: ${agentId}` });
+  
+  const success = ConversationService.switchAgent(req.params.id, agentId);
+  if (!success) return res.status(404).json({ error: "Conversation not found" });
+  
+  res.json({ code: 0, data: { conversationId: req.params.id, currentAgentId: agentId }, msg: "ok" });
+});
+
 router.put("/:id", (req: Request, res: Response) => {
   const { title, projectId, taskId } = req.body;
   const conv = ConversationService.update(req.params.id, { title, projectId, taskId });

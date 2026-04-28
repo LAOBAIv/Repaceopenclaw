@@ -5,6 +5,8 @@ export interface Conversation {
   id: string;
   projectId: string | null;
   taskId: string | null;
+  /** 当前正在对话的智能体 ID */
+  currentAgentId: string;
   /** 参与本会话的所有智能体 id 列表（按加入时间排序） */
   agentIds: string[];
   /**
@@ -116,14 +118,15 @@ export const ConversationService = {
    * @param taskId 关联的任务 id（可选）
    * @param createdBy 创建人 id（可选）
    */
-  create(data: { agentIds: string[]; projectId?: string; taskId?: string; title?: string; createdBy?: string; userId?: string }): Conversation {
+  create(data: { agentIds: string[]; projectId?: string; taskId?: string; title?: string; createdBy?: string; userId?: string; currentAgentId?: string }): Conversation {
     const db = getDb();
     const id = uuidv4();
     const now = new Date().toISOString();
     const title = data.title || "新对话";
+    const currentAgentId = data.currentAgentId || data.agentIds[0] || '';
     db.run(
-      `INSERT INTO conversations (id, project_id, task_id, title, created_by, user_id, created_at) VALUES (?,?,?,?,?,?,?)`,
-      [id, data.projectId || null, data.taskId || null, title, data.createdBy || null, data.userId || "", now]
+      `INSERT INTO conversations (id, project_id, task_id, current_agent_id, title, created_by, user_id, created_at) VALUES (?,?,?,?,?,?,?,?)`,
+      [id, data.projectId || null, data.taskId || null, currentAgentId, title, data.createdBy || null, data.userId || "", now]
     );
     // 写入关联表
     for (const agentId of data.agentIds) {
@@ -134,9 +137,22 @@ export const ConversationService = {
     }
     saveDb();
     return rowToConversation(
-      { id, project_id: data.projectId || null, task_id: data.taskId || null, title, created_by: data.createdBy || null, created_at: now },
+      { id, project_id: data.projectId || null, task_id: data.taskId || null, current_agent_id: currentAgentId, title, created_by: data.createdBy || null, created_at: now },
       data.agentIds
     );
+  },
+
+  /**
+   * 切换当前会话的 Agent
+   */
+  switchAgent(conversationId: string, agentId: string): boolean {
+    const db = getDb();
+    const result = db.run(
+      `UPDATE conversations SET current_agent_id = ? WHERE id = ?`,
+      [agentId, conversationId]
+    );
+    saveDb();
+    return result.changes > 0;
   },
 
   /**

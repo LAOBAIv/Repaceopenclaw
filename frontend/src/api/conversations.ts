@@ -66,4 +66,10 @@ export const conversationsApi = {
   removeAgent: async (conversationId: string, agentId: string): Promise<void> => {
     await apiClient.delete(`/conversations/${conversationId}/agents/${agentId}`);
   },
+
+  /** 切换会话的当前 Agent */
+  switchAgent: async (conversationId: string, agentId: string) => {
+    const res = await apiClient.post(`/conversations/${conversationId}/switch-agent`, { agentId });
+    return res.data?.data;
+  },
 };

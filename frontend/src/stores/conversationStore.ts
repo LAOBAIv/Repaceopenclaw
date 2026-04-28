@@ -53,6 +53,8 @@ interface ConversationStore {
   sessionTabs: SessionTab[];
   /** 当前激活的 Tab id */
   activeTabId: string | null;
+  /** 当前会话正在对话的 Agent */
+  currentAgentId: string;
   /** 用户主动关闭的会话 ID 列表（刷新后不再恢复） */
   closedSessionIds: string[];
 
@@ -106,6 +108,8 @@ interface ConversationStore {
   getTabs: () => SessionTab[];
   /** 切换激活 Tab */
   switchTab: (tabId: string) => void;
+  /** 切换当前会话的 Agent（不换 Session） */
+  switchAgent: (sessionId: string, agentId: string) => Promise<void>;
   /** 关闭 Tab（会话 tab 记录到 closedSessionIds，home tab 忽略） */
   closeTab: (tabId: string) => void;
   /** 重命名 Tab */
@@ -133,6 +137,7 @@ export const useConversationStore = create<ConversationStore>()(
   wsConnected: false,
   sessionTabs: [{ id: 'home', type: 'home' as 'home' | 'session', title: '工作台', panelId: null }],
   activeTabId: 'home',
+  currentAgentId: '',
   /** 用户主动关闭的会话 ID 列表（刷新后不再恢复） */
   closedSessionIds: [],
 
@@ -465,6 +470,15 @@ export const useConversationStore = create<ConversationStore>()(
     set({ activeTabId: tabId });
   },
 
+  /** 切换当前会话的 Agent（不换 Session，只改 currentAgentId） */
+  switchAgent: async (sessionId, agentId) => {
+    try {
+      const { conversationsApi } = await import('@/api/conversations');
+      await conversationsApi.switchAgent(sessionId, agentId);
+    } catch {}
+    set({ currentAgentId: agentId });
+  },
+
   /** 关闭 Tab */
   closeTab: (tabId) => {
     const { sessionTabs, activeTabId, openPanels, closedSessionIds } = get();
@@ -494,7 +508,7 @@ export const useConversationStore = create<ConversationStore>()(
       ];
       newActiveTabId = tabsWithHome[idx]?.id ?? tabsWithHome[idx - 1]?.id ?? 'home';
     }
-    set({ sessionTabs: remaining, activeTabId: newActiveTabId, closedSessionIds: newClosedIds });
+    set({ sessionTabs: remaining, activeTabId: newActiveTabId, closedSessionIds: newClosedIds, currentAgentId: '' });
   },
 
   /** 重命名 Tab */
@@ -838,6 +852,7 @@ export const useConversationStore = create<ConversationStore>()(
       return {
         sessionTabs: [{ id: 'home', type: 'home' as 'home' | 'session', title: '工作台', panelId: null }],
         activeTabId: 'home',
+  currentAgentId: '',
         closedSessionIds: [],
       };
     },
@@ -846,6 +861,7 @@ export const useConversationStore = create<ConversationStore>()(
       sessionTabs: state.sessionTabs,
       activeTabId: state.activeTabId,
       closedSessionIds: state.closedSessionIds,
+      currentAgentId: state.currentAgentId,
     }),
   }
 )
