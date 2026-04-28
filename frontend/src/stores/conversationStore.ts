@@ -131,7 +131,7 @@ export const useConversationStore = create<ConversationStore>()(
   messagesMap: {},
   maxPanels: 4,
   wsConnected: false,
-  sessionTabs: [{ id: 'home', type: 'home' as const, title: '工作台', panelId: null }],
+  sessionTabs: [{ id: 'home', type: 'home' as 'home' | 'session', title: '工作台', panelId: null }],
   activeTabId: 'home',
   /** 用户主动关闭的会话 ID 列表（刷新后不再恢复） */
   closedSessionIds: [],
@@ -487,7 +487,7 @@ export const useConversationStore = create<ConversationStore>()(
       const idx = sessionTabs.findIndex(t => t.id === tabId);
       const hasHome = remaining.some(t => t.id === 'home');
       const tabsWithHome = hasHome ? remaining : [
-        { id: 'home', type: 'home' as const, title: '工作台', panelId: null },
+        { id: 'home', type: 'home' as 'home' | 'session', title: '工作台', panelId: null },
         ...remaining,
       ];
       newActiveTabId = tabsWithHome[idx]?.id ?? tabsWithHome[idx - 1]?.id ?? 'home';
@@ -830,30 +830,12 @@ export const useConversationStore = create<ConversationStore>()(
     name: "repaceclaw-conversations",
     version: 3, // 版本升级：新增 closedSessionIds 字段
     migrate: (persistedState: any, version: number) => {
-      // v1 旧数据：格式不兼容，返回全新状态
-      if (version < 2) {
-        return {
-          sessionTabs: [{ id: 'home', type: 'home', title: '工作台', panelId: null }],
-          activeTabId: 'home',
-          closedSessionIds: [],
-        };
-      }
-      // v2 数据：规范化 type 字段
-      if (version < 3) {
-        if (persistedState.sessionTabs && Array.isArray(persistedState.sessionTabs)) {
-          persistedState.sessionTabs = persistedState.sessionTabs.map((t: any) => ({
-            ...t,
-            type: t.type || (t.id === 'home' ? 'home' : 'session'),
-          }));
-        }
-        if (!persistedState.sessionTabs || persistedState.sessionTabs.length === 0) {
-          persistedState.sessionTabs = [{ id: 'home', type: 'home', title: '工作台', panelId: null }];
-        }
-        if (!persistedState.activeTabId) {
-          persistedState.activeTabId = 'home';
-        }
-      }
-      return persistedState;
+      // 无条件重置：旧数据格式完全不兼容，避免任何崩溃
+      return {
+        sessionTabs: [{ id: 'home', type: 'home' as 'home' | 'session', title: '工作台', panelId: null }],
+        activeTabId: 'home',
+        closedSessionIds: [],
+      };
     },
     // 持久化 tabs、激活状态、已关闭会话列表 — 消息从 API 恢复
     partialize: (state) => ({

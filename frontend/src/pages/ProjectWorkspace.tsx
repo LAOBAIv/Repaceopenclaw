@@ -13,7 +13,6 @@ import { TagSessionModal } from '@/components/TagSessionModal';
 import { NewTabModal } from '@/components/NewTabModal';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { sessionTabsApi } from '@/api/sessionTabs';
 import { conversationsApi } from '@/api/conversations';
 
 /* ── 浏览器标签页类型（与会话绑定） ── */
