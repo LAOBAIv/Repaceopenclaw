@@ -1989,193 +1989,23 @@ export function ProjectWorkspace() {
   /* ── 动态数据：优先用跳转传入的项目名 > currentProject > 第一个项目 ── */
   const taskName = incomingProjectName ?? currentProject?.title ?? (projects[0]?.title ?? 'WorkBuddy');
 
-  /* ── 浏览器标签页（从 API + localStorage 恢复） ── */
-  const [browserTabs, setBrowserTabs] = useState<BrowserTab[]>(() => {
-    try {
-      const saved = localStorage.getItem('repaceclaw-browser-tabs');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-      }
-    } catch {}
-    return [{ key: 'home', title: '工作台' }];
-  });
-  const [activeBrowserTabKey, setActiveBrowserTabKey] = useState(() => {
-    try {
-      const saved = localStorage.getItem('repaceclaw-active-browser-tab');
-      if (saved) return saved;
-    } catch {}
-    return 'home';
-  });
-  /** 标签页重命名状态 */
+  /* ── 标签页重命名状态 ── */
   const [editingTabId, setEditingTabId] = useState<string | null>(null);
   const [editingTabTitle, setEditingTabTitle] = useState('');
-
-  useEffect(() => {
-    setBrowserTabs(prev => prev.map(tab =>
-      tab.key === 'home' ? { ...tab, title: taskName || '工作台' } : tab
-    ));
-  }, [taskName]);
-
-  /* ── 初始化：从 API 恢复 browserTabs（含会话绑定信息） ── */
-  useEffect(() => {
-    sessionTabsApi.list().then(tabs => {
-      if (tabs && tabs.length > 0) {
-        const restored: BrowserTab[] = tabs.map(t => ({
-          key: t.browser_tab_key,
-          title: t.title || t.agent_name || '新标签页',
-          conversationId: t.conversation_id || undefined,
-          agentId: t.agent_id || undefined,
-          agentName: t.agent_name || undefined,
-          color: t.color || '#9ca3af',
-        }));
-        // 确保有 home tab
-        if (!restored.find(t => t.key === 'home')) {
-          restored.unshift({ key: 'home', title: taskName || '工作台' });
-        }
-        setBrowserTabs(restored);
-      }
-    }).catch(() => {});
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  /* ── 持久化浏览器标签页到 API + localStorage ── */
-  useEffect(() => {
-    // 快速写 localStorage
-    try {
-      localStorage.setItem('repaceclaw-browser-tabs', JSON.stringify(browserTabs));
-      localStorage.setItem('repaceclaw-active-browser-tab', activeBrowserTabKey);
-    } catch {}
-    // 异步写入 API（含会话绑定信息）
-    const apiTabs = browserTabs.map(tab => ({
-      browser_tab_key: tab.key,
-      title: tab.title,
-      ...(tab.conversationId ? {
-        conversation_id: tab.conversationId,
-        agent_id: tab.agentId || '',
-        agent_name: tab.agentName || '',
-        color: tab.color || '#9ca3af',
-      } : {}),
-    }));
-    sessionTabsApi.batch(apiTabs).catch(() => {});
-  }, [browserTabs, activeBrowserTabKey]);
-
-  /* ── 切换标签页时同步激活对应的会话面板 ── */
-  useEffect(() => {
-    const activeTab = browserTabs.find(t => t.key === activeBrowserTabKey);
-    if (activeTab?.conversationId) {
-      // 找到对应有会话的 panel
-      const panel = openPanels.find(p => p.id === activeTab.conversationId || p.conversationId === activeTab.conversationId);
-      if (panel && activePanelId !== panel.id) {
-        setActivePanelId(panel.id);
-      }
-    } else if (!activeTab?.conversationId && activePanelId) {
-      // 空标签页：不激活任何 panel
-      setActivePanelId(null);
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeBrowserTabKey, openPanels]);
-
-  /* ── 会话恢复后同步更新 browserTabs 标题 ── */
-  useEffect(() => {
-    if (openPanels.length === 0) return;
-    setBrowserTabs(prev => {
-      let changed = false;
-      const updated = prev.map(tab => {
-        // 找到匹配的面板
-        const panel = openPanels.find(p => p.id === tab.key || p.conversationId === tab.key || p.id === tab.conversationId);
-        if (panel && (!tab.agentName || tab.title === '新标签页')) {
-          changed = true;
-          return {
-            ...tab,
-            title: panel.agentName || tab.title,
-            conversationId: panel.conversationId,
-            agentId: panel.agentId,
-            agentName: panel.agentName,
-            color: panel.agentColor,
-            key: panel.conversationId,
-          };
-        }
-        return tab;
-      });
-      return changed ? updated : prev;
-    });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [openPanels]);
-
-  const handleAddBrowserTab = useCallback(() => {
-    // 不再直接创建空 Tab，改为弹窗收集信息
-    setShowNewTabModal(true);
-  }, []);
-
-  const handleCloseBrowserTab = useCallback((key: string) => {
-    const idx = browserTabs.findIndex(t => t.key === key);
-    const closingTab = browserTabs[idx];
-    // 同时调用 conversationStore.closeSessionTab 以记录 closedSessionIds
-    if (closingTab?.conversationId) {
-      useConversationStore.getState().closeTab(closingTab.key);
-    }
-    setBrowserTabs(prev => prev.filter(t => t.key !== key));
-    if (activeBrowserTabKey === key) {
-      const next = browserTabs[idx + 1] || browserTabs[idx - 1] || browserTabs[0];
-      if (next) setActiveBrowserTabKey(next.key);
-    }
-  }, [browserTabs, activeBrowserTabKey]);
 
   /** 新建标签页弹窗状态 */
   const [showNewTabModal, setShowNewTabModal] = useState(false);
 
-  /** 标签页弹窗创建成功回调 */
-  function handleNewTabCreated(convId: string, agentName: string, agentColor: string, tabTitle: string) {
-    const panel = openPanels.find(p => p.id === convId || p.conversationId === convId);
-    setActivePanelId(null);
-    setActivePanelId(convId);
-    const tabKey = convId;
-    const newTab: BrowserTab = {
-      key: tabKey,
-      title: tabTitle,
-      conversationId: convId,
-      agentId: panel?.agentId,
-      agentName,
-      color: agentColor,
-    };
-    setBrowserTabs(prev => [...prev, newTab]);
-    setActiveBrowserTabKey(tabKey);
-  }
-
-  /** 开始重命名标签页 */
-  const handleStartRenameTab = useCallback((key: string, currentTitle: string) => {
-    setEditingTabId(key);
-    setEditingTabTitle(currentTitle);
-  }, []);
-
-  /** 保存重命名 */
-  const handleSaveRenameTab = useCallback(async () => {
-    if (!editingTabId || !editingTabTitle.trim()) {
-      setEditingTabId(null);
-      return;
-    }
-    const newTitle = editingTabTitle.trim();
-    // 更新前端状态
-    setBrowserTabs(prev => prev.map(tab =>
-      tab.key === editingTabId ? { ...tab, title: newTitle } : tab
-    ));
-    // 同步到后端（如果 key 是会话 ID 格式的 conversationId）
-    if (editingTabId.startsWith('conv-') || editingTabId.length > 20) {
-      try {
-        await conversationsApi.update(editingTabId, { title: newTitle });
-      } catch (err) {
-        console.warn('[Rename] Failed to sync to backend:', err);
+  /* ── taskName 变化时同步 home tab 标题 ── */
+  useEffect(() => {
+    if (taskName) {
+      const homeTab = allTabs.find(t => t.id === 'home');
+      if (homeTab && homeTab.title !== taskName) {
+        renameTab('home', taskName);
       }
     }
-    setEditingTabId(null);
-  }, [editingTabId, editingTabTitle]);
-
-  /** 取消重命名 */
-  const handleCancelRename = useCallback(() => {
-    setEditingTabId(null);
-    setEditingTabTitle('');
-  }, []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [taskName]);
   const taskProgress = 68; // 真实进度字段后端暂无，保留占位
 
   /* ── 找到 kanban 中对应的项目（项目模式用来读写 tags/priority）── */
@@ -2252,20 +2082,16 @@ export function ProjectWorkspace() {
       // 6. 关闭标签管理弹窗（让用户看到新会话）
       setActiveSideTab(null);
 
-      // 7. 新建 BrowserTab 并切换激活状态（关键：清除旧会话的 activePanelId）
-      setActivePanelId(null); // 先清空，防止旧消息闪烁
-      setActivePanelId(result.id); // 再设置新面板
-      const tabKey = result.id;
-      const newTab: BrowserTab = {
-        key: tabKey,
-        title: tag,
-        conversationId: result.id,
+      // 7. 创建 Tab 并切换（使用 store 统一管理）
+      setActivePanelId(null);
+      setActivePanelId(result.id);
+      createSessionTabFn({
         agentId: defaultAgent.id,
         agentName: defaultAgent.name,
-        color: defaultAgent.color,
-      };
-      setBrowserTabs(prev => [...prev, newTab]);
-      setActiveBrowserTabKey(tabKey);
+        agentColor: defaultAgent.color,
+        title: tag,
+        conversationId: result.id,
+      });
 
       console.log('[addTag] done, switched to new tab/session:', result.id);
     } catch (err: any) {
@@ -2284,17 +2110,13 @@ export function ProjectWorkspace() {
   /* ── 标签弹窗创建成功回调 ── */
   function handleTagSessionCreated(convId: string) {
     const panel = openPanels.find(p => p.id === convId || p.conversationId === convId);
-    const tabKey = convId;
-    const newTab: BrowserTab = {
-      key: tabKey,
+    createSessionTabFn({
+      agentId: panel?.agentId || '',
+      agentName: panel?.agentName || pendingTag || '新会话',
+      agentColor: panel?.agentColor || '#6366f1',
       title: panel?.agentName || pendingTag || '新会话',
       conversationId: convId,
-      agentId: panel?.agentId,
-      agentName: panel?.agentName,
-      color: panel?.agentColor || '#6366f1',
-    };
-    setBrowserTabs(prev => [...prev, newTab]);
-    setActiveBrowserTabKey(tabKey);
+    });
     setActivePanelId(convId);
     setPendingTag('');
   }
@@ -2404,23 +2226,7 @@ export function ProjectWorkspace() {
         const targetPanel = panels.find(p => p.id === navState.sessionId || p.conversationId === navState.sessionId);
         if (targetPanel) {
           setActivePanelId(targetPanel.id);
-          setBrowserTabs(prev => {
-            const existing = prev.find(t => t.key === targetPanel.conversationId);
-            if (existing) {
-              setActiveBrowserTabKey(existing.key);
-              return prev;
-            }
-            const newTab = {
-              key: targetPanel.conversationId,
-              title: targetPanel.agentName || targetPanel.agentId || '会话',
-              conversationId: targetPanel.conversationId,
-              agentId: targetPanel.agentId,
-              agentName: targetPanel.agentName,
-              color: targetPanel.agentColor,
-            };
-            setActiveBrowserTabKey(newTab.key);
-            return [...prev, newTab];
-          });
+          switchTab(targetPanel.conversationId);
         } else {
           // 面板未恢复，尝试从 API 加载并打开
           import('@/api/sessions').then(({ sessionsApi }) => {
@@ -2431,40 +2237,15 @@ export function ProjectWorkspace() {
                   agentName: session.title || '会话',
                   agentColor: '#6366f1',
                   initialMessage: undefined,
-                    }).then(panelId => {
+                }).then(panelId => {
                   if (panelId) {
                     setActivePanelId(panelId);
-                    setBrowserTabs(prev => {
-                      const newTab = { key: panelId, title: session.title || '会话', conversationId: panelId };
-                      setActiveBrowserTabKey(newTab.key);
-                      return [...prev, newTab];
-                    });
+                    switchTab(panelId);
                   }
                 });
               }
             });
           }).catch(() => {});
-        }
-      }
-
-      // 从恢复的 sessionTabs 重建 browserTabs（包含会话绑定信息）
-      if (sessionTabs && sessionTabs.length > 0) {
-        const restoredBrowserTabs: BrowserTab[] = sessionTabs.map(tab => ({
-          key: tab.id,
-          title: tab.title || '会话',
-          conversationId: tab.panelId || undefined,
-          agentId: '',
-          agentName: tab.title,
-          color: tab.color || '#9ca3af',
-        }));
-        // 确保有 home tab
-        if (!restoredBrowserTabs.find(t => t.key === 'home')) {
-          restoredBrowserTabs.unshift({ key: 'home', title: taskName || '工作台' });
-        }
-        setBrowserTabs(restoredBrowserTabs);
-        // 设置激活的 browser tab
-        if (activeTabId) {
-          setActiveBrowserTabKey(activeTabId);
         }
       }
     });
@@ -2712,13 +2493,13 @@ export function ProjectWorkspace() {
 
           {/* ── 浏览器风格多标签栏 ── */}
           <div style={{ display: 'flex', alignItems: 'flex-end', padding: '12px 16px 0', flexShrink: 0, overflowX: 'auto', gap: 4, background: '#fafbfc' }}>
-            {browserTabs.map((tab) => {
-              const isActive = tab.key === activeBrowserTabKey;
-              const hasSession = !!tab.conversationId;
+            {allTabs.map((tab) => {
+              const isActive = tab.id === storeActiveId;
+              const hasSession = tab.type === 'session' && !!tab.panelId;
               return (
                 <div
-                  key={tab.key}
-                  onClick={() => setActiveBrowserTabKey(tab.key)}
+                  key={tab.id}
+                  onClick={() => switchTab(tab.id)}
                   style={{
                     display: 'flex', alignItems: 'center', gap: 8,
                     padding: isActive ? '14px 20px 12px' : '12px 18px 10px',
@@ -2750,15 +2531,18 @@ export function ProjectWorkspace() {
                     }} />
                   )}
 
-                  {editingTabId === tab.key ? (
+                  {editingTabId === tab.id ? (
                     <input
                       type="text"
                       value={editingTabTitle}
                       onChange={(e) => setEditingTabTitle(e.target.value)}
-                      onBlur={handleSaveRenameTab}
+                      onBlur={() => {
+                        if (editingTabTitle.trim()) renameTab(tab.id, editingTabTitle.trim());
+                        setEditingTabId(null);
+                      }}
                       onKeyDown={(e) => {
-                        if (e.key === 'Enter') handleSaveRenameTab();
-                        if (e.key === 'Escape') handleCancelRename();
+                        if (e.key === 'Enter' && editingTabTitle.trim()) { renameTab(tab.id, editingTabTitle.trim()); setEditingTabId(null); }
+                        if (e.key === 'Escape') { setEditingTabId(null); setEditingTabTitle(''); }
                       }}
                       onClick={(e) => e.stopPropagation()}
                       autoFocus
@@ -2772,25 +2556,28 @@ export function ProjectWorkspace() {
                     <span
                       onDoubleClick={(e) => {
                         e.stopPropagation();
-                        handleStartRenameTab(tab.key, tab.title);
+                        setEditingTabId(tab.id);
+                        setEditingTabTitle(tab.title);
                       }}
                       style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 160 }}
                       title="双击重命名"
                     >{tab.title}</span>
                   )}
-                  <span
-                    onClick={(e) => { e.stopPropagation(); handleCloseBrowserTab(tab.key); }}
+                  {tab.type !== 'home' && (
+                    <span
+                      onClick={(e) => { e.stopPropagation(); closeTabFn(tab.id); }}
                     style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 20, height: 20, borderRadius: 6, opacity: 0.4, cursor: 'pointer', transition: 'all 0.15s', marginLeft: 4 }}
                     onMouseEnter={(e) => { e.stopPropagation(); e.currentTarget.style.background = '#fee2e2'; e.currentTarget.style.opacity = '1'; e.currentTarget.style.color = '#ef4444'; }}
                     onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.opacity = '0.4'; e.currentTarget.style.color = 'inherit'; }}
                   >
                     <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M3 3L9 9M9 3L3 9" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/></svg>
-                  </span>
+                    </span>
+                  )}
                 </div>
               );
             })}
             <button
-              onClick={handleAddBrowserTab}
+              onClick={() => setShowNewTabModal(true)}
               style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 36, height: 36, background: 'transparent', border: '1px dashed #d1d5db', borderRadius: 8, cursor: 'pointer', color: '#9ca3af', flexShrink: 0, transition: 'all 0.2s', marginBottom: 4 }}
               onMouseEnter={(e) => { e.currentTarget.style.background = '#f3f4f6'; e.currentTarget.style.borderColor = '#9ca3af'; e.currentTarget.style.color = '#6b7280'; }}
               onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.borderColor = '#d1d5db'; e.currentTarget.style.color = '#9ca3af'; }}
@@ -2939,18 +2726,7 @@ export function ProjectWorkspace() {
                 const newPanelId = await openPanel({ agentId, agentName, agentColor, projectId: currentProject?.id, initialMessage, forceNew: true });
                 if (newPanelId) {
                   setActivePanelId(newPanelId);
-                  setBrowserTabs(prev => prev.map(tab =>
-                    tab.key === activeBrowserTabKey ? { ...tab, title: agentName, key: newPanelId, conversationId: newPanelId, agentId, agentName, color: agentColor } : tab
-                  ));
-                  // 写入数据库：BrowserTab key ↔ SessionTab conversationId 绑定
-                  sessionTabsApi.upsert({
-                    browser_tab_key: newPanelId,
-                    title: agentName,
-                    conversation_id: newPanelId,
-                    agent_id: agentId,
-                    agent_name: agentName,
-                    color: agentColor,
-                  }).catch(() => {});
+                  createSessionTabFn({ agentId, agentName, agentColor, title: agentName, conversationId: newPanelId });
                 }
               } else {
                 setActivePanelId(existing.id);
@@ -2960,18 +2736,7 @@ export function ProjectWorkspace() {
               const fresh = useConversationStore.getState().openPanels.find(p => p.agentId === agentId);
               if (fresh) {
                 setActivePanelId(fresh.id);
-                setBrowserTabs(prev => prev.map(tab =>
-                  tab.key === activeBrowserTabKey ? { ...tab, title: agentName, key: fresh.id, conversationId: fresh.id, agentId, agentName, color: agentColor } : tab
-                ));
-                // 写入数据库：BrowserTab key ↔ SessionTab conversationId 绑定
-                sessionTabsApi.upsert({
-                  browser_tab_key: fresh.id,
-                  title: agentName,
-                  conversation_id: fresh.id,
-                  agent_id: agentId,
-                  agent_name: agentName,
-                  color: agentColor,
-                }).catch(() => {});
+                createSessionTabFn({ agentId, agentName, agentColor, title: agentName, conversationId: fresh.id });
               }
             }
           }}
@@ -3008,7 +2773,10 @@ export function ProjectWorkspace() {
         <NewTabModal
           open={showNewTabModal}
           onClose={() => setShowNewTabModal(false)}
-          onCreated={handleNewTabCreated}
+          onCreated={(convId, agentName, agentColor, tabTitle) => {
+            setActivePanelId(convId);
+            createSessionTabFn({ agentId: '', agentName, agentColor, title: tabTitle, conversationId: convId });
+          }}
         />
       )}
     </>
