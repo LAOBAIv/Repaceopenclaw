@@ -8,6 +8,19 @@ export const conversationsApi = {
   },
 
   /**
+   * 创建会话并生成项目概述（空白对话 + AI 概述消息）
+   */
+  createWithOverview: async (data: {
+    title: string;
+    agentIds: string[];
+    projectId?: string;
+    description?: string;
+  }): Promise<Conversation & { messages: Message[] }> => {
+    const res = await apiClient.post("/conversations/create-with-overview", data);
+    return res.data.data;
+  },
+
+  /**
    * 创建会话
    * - 新版：传 agentIds 数组，支持多智能体
    * - 兼容旧版：也可传 agentId 单字符串（后端自动处理）

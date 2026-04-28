@@ -197,6 +197,10 @@ function setupStaticFiles(app: express.Application): void {
       ) {
         return next();
       }
+      // 禁用 index.html 缓存，确保每次加载最新 JS
+      res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
+      res.set('Pragma', 'no-cache');
+      res.set('Expires', '0');
       res.sendFile(path.join(staticPath, 'index.html'));
     });
 

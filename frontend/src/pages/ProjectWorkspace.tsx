@@ -9,6 +9,10 @@ import { useTaskStore } from '@/stores/taskStore';
 import { useProjectKanbanStore, type ProjectPriority } from '@/stores/projectKanbanStore';
 import { showToast } from '@/components/Toast';
 import { SessionAgentBar } from '@/components/SessionAgentBar';
+import { TagSessionModal } from '@/components/TagSessionModal';
+import { NewTabModal } from '@/components/NewTabModal';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { sessionTabsApi } from '@/api/sessionTabs';
 import { conversationsApi } from '@/api/conversations';
 
@@ -2091,19 +2095,44 @@ export function ProjectWorkspace() {
   }, [openPanels]);
 
   const handleAddBrowserTab = useCallback(() => {
-    const newTab: BrowserTab = { key: `tab-${Date.now()}`, title: '新标签页' };
-    setBrowserTabs(prev => [...prev, newTab]);
-    setActiveBrowserTabKey(newTab.key);
+    // 不再直接创建空 Tab，改为弹窗收集信息
+    setShowNewTabModal(true);
   }, []);
 
   const handleCloseBrowserTab = useCallback((key: string) => {
     const idx = browserTabs.findIndex(t => t.key === key);
+    const closingTab = browserTabs[idx];
+    // 同时调用 conversationStore.closeSessionTab 以记录 closedSessionIds
+    if (closingTab?.conversationId) {
+      useConversationStore.getState().closeSessionTab(closingTab.key);
+    }
     setBrowserTabs(prev => prev.filter(t => t.key !== key));
     if (activeBrowserTabKey === key) {
       const next = browserTabs[idx + 1] || browserTabs[idx - 1] || browserTabs[0];
       if (next) setActiveBrowserTabKey(next.key);
     }
   }, [browserTabs, activeBrowserTabKey]);
+
+  /** 新建标签页弹窗状态 */
+  const [showNewTabModal, setShowNewTabModal] = useState(false);
+
+  /** 标签页弹窗创建成功回调 */
+  function handleNewTabCreated(convId: string, agentName: string, agentColor: string, tabTitle: string) {
+    const panel = openPanels.find(p => p.id === convId || p.conversationId === convId);
+    setActivePanelId(null);
+    setActivePanelId(convId);
+    const tabKey = convId;
+    const newTab: BrowserTab = {
+      key: tabKey,
+      title: tabTitle,
+      conversationId: convId,
+      agentId: panel?.agentId,
+      agentName,
+      color: agentColor,
+    };
+    setBrowserTabs(prev => [...prev, newTab]);
+    setActiveBrowserTabKey(tabKey);
+  }
 
   /** 开始重命名标签页 */
   const handleStartRenameTab = useCallback((key: string, currentTitle: string) => {
@@ -2155,14 +2184,83 @@ export function ProjectWorkspace() {
   const currentTags: string[] = matchedTask?.tags ?? matchedKanbanProject?.tags ?? [];
   const currentPriority: ProjectPriority | null = (matchedTask?.priority as ProjectPriority | undefined) ?? matchedKanbanProject?.priority ?? null;
 
-  /* ── 标签编辑（写回 store，供标签管理面板使用）──────────── */
-  function addTag(raw: string) {
+  /* ── 标签弹窗状态 ── */
+  const [showTagSessionModal, setShowTagSessionModal] = useState(false);
+  const [pendingTag, setPendingTag] = useState<string>('');
+
+  /* ── 标签编辑（直接创建新会话）──────────── */
+  async function addTag(raw: string) {
     const tag = raw.trim();
-    if (!tag || currentTags.includes(tag)) return;
+    console.log('[addTag] called with:', raw, '| trimmed:', tag);
+    if (!tag) { console.log('[addTag] empty tag, returning'); return; }
+    if (currentTags.includes(tag)) { console.log('[addTag] tag already exists, returning'); return; }
+    console.log('[addTag] currentTags:', currentTags, '| matchedTask:', !!matchedTask, '| matchedKanbanProject:', !!matchedKanbanProject);
+
+    // 1. 写回标签到 store
     if (matchedTask) {
       updateTask(matchedTask.id, { tags: [...currentTags, tag] });
     } else if (matchedKanbanProject) {
       updateKanbanProject(matchedKanbanProject.id, { tags: [...currentTags, tag] });
+    }
+
+    // 2. 取默认智能体
+    const defaultAgent = agents[0];
+    if (!defaultAgent) {
+      console.log('[addTag] no agents available');
+      return;
+    }
+    console.log('[addTag] using agent:', defaultAgent.name, defaultAgent.id);
+
+    try {
+      // 3. 调用后端创建会话+概述接口（确保生成全新 conversationId）
+      const result = await conversationsApi.createWithOverview({
+        title: tag,
+        agentIds: [defaultAgent.id],
+        description: '',
+      });
+      console.log('[addTag] conversation created:', result.id);
+
+      // 4. 创建 Panel（直接 setState，绕过 openPanel 复用逻辑）
+      const panel: import('../types').ConversationPanel = {
+        id: result.id,
+        conversationId: result.id,
+        agentId: defaultAgent.id,
+        agentIds: result.agentIds?.length ? result.agentIds : [defaultAgent.id],
+        agentName: defaultAgent.name,
+        agentColor: defaultAgent.color,
+        messages: result.messages || [],
+        isStreaming: false,
+      };
+      useConversationStore.setState(state => ({ openPanels: [...state.openPanels, panel] }));
+
+      // 5. 更新 participatingAgentNames（确保协作 Tab 显示最新参与智能体）
+      setParticipatingAgentNames(prev => {
+        const agentName = defaultAgent.name;
+        if (prev.includes(agentName)) return prev;
+        return [...prev, agentName];
+      });
+
+      // 6. 关闭标签管理弹窗（让用户看到新会话）
+      setActiveTab(null);
+
+      // 7. 新建 BrowserTab 并切换激活状态（关键：清除旧会话的 activePanelId）
+      setActivePanelId(null); // 先清空，防止旧消息闪烁
+      setActivePanelId(result.id); // 再设置新面板
+      const tabKey = result.id;
+      const newTab: BrowserTab = {
+        key: tabKey,
+        title: tag,
+        conversationId: result.id,
+        agentId: defaultAgent.id,
+        agentName: defaultAgent.name,
+        color: defaultAgent.color,
+      };
+      setBrowserTabs(prev => [...prev, newTab]);
+      setActiveBrowserTabKey(tabKey);
+
+      console.log('[addTag] done, switched to new tab/session:', result.id);
+    } catch (err: any) {
+      console.error('[addTag] failed:', err);
     }
   }
 
@@ -2172,6 +2270,24 @@ export function ProjectWorkspace() {
     } else if (matchedKanbanProject) {
       updateKanbanProject(matchedKanbanProject.id, { tags: currentTags.filter(t => t !== tag) });
     }
+  }
+
+  /* ── 标签弹窗创建成功回调 ── */
+  function handleTagSessionCreated(convId: string) {
+    const panel = openPanels.find(p => p.id === convId || p.conversationId === convId);
+    const tabKey = convId;
+    const newTab: BrowserTab = {
+      key: tabKey,
+      title: panel?.agentName || pendingTag || '新会话',
+      conversationId: convId,
+      agentId: panel?.agentId,
+      agentName: panel?.agentName,
+      color: panel?.agentColor || '#6366f1',
+    };
+    setBrowserTabs(prev => [...prev, newTab]);
+    setActiveBrowserTabKey(tabKey);
+    setActivePanelId(convId);
+    setPendingTag('');
   }
 
   /* ── 优先级读写 ──────────────────────────────────────────── */
@@ -2259,6 +2375,20 @@ export function ProjectWorkspace() {
     connect();
     restoreFromPersist().then(() => {
       const panels = useConversationStore.getState().openPanels;
+      const sessionTabs = useConversationStore.getState().sessionTabs;
+      const activeTabId = useConversationStore.getState().activeTabId;
+
+      // 设置激活的面板（优先用 activeTabId 对应的 panel）
+      if (activeTabId) {
+        const activePanel = panels.find(p => p.id === activeTabId || p.conversationId === activeTabId);
+        if (activePanel) {
+          setActivePanelId(activePanel.id);
+        } else if (panels.length > 0) {
+          setActivePanelId(panels[0].id);
+        }
+      } else if (panels.length > 0) {
+        setActivePanelId(panels[0].id);
+      }
 
       // 如果从会话列表/kanban 导航过来，打开指定会话
       if (navState?.sessionId) {
@@ -2288,8 +2418,8 @@ export function ProjectWorkspace() {
             sessionsApi.get(navState.sessionId!).then(session => {
               if (session) {
                 openPanel({
-                  agentId: session.agentId || '',
-                  agentName: session.title?.replace(/^与\s+/, '').replace(/\s+的对话$/, '') || '',
+                  agentId: session.agentId || session.agentIds?.[0] || '',
+                  agentName: session.title || '会话',
                   agentColor: '#6366f1',
                   initialMessage: undefined,
                     }).then(panelId => {
@@ -2308,18 +2438,25 @@ export function ProjectWorkspace() {
         }
       }
 
-      // 同步更新 browserTabs 标题
-      if (panels.length > 0) {
-        setBrowserTabs(prev => {
-          const updated = prev.map(tab => {
-            const panel = panels.find(p => p.id === tab.key || p.conversationId === tab.key);
-            if (panel) {
-              return { ...tab, title: panel.agentName || tab.title, key: panel.conversationId };
-            }
-            return tab;
-          });
-          return updated;
-        });
+      // 从恢复的 sessionTabs 重建 browserTabs（包含会话绑定信息）
+      if (sessionTabs && sessionTabs.length > 0) {
+        const restoredBrowserTabs: BrowserTab[] = sessionTabs.map(tab => ({
+          key: tab.id,
+          title: tab.title || '会话',
+          conversationId: tab.panelId || undefined,
+          agentId: '',
+          agentName: tab.title,
+          color: tab.color || '#9ca3af',
+        }));
+        // 确保有 home tab
+        if (!restoredBrowserTabs.find(t => t.key === 'home')) {
+          restoredBrowserTabs.unshift({ key: 'home', title: taskName || '工作台' });
+        }
+        setBrowserTabs(restoredBrowserTabs);
+        // 设置激活的 browser tab
+        if (activeTabId) {
+          setActiveBrowserTabKey(activeTabId);
+        }
       }
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -2485,6 +2622,76 @@ export function ProjectWorkspace() {
           0%, 100% { opacity: 1; transform: scale(1); }
           50% { opacity: 0.5; transform: scale(1.4); }
         }
+        /* Markdown 渲染样式 */
+        .markdown-body table {
+          border-collapse: collapse;
+          width: 100%;
+          margin: 8px 0;
+          font-size: 12px;
+        }
+        .markdown-body th, .markdown-body td {
+          border: 1px solid #d1d5db;
+          padding: 6px 10px;
+          text-align: left;
+        }
+        .markdown-body th {
+          background: #f3f4f6;
+          font-weight: 600;
+        }
+        .markdown-body code {
+          background: rgba(0,0,0,0.08);
+          padding: 1px 5px;
+          border-radius: 3px;
+          font-size: 12px;
+          font-family: 'Menlo','Consolas','Courier New',monospace;
+        }
+        .markdown-body pre {
+          background: #1e293b;
+          color: #e2e8f0;
+          padding: 12px;
+          border-radius: 6px;
+          overflow-x: auto;
+          font-size: 12px;
+          margin: 8px 0;
+        }
+        .markdown-body pre code {
+          background: none;
+          padding: 0;
+          color: inherit;
+        }
+        .markdown-body strong { font-weight: 700; }
+        .markdown-body em { font-style: italic; }
+        .markdown-body ul, .markdown-body ol {
+          padding-left: 20px;
+          margin: 6px 0;
+        }
+        .markdown-body li { margin: 3px 0; }
+        .markdown-body h1, .markdown-body h2, .markdown-body h3, .markdown-body h4 {
+          margin: 10px 0 6px;
+          font-weight: 700;
+          line-height: 1.4;
+        }
+        .markdown-body h1 { font-size: 16px; }
+        .markdown-body h2 { font-size: 15px; }
+        .markdown-body h3 { font-size: 14px; }
+        .markdown-body h4 { font-size: 13px; }
+        .markdown-body blockquote {
+          border-left: 3px solid #d1d5db;
+          padding-left: 12px;
+          color: #6b7280;
+          margin: 6px 0;
+        }
+        /* 深色背景下的 markdown */
+        .bubble-dark .markdown-body code {
+          background: rgba(255,255,255,0.15);
+        }
+        .bubble-dark .markdown-body pre {
+          background: #1a1a2e;
+        }
+        .bubble-dark .markdown-body blockquote {
+          border-left-color: rgba(255,255,255,0.3);
+          color: rgba(255,255,255,0.7);
+        }
         @media (max-width: 768px) {
           .workspace-body { padding: 8px; }
           .content-header { flex-direction: column; align-items: flex-start; gap: 6px; }
@@ -2620,7 +2827,17 @@ export function ProjectWorkspace() {
                   color: msg.role === 'user' ? '#fff' : '#1a202c',
                   fontSize: 13, lineHeight: 1.6,
                 }}>
-                  {msg.content || <span style={{ opacity: 0.4 }}>●●●</span>}
+                  {msg.content ? (
+                    <div className="markdown-body" style={{
+                      ...(msg.role === 'user' ? { color: '#fff' } : {}),
+                    }}>
+                      <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                        {msg.content}
+                      </ReactMarkdown>
+                    </div>
+                  ) : (
+                    <span style={{ opacity: 0.4 }}>●●●</span>
+                  )}
                 </div>
               </div>
             ))}
@@ -2765,6 +2982,25 @@ export function ProjectWorkspace() {
 
       {showChannelModal && (
         <ChannelConfigModal onClose={() => setShowChannelModal(false)} />
+      )}
+
+      {/* 标签 → 新建会话弹窗 */}
+      {showTagSessionModal && (
+        <TagSessionModal
+          open={showTagSessionModal}
+          tag={pendingTag}
+          onClose={() => { setShowTagSessionModal(false); setPendingTag(''); }}
+          onCreated={handleTagSessionCreated}
+        />
+      )}
+
+      {/* 首页 + 号新建标签页弹窗 */}
+      {showNewTabModal && (
+        <NewTabModal
+          open={showNewTabModal}
+          onClose={() => setShowNewTabModal(false)}
+          onCreated={handleNewTabCreated}
+        />
       )}
     </>
   );

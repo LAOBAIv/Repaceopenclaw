@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { apiClient } from '../api/client';
-import { Plus, Trash2, TestTube2, CheckCircle2, XCircle, Loader2, ChevronDown, ChevronUp, Zap, Pencil, Eye, EyeOff } from 'lucide-react';
+import { Plus, Trash2, TestTube2, CheckCircle2, XCircle, Loader2, ChevronDown, ChevronUp, Zap, Pencil, Eye, EyeOff, Star } from 'lucide-react';
 
 interface Channel {
   id: string;
@@ -11,6 +11,7 @@ interface Channel {
   authType: 'Bearer' | 'ApiKey' | 'Basic';
   enabled: boolean;
   priority: number;
+  isPreset?: boolean;
 }
 
 interface TestResult {
@@ -194,7 +195,22 @@ export function ModelChannels() {
 
   const toggleEnabled = async (ch: Channel) => {
     await apiClient.post('/token-channels', { ...ch, enabled: !ch.enabled });
-    await fetchChannels();
+    fetchChannels();
+  };
+
+  const togglePreset = async (ch: Channel) => {
+    try {
+      // 设为预设时，同时发送 enabled: true 确保渠道可用
+      await apiClient.post('/token-channels', { ...ch, isPreset: !ch.isPreset, enabled: true });
+      await fetchChannels();
+      setSaveMsg(ch.isPreset ? '✅ 已取消预设' : '✅ 已设为预设渠道');
+      setTimeout(() => setSaveMsg(''), 2500);
+    } catch (err: any) {
+      const errMsg = err?.response?.data?.error || err.message || '未知错误';
+      console.error('[togglePreset] Error:', errMsg);
+      setSaveMsg('❌ 操作失败：' + errMsg);
+      setTimeout(() => setSaveMsg(''), 4000);
+    }
   };
 
   return (
@@ -269,6 +285,10 @@ export function ModelChannels() {
                     <button onClick={() => handleEdit(ch)} title="编辑渠道" style={btnStyle('#f5f3ff', '#7c3aed')}>
                       <Pencil size={14} />
                       <span>编辑</span>
+                    </button>
+                    <button onClick={() => togglePreset(ch)} title={ch.isPreset ? '取消预设' : '设为平台预设'} style={ch.isPreset ? btnStyle('#fef3c7', '#d97706') : btnStyle('#f5f3ff', '#7c3aed')}>
+                      <Star size={14} fill={ch.isPreset ? '#d97706' : 'none'} />
+                      <span>{ch.isPreset ? '已预设' : '设预设'}</span>
                     </button>
                     <button onClick={() => toggleEnabled(ch)} style={btnStyle('#eff6ff', '#2563eb')}>
                       {ch.enabled ? '禁用' : '启用'}

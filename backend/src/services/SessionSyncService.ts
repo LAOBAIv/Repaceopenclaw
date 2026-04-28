@@ -140,8 +140,8 @@ export function syncToDatabase(db: any, userId: string = ''): { synced: number; 
       if (existingMapping) {
         conversationId = existingMapping.conversation_id;
         db.run(
-          `UPDATE conversations SET title = ?, oc_session_key = ?, updated_at = ? WHERE id = ?`,
-          [title, session.sessionKey, updatedAt, conversationId]
+          `UPDATE conversations SET title = ?, oc_session_key = ? WHERE id = ?`,
+          [title, session.sessionKey, conversationId]
         );
         db.run(
           `UPDATE session_mapping SET conversation_id = ?, session_file = ?, updated_at = ? WHERE oc_session_key = ?`,
@@ -151,9 +151,9 @@ export function syncToDatabase(db: any, userId: string = ''): { synced: number; 
         conversationId = session.sessionId;
         db.run(
           `INSERT OR IGNORE INTO conversations 
-           (id, title, agent_id, agent_ids, oc_session_key, created_at, updated_at, user_id)
-           VALUES (?, ?, '', '[]', ?, ?, ?, ?)`,
-          [conversationId, title, session.sessionKey, now, now, userId]
+           (id, title, oc_session_key, created_at, user_id)
+           VALUES (?, ?, ?, ?, ?)`,
+          [conversationId, title, session.sessionKey, now, userId]
         );
         const mappingId = `map_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
         db.run(
@@ -173,25 +173,52 @@ export function syncToDatabase(db: any, userId: string = ''): { synced: number; 
   return { synced, total: openClawSessions.length, errors };
 }
 
-/** 获取合并后的会话列表 */
+/** 获取合并后的会话列表 — 通过 conversation_agents 关联表获取 agentIds */
 export function getAllSessions(db: any, userId: string = '') {
   const rows = db.exec(`
     SELECT 
-      c.id, c.title, c.agent_id as agentId, c.oc_session_key as ocSessionKey,
-      c.created_at as createdAt, c.user_id as userId, c.updated_at as updatedAt,
+      c.id, c.title, c.oc_session_key as ocSessionKey,
+      c.created_at as createdAt, c.user_id as userId,
       (SELECT COUNT(*) FROM messages WHERE conversation_id = c.id) as messageCount,
       (SELECT content FROM messages WHERE conversation_id = c.id ORDER BY created_at DESC LIMIT 1) as lastMessage
     FROM conversations c
     WHERE c.user_id = ? OR c.user_id = ''
-    ORDER BY COALESCE(c.updated_at, c.created_at) DESC
+    ORDER BY c.created_at DESC
   `, [userId]);
 
-  return (rows[0]?.values || []).map(row => {
+  if (!rows[0]?.values?.length) return [];
+
+  const sessions = (rows[0]?.values || []).map(row => {
     const obj: Record<string, any> = {};
     const cols = rows[0].columns;
     cols.forEach((c, i) => { obj[c] = row[i]; });
     obj.lastMessage = obj.lastMessage ? String(obj.lastMessage).substring(0, 200) : '';
-    obj.agentIds = [];
     return obj;
   });
+
+  // 批量查询 agentIds
+  const convIds = sessions.map((s: any) => s.id);
+  const placeholders = convIds.map(() => "?").join(",");
+  try {
+    const agentRows = db.prepare(
+      `SELECT conversation_id, agent_id FROM conversation_agents WHERE conversation_id IN (${placeholders}) ORDER BY joined_at ASC`
+    ).all(convIds) as Array<{ conversation_id: string; agent_id: string }>;
+    const agentMap = new Map<string, string[]>();
+    for (const ar of agentRows) {
+      if (!agentMap.has(ar.conversation_id)) agentMap.set(ar.conversation_id, []);
+      agentMap.get(ar.conversation_id)!.push(ar.agent_id);
+    }
+    for (const s of sessions) {
+      s.agentIds = agentMap.get(s.id) || [];
+      s.agentId = s.agentIds[0] || '';
+    }
+  } catch {
+    // conversation_agents 表不存在时，返回空数组
+    for (const s of sessions) {
+      s.agentIds = [];
+      s.agentId = '';
+    }
+  }
+
+  return sessions;
 }

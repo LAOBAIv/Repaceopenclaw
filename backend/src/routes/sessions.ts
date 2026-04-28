@@ -69,7 +69,7 @@ router.get('/:id/preview', (req: Request, res: Response) => {
   const limit = Math.min(parseInt(req.query.limit as string) || 20, 100);
 
   const convRows = db.exec(
-    "SELECT id, title, agent_id as agentId, oc_session_key as ocSessionKey, created_at FROM conversations WHERE id = ? OR oc_session_key LIKE ?",
+    "SELECT id, title, oc_session_key as ocSessionKey, created_at FROM conversations WHERE id = ? OR oc_session_key LIKE ?",
     [id, `%${id}%`]
   );
   if (!convRows[0]?.values?.length) {
@@ -91,7 +91,16 @@ router.get('/:id/preview', (req: Request, res: Response) => {
     createdAt: row[3],
   })).reverse();
 
-  res.json({ code: 0, data: { ...conv, messages, hasMore: true }, msg: 'ok' });
+  // 查询 agentIds
+  let agentIds: string[] = [];
+  try {
+    const agentRows = db.prepare(
+      "SELECT agent_id FROM conversation_agents WHERE conversation_id = ? ORDER BY joined_at ASC"
+    ).all(id) as Array<{ agent_id: string }>;
+    agentIds = agentRows.map(r => r.agent_id);
+  } catch {}
+
+  res.json({ code: 0, data: { ...conv, agentIds, agentId: agentIds[0] || '', messages, hasMore: true }, msg: 'ok' });
 });
 
 /**

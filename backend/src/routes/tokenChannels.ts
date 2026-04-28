@@ -16,6 +16,7 @@ const ChannelSchema = z.object({
   authType: z.enum(["Bearer", "ApiKey", "Basic"]).default("Bearer"),
   enabled: z.boolean().default(true),
   priority: z.number().default(0),
+  isPreset: z.boolean().default(false),
 });
 
 function listChannels() {
@@ -35,6 +36,7 @@ function listChannels() {
       authType: obj.auth_type || "Bearer",
       enabled: !!obj.enabled,
       priority: obj.priority ?? 0,
+      isPreset: !!obj.is_preset,
       createdAt: obj.created_at,
       updatedAt: obj.updated_at,
     };
@@ -46,34 +48,68 @@ router.get("/", authenticate, (_req: Request, res: Response) => {
   res.json({ data: listChannels() });
 });
 
+// GET /api/token-channels/preset — 获取平台预设（兜底）渠道
+router.get("/preset", authenticate, (_req: Request, res: Response) => {
+  const db = getDb();
+  const result = db.exec("SELECT * FROM token_channels WHERE is_preset=1 AND enabled=1 LIMIT 1");
+  if (!result.length || !result[0].values.length) {
+    return res.json({ data: null });
+  }
+  const cols = result[0].columns;
+  const obj: any = {};
+  cols.forEach((c, i) => (obj[c] = result[0].values[0][i]));
+  res.json({ data: {
+    id: obj.id,
+    provider: obj.provider,
+    modelName: obj.model_name || "",
+    baseUrl: obj.base_url || "",
+    apiKey: obj.api_key || "",
+    authType: obj.auth_type || "Bearer",
+    enabled: !!obj.enabled,
+    isPreset: true,
+  }});
+});
+
 // POST /api/token-channels — 仅管理员可管理
 router.post("/", authenticate, requireRole(["super_admin", "admin"]), (req: Request, res: Response) => {
   const parsed = ChannelSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
 
   const db = getDb();
-  const { provider, modelName, baseUrl, apiKey, authType, enabled, priority } = parsed.data;
+  const { provider, modelName, baseUrl, apiKey, authType, enabled, priority, isPreset } = parsed.data;
   const now = new Date().toISOString();
 
   // Check if provider already exists
   const existing = db.exec("SELECT id FROM token_channels WHERE provider=?", [provider]);
   if (existing.length && existing[0].values.length) {
     const id = existing[0].values[0][0] as string;
+
+    // 如果设为预设，先取消其他渠道的预设标记（全局唯一）
+    if (isPreset) {
+      db.run("UPDATE token_channels SET is_preset=0 WHERE is_preset=1");
+    }
+
     db.run(
-      `UPDATE token_channels SET model_name=?, base_url=?, api_key=?, auth_type=?, enabled=?, priority=?, updated_at=? WHERE id=?`,
-      [modelName, baseUrl, apiKey, authType, enabled ? 1 : 0, priority, now, id]
+      `UPDATE token_channels SET model_name=?, base_url=?, api_key=?, auth_type=?, enabled=?, priority=?, is_preset=?, updated_at=? WHERE id=?`,
+      [modelName, baseUrl, apiKey, authType, enabled ? 1 : 0, priority, isPreset ? 1 : 0, now, id]
     );
     saveDb();
-    res.json({ data: { id, provider, modelName, baseUrl, apiKey, authType, enabled, priority } });
+    res.json({ data: { id, provider, modelName, baseUrl, apiKey, authType, enabled, priority, isPreset } });
   } else {
     const id = uuidv4();
+
+    // 如果设为预设，先取消其他渠道的预设标记
+    if (isPreset) {
+      db.run("UPDATE token_channels SET is_preset=0 WHERE is_preset=1");
+    }
+
     db.run(
-      `INSERT INTO token_channels (id, provider, model_name, base_url, api_key, auth_type, enabled, priority, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [id, provider, modelName, baseUrl, apiKey, authType, enabled ? 1 : 0, priority, now, now]
+      `INSERT INTO token_channels (id, provider, model_name, base_url, api_key, auth_type, enabled, priority, is_preset, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [id, provider, modelName, baseUrl, apiKey, authType, enabled ? 1 : 0, priority, isPreset ? 1 : 0, now, now]
     );
     saveDb();
-    res.status(201).json({ data: { id, provider, modelName, baseUrl, apiKey, authType, enabled, priority } });
+    res.status(201).json({ data: { id, provider, modelName, baseUrl, apiKey, authType, enabled, priority, isPreset } });
   }
 });
 

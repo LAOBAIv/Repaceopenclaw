@@ -5,6 +5,8 @@ import { useAgentStore } from '@/stores/agentStore';
 import { DEFAULT_AGENTS } from '@/data/defaultAgents';
 import { showToast } from '@/components/Toast';
 import apiClient from '@/api/client';
+import { tokenChannelsApi, type TokenChannel } from '@/api/tokenChannels';
+import { agentsApi } from '@/api/agents';
 
 /* ─── 后端技能类型 ─────────────────────────────────────────── */
 interface BackendSkill {
@@ -45,115 +47,21 @@ interface CodeChannel {
   keyPlaceholder?: string;
   models: CodeModel[];
   hasBackendKey?: boolean;  // 后台是否已配置 API Key
+  isPreset?: boolean;        // 是否为平台预设渠道
 }
 
-const CODE_CHANNELS: CodeChannel[] = [
-  {
-    id: '__platform__',
-    name: '平台预设',
-    provider: 'WorkBuddy',
-    badge: '默认',
-    desc: '由平台智能调度，无需填写 API Key，开箱即用。',
-    baseUrl: '',
-    authType: 'Bearer',
-    models: [
-      { id: 'auto', name: 'Auto（智能调度）', contextWindow: '自动', maxTokens: 8192, temperature: 0.2, topP: 0.95, frequencyPenalty: 0, presencePenalty: 0, badge: '推荐', desc: '平台自动选择最合适的模型' },
-    ],
-  },
-  {
-    id: 'doubao',
-    name: '火山方舟（豆包）',
-    provider: '字节跳动',
-    badge: '推荐',
-    desc: '字节跳动豆包系列，国内访问快，性价比高。',
-    baseUrl: 'https://ark.cn-beijing.volces.com/api/v3',
-    authType: 'Bearer',
-    keyLabel: 'API Key',
-    keyPlaceholder: '火山方舟 API Key（控制台「API Key 管理」页面获取）',
-    models: [
-      { id: 'doubao-pro-32k-241215',      name: 'Doubao-Pro-32K',      contextWindow: '32K',  maxTokens: 4096, temperature: 0.7, topP: 0.9,  frequencyPenalty: 0, presencePenalty: 0, badge: '推荐', desc: '均衡能力，主力首选' },
-      { id: 'doubao-pro-128k-241215',     name: 'Doubao-Pro-128K',     contextWindow: '128K', maxTokens: 4096, temperature: 0.7, topP: 0.9,  frequencyPenalty: 0, presencePenalty: 0, desc: '超长上下文，适合大文档' },
-      { id: 'doubao-pro-4k-241215',       name: 'Doubao-Pro-4K',       contextWindow: '4K',   maxTokens: 2048, temperature: 0.7, topP: 0.9,  frequencyPenalty: 0, presencePenalty: 0, desc: '短对话，速度快成本低' },
-      { id: 'doubao-lite-32k-241215',     name: 'Doubao-Lite-32K',     contextWindow: '32K',  maxTokens: 4096, temperature: 0.7, topP: 0.9,  frequencyPenalty: 0, presencePenalty: 0, desc: '轻量版，极低成本' },
-      { id: 'doubao-lite-128k-241215',    name: 'Doubao-Lite-128K',    contextWindow: '128K', maxTokens: 4096, temperature: 0.7, topP: 0.9,  frequencyPenalty: 0, presencePenalty: 0, desc: '轻量版超长上下文' },
-      { id: 'doubao-1-5-pro-32k-250115',  name: 'Doubao-1.5-Pro-32K',  contextWindow: '32K',  maxTokens: 8192, temperature: 0.7, topP: 0.95, frequencyPenalty: 0, presencePenalty: 0, badge: '新', desc: '新一代 Pro，能力更强' },
-      { id: 'doubao-1-5-pro-128k-250115', name: 'Doubao-1.5-Pro-128K', contextWindow: '128K', maxTokens: 8192, temperature: 0.7, topP: 0.95, frequencyPenalty: 0, presencePenalty: 0, badge: '新', desc: '新一代 Pro 超长上下文' },
-      { id: 'doubao-1-5-lite-32k-250115', name: 'Doubao-1.5-Lite-32K', contextWindow: '32K',  maxTokens: 4096, temperature: 0.7, topP: 0.95, frequencyPenalty: 0, presencePenalty: 0, badge: '新', desc: '新一代轻量版' },
-    ],
-  },
-  {
-    id: 'openai',
-    name: 'OpenAI',
-    provider: 'OpenAI',
-    badge: '通用',
-    desc: '官方 OpenAI 接入，支持 GPT-4o 等旗舰模型。',
-    baseUrl: 'https://api.openai.com/v1',
-    authType: 'Bearer',
-    keyPlaceholder: 'sk-xxxxxxxxxxxxxxxxxxxxxxxx',
-    models: [
-      { id: 'gpt-4o',            name: 'GPT-4o',            contextWindow: '128K', maxTokens: 4096, temperature: 0.3, topP: 1,    frequencyPenalty: 0, presencePenalty: 0, badge: '高性能', desc: '多模态旗舰，代码能力强' },
-      { id: 'gpt-4o-mini',       name: 'GPT-4o Mini',       contextWindow: '128K', maxTokens: 4096, temperature: 0.3, topP: 1,    frequencyPenalty: 0, presencePenalty: 0, desc: '轻量版，速度快成本低' },
-      { id: 'gpt-4-turbo',       name: 'GPT-4 Turbo',       contextWindow: '128K', maxTokens: 4096, temperature: 0.3, topP: 1,    frequencyPenalty: 0, presencePenalty: 0, desc: '上一代旗舰，稳定可靠' },
-      { id: 'o1',                name: 'o1',                contextWindow: '128K', maxTokens: 8192, temperature: 1,   topP: 1,    frequencyPenalty: 0, presencePenalty: 0, badge: '推荐', desc: '深度推理模型，适合复杂问题' },
-      { id: 'o1-mini',           name: 'o1-mini',           contextWindow: '128K', maxTokens: 4096, temperature: 1,   topP: 1,    frequencyPenalty: 0, presencePenalty: 0, desc: '轻量推理模型' },
-    ],
-  },
-  {
-    id: 'deepseek',
-    name: 'DeepSeek',
-    provider: 'DeepSeek',
-    desc: '高性价比大模型，兼容 OpenAI SDK，代码生成能力出色。',
-    baseUrl: 'https://api.deepseek.com/v1',
-    authType: 'Bearer',
-    keyPlaceholder: 'sk-xxxxxxxxxxxxxxxxxxxxxxxx',
-    models: [
-      { id: 'deepseek-chat',     name: 'DeepSeek-V3',       contextWindow: '64K',  maxTokens: 8192, temperature: 0.7, topP: 0.95, frequencyPenalty: 0, presencePenalty: 0, badge: '推荐', desc: '综合能力强，性价比极高' },
-      { id: 'deepseek-reasoner', name: 'DeepSeek-R1',       contextWindow: '64K',  maxTokens: 8192, temperature: 0.7, topP: 0.95, frequencyPenalty: 0, presencePenalty: 0, badge: '新', desc: '推理增强版，适合数学/代码' },
-      { id: 'deepseek-coder',    name: 'DeepSeek-Coder',    contextWindow: '16K',  maxTokens: 4096, temperature: 0.2, topP: 0.95, frequencyPenalty: 0, presencePenalty: 0, desc: '代码专用版' },
-    ],
-  },
-  {
-    id: 'qwen',
-    name: '通义千问（阿里云）',
-    provider: '阿里云',
-    desc: '阿里云百炼平台，支持 Qwen 系列，国内访问稳定。',
-    baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
-    authType: 'Bearer',
-    keyPlaceholder: 'sk-xxxxxxxxxxxxxxxxxxxxxxxx（阿里云百炼控制台获取）',
-    models: [
-      { id: 'qwen-max',          name: 'Qwen-Max',          contextWindow: '32K',  maxTokens: 8192, temperature: 0.7, topP: 0.95, frequencyPenalty: 0, presencePenalty: 0, badge: '推荐', desc: '旗舰版，综合能力最强' },
-      { id: 'qwen-plus',         name: 'Qwen-Plus',         contextWindow: '128K', maxTokens: 8192, temperature: 0.7, topP: 0.95, frequencyPenalty: 0, presencePenalty: 0, desc: '均衡版，速度与能力平衡' },
-      { id: 'qwen-turbo',        name: 'Qwen-Turbo',        contextWindow: '128K', maxTokens: 4096, temperature: 0.7, topP: 0.95, frequencyPenalty: 0, presencePenalty: 0, desc: '轻量版，速度最快' },
-      { id: 'qwen2.5-coder-32b-instruct', name: 'Qwen2.5-Coder-32B', contextWindow: '32K', maxTokens: 4096, temperature: 0.2, topP: 0.95, frequencyPenalty: 0.1, presencePenalty: 0, badge: '新', desc: '代码专用，中文注释友好' },
-    ],
-  },
-  {
-    id: 'anthropic',
-    name: 'Anthropic（Claude）',
-    provider: 'Anthropic',
-    badge: '推荐',
-    desc: '擅长长上下文理解与代码重构，推理准确，输出稳定。',
-    baseUrl: 'https://api.anthropic.com/v1',
-    authType: 'ApiKey',
-    keyPlaceholder: 'sk-ant-xxxxxxxxxxxxxxxx',
-    models: [
-      { id: 'claude-3-5-sonnet-20241022', name: 'Claude 3.5 Sonnet', contextWindow: '200K', maxTokens: 8192, temperature: 0.25, topP: 0.9, frequencyPenalty: 0, presencePenalty: 0, badge: '推荐', desc: '旗舰版，代码与推理能力极强' },
-      { id: 'claude-3-5-haiku-20241022',  name: 'Claude 3.5 Haiku',  contextWindow: '200K', maxTokens: 4096, temperature: 0.25, topP: 0.9, frequencyPenalty: 0, presencePenalty: 0, desc: '轻量版，速度快' },
-      { id: 'claude-3-opus-20240229',     name: 'Claude 3 Opus',     contextWindow: '200K', maxTokens: 4096, temperature: 0.25, topP: 0.9, frequencyPenalty: 0, presencePenalty: 0, desc: '上一代旗舰，推理最深' },
-    ],
-  },
-  {
-    id: 'custom',
-    name: '自定义接入',
-    provider: '自定义',
-    desc: '手动填写 Base URL 与 API Key，适用于私有部署或第三方代理。',
-    baseUrl: '',
-    authType: 'Bearer',
-    models: [
-      { id: 'custom', name: '自定义模型', contextWindow: '-', maxTokens: 4096, temperature: 0.7, topP: 0.95, frequencyPenalty: 0, presencePenalty: 0, desc: '手动指定模型 ID' },
-    ],
-  },
-];
+// CODE 渠道现在完全由管理后台「模型渠道」配置提供
+// 这里仅保留一个加载中占位渠道，避免 selectedChannel 为空导致渲染崩溃
+const CODE_CHANNELS: CodeChannel[] = [{
+  id: '__loading__',
+  name: '加载中…',
+  provider: 'loading',
+  badge: '默认',
+  desc: '正在从管理后台加载渠道配置…',
+  baseUrl: '',
+  authType: 'Bearer' as const,
+  models: [{ id: 'loading', name: '加载中…', contextWindow: '-', maxTokens: 4096, temperature: 0.7, topP: 0.95, frequencyPenalty: 0, presencePenalty: 0, desc: '' }],
+}];
 
 /* ─── 角标颜色 ─────────────────────────────────────────────── */
 const BADGE_COLOR: Record<string, { bg: string; color: string }> = {
@@ -161,11 +69,11 @@ const BADGE_COLOR: Record<string, { bg: string; color: string }> = {
   高性能: { bg: '#fff7e6', color: '#d48806' },
   新:    { bg: '#f6ffed', color: '#389e0d' },
   默认:  { bg: '#f0f0f0', color: '#666' },
-  后台:  { bg: '#fff0f6', color: '#c41d7f' },   // 后台配置渠道专用标签颜色（粉紫色）
+  后台:  { bg: '#fff0f6', color: '#c41d7f' },
+  预设:  { bg: '#fef3c7', color: '#d97706' },   // 后台配置渠道专用标签颜色（粉紫色）
 };
 
 // 平台预设渠道标识（无需用户填 Key）
-export const PLATFORM_PRESET_CHANNEL_ID = '__platform__';
 
 /* ─── Token 本地缓存（按渠道 ID 存取，跨智能体复用） ─── */
 const TOKEN_CACHE_PREFIX = 'wb_token_';
@@ -206,116 +114,96 @@ export function AgentCreate() {
    * 拉取已配置渠道，将后台独有的渠道（provider 不在静态列表中的）追加进去，
    * 同时将已有渠道中后台配置了 apiKey 的打上「已配置」标记，供 UI 提示。
    */
-  const [dynamicChannels, setDynamicChannels] = useState<CodeChannel[]>(CODE_CHANNELS);
+  const [dynamicChannels, setDynamicChannels] = useState<CodeChannel[]>([]);
+  const [presetChannel, setPresetChannel] = useState<TokenChannel | null>(null);
 
   useEffect(() => {
-    fetch('/api/token-channels')
-      .then(r => r.ok ? r.json() : null)
-      .then((json: { data: Array<{ id: string; provider: string; modelName: string; baseUrl: string; apiKey: string; authType: string; enabled: boolean; priority: number }> } | null) => {
-        if (!json?.data?.length) return;
-        // 只取启用的渠道
-        const backendChannels = json.data.filter(c => c.enabled);
+    apiClient.get('/token-channels')
+      .then(res => {
+        const rawChannels: Array<{ id: string; provider: string; modelName: string; baseUrl: string; apiKey: string; authType: string; enabled: boolean; priority: number; isPreset?: boolean }> = res.data.data || [];
+        if (!rawChannels.length) return;
+        const backendChannels = rawChannels.filter(c => c.enabled);
         if (!backendChannels.length) return;
 
-        setDynamicChannels(prev => {
-          const merged = [...prev];
-          for (const bc of backendChannels) {
-            // 检查静态列表中是否已有同 provider 的渠道
-            const existingIdx = merged.findIndex(
-              ch => ch.id === bc.provider || ch.id.toLowerCase() === bc.provider.toLowerCase()
-            );
-            if (existingIdx !== -1) {
-              // 已有渠道：若后台配置了 Key 且有 baseUrl，追加一个「后台配置」子模型条目
-              const existing = merged[existingIdx];
-              // 标记后台已配置 Key
-              const enhanced = bc.apiKey ? { ...existing, hasBackendKey: true } : existing;
-              // 若后台的模型 ID 与静态预设中不一致，动态追加该模型
-              if (bc.modelName && !existing.models.some(m => m.id === bc.modelName)) {
-                merged[existingIdx] = {
-                  ...enhanced,
-                  models: [
-                    ...existing.models,
-                    {
-                      id: bc.modelName,
-                      name: `${bc.modelName}（后台配置）`,
-                      contextWindow: '-',
-                      maxTokens: 4096,
-                      temperature: 0.7,
-                      topP: 0.95,
-                      frequencyPenalty: 0,
-                      presencePenalty: 0,
-                      badge: '后台',
-                      desc: `后台管理员配置的模型（${bc.provider}）`,
-                    },
-                  ],
-                };
-              } else if (bc.apiKey) {
-                merged[existingIdx] = enhanced;
-              }
-            } else {
-              // 后台独有渠道（管理员自定义的）：整体追加为新渠道
-              merged.push({
-                id: bc.provider,
-                name: bc.provider,           // 显示名称用 provider 字段
-                provider: bc.provider,
-                badge: '后台',
-                desc: `由管理员在后台配置的渠道（${bc.baseUrl || 'OpenAI 兼容格式'}）`,
-                baseUrl: bc.baseUrl,
-                authType: (bc.authType as 'Bearer' | 'ApiKey' | 'Basic') || 'Bearer',
-                keyLabel: 'API Key',
-                keyPlaceholder: '使用后台配置的 Key（如需覆盖请重新填写）',
-                hasBackendKey: !!bc.apiKey,  // 标记后台已配置 Key
-                models: bc.modelName
-                  ? [
-                      {
-                        id: bc.modelName,
-                        name: bc.modelName,
-                        contextWindow: '-',
-                        maxTokens: 4096,
-                        temperature: 0.7,
-                        topP: 0.95,
-                        frequencyPenalty: 0,
-                        presencePenalty: 0,
-                        badge: '后台',
-                        desc: `后台管理员配置的模型`,
-                      },
-                    ]
-                  : [
-                      {
-                        id: 'auto',
-                        name: 'Auto（后台调度）',
-                        contextWindow: '-',
-                        maxTokens: 4096,
-                        temperature: 0.7,
-                        topP: 0.95,
-                        frequencyPenalty: 0,
-                        presencePenalty: 0,
-                        desc: `使用后台配置的默认模型`,
-                      },
-                    ],
-              });
-            }
+        // 直接使用后端配置的渠道，不再合并静态列表
+        const channels: CodeChannel[] = backendChannels.map(bc => ({
+          id: bc.provider,
+          name: bc.provider,
+          provider: bc.provider,
+          badge: bc.isPreset ? '预设' : undefined,
+          isPreset: !!bc.isPreset,
+          hasBackendKey: !!bc.apiKey,
+          desc: `由管理员在后台配置的渠道（${bc.baseUrl || 'OpenAI 兼容格式'}）`,
+          baseUrl: bc.baseUrl,
+          authType: (bc.authType as 'Bearer' | 'ApiKey' | 'Basic') || 'Bearer',
+          keyLabel: 'API Key',
+          keyPlaceholder: '使用后台配置的 Key（如需覆盖请重新填写）',
+          models: bc.modelName
+            ? [{
+                id: bc.modelName,
+                name: bc.modelName,
+                contextWindow: '-',
+                maxTokens: 4096,
+                temperature: 0.7,
+                topP: 0.95,
+                frequencyPenalty: 0,
+                presencePenalty: 0,
+                desc: `后台管理员配置的模型`,
+              }]
+            : [{
+                id: 'auto',
+                name: 'Auto（后台调度）',
+                contextWindow: '-',
+                maxTokens: 4096,
+                temperature: 0.7,
+                topP: 0.95,
+                frequencyPenalty: 0,
+                presencePenalty: 0,
+                desc: `使用后台配置的默认模型`,
+              }],
+        }));
 
-            // ── 将后台已配置的 API Key 写入本地缓存 ──
-            // 仅在本地还没有这个渠道缓存时写入，避免覆盖用户手动填写的 Key
-            if (bc.apiKey) {
-              const cacheKey = TOKEN_CACHE_PREFIX + bc.provider;
-              if (!localStorage.getItem(cacheKey)) {
-                try {
-                  localStorage.setItem(cacheKey, JSON.stringify({
-                    apiKey: bc.apiKey,
-                    baseUrl: bc.baseUrl || '',
-                  }));
-                } catch { /* ignore */ }
-              }
+        setDynamicChannels(channels);
+
+        // 写入本地缓存（仅在没有缓存时）
+        for (const bc of backendChannels) {
+          if (bc.apiKey) {
+            const cacheKey = TOKEN_CACHE_PREFIX + bc.provider;
+            if (!localStorage.getItem(cacheKey)) {
+              try {
+                localStorage.setItem(cacheKey, JSON.stringify({
+                  apiKey: bc.apiKey,
+                  baseUrl: bc.baseUrl || '',
+                }));
+              } catch { /* ignore */ }
             }
           }
-          return merged;
-        });
+        }
+
+        // 自动选中预设渠道，否则选第一个
+        const presetBc = backendChannels.find(c => c.isPreset);
+        const defaultBc = presetBc || backendChannels[0];
+        const presetCh = channels.find(c => c.isPreset);
+        const defaultCh = presetCh || channels[0];
+        if (defaultCh) {
+          setSelectedChannel(defaultCh);
+          const matchedModel = defaultCh.models.find(m => m.id === defaultBc.modelName) || defaultCh.models[0];
+          setSelectedModel(matchedModel);
+        }
       })
-      .catch(() => { /* 后端不可用时静默忽略，使用静态列表 */ });
+      .catch(() => {
+        // 后端不可用时，移除 loading 占位，使用空数组
+        setDynamicChannels([]);
+      });
   // 仅挂载时执行一次
   // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  /* ── 获取平台预设（兜底）渠道 ── */
+  useEffect(() => {
+    tokenChannelsApi.getPreset().then(ch => {
+      if (ch) setPresetChannel(ch);
+    }).catch(() => {});
   }, []);
 
   const { getAgentById, fetchAgents, createAgent, updateAgent, agents } = useAgentStore();
@@ -348,6 +236,18 @@ export function AgentCreate() {
   /* ── 预填表单 ─────────────────────────────────────────── */
   function fillForm(agent: ReturnType<typeof findAgent>) {
     if (!agent) return;
+    if (!dynamicChannels.length) {
+      // 渠道还没加载完，但仍需填充非渠道相关字段
+      setName(agent.name);
+      setRole(agent.systemPrompt ?? '');
+      setStyle(agent.writingStyle ?? '极简简洁');
+      setSkills(agent.expertise ?? []);
+      setDescription(agent.description ?? '');
+      setBoundary((agent as any).boundary ?? '');
+      setOutputFmt((agent as any).outputFormat ?? '纯文本');
+      setVisibility((agent as any).visibility ?? 'private');
+      return;
+    }
     setName(agent.name);
     // systemPrompt → 角色设定文本框（role state）
     setRole(agent.systemPrompt ?? '');
@@ -392,6 +292,7 @@ export function AgentCreate() {
       setCustomFreqPenalty(agent.frequencyPenalty != null ? String(agent.frequencyPenalty) : String(matchedModel.frequencyPenalty));
       setCustomPresPenalty(agent.presencePenalty != null ? String(agent.presencePenalty) : String(matchedModel.presencePenalty));
     } else {
+      if (!dynamicChannels[0]) return;
       setSelectedChannel(dynamicChannels[0]);
       setSelectedModel(dynamicChannels[0].models[0]);
       setCustomMaxTokens(''); setCustomTemp(''); setCustomTopP('');
@@ -417,11 +318,21 @@ export function AgentCreate() {
     if (agent) {
       fillForm(agent);
     } else {
-      // store 里也没有，去后端拉一次
-      fetchAgents();
+      // store 里没有，直接调 API 获取
+      agentsApi.getById(editId!)
+        .then(a => fillForm(a))
+        .catch(() => fetchAgents());
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editId]);
+
+  /* ── 渠道加载完成后，编辑模式重新回填表单 ───────────── */
+  useEffect(() => {
+    if (!isEdit || !editId || !dynamicChannels.length) return;
+    const agent = findAgent(editId);
+    if (agent) fillForm(agent);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dynamicChannels]);
 
   /* ── 编辑模式：加载已绑定技能 ID ─────────────────────── */
   useEffect(() => {
@@ -445,7 +356,7 @@ export function AgentCreate() {
   useEffect(() => {
     if (!isEdit || !editId) return;
     const agent = findAgent(editId);
-    fillForm(agent);
+    if (agent) fillForm(agent);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [agents]);
 
@@ -505,7 +416,7 @@ export function AgentCreate() {
 
   /* ── CODE 渠道弹窗 — 必须先声明，后面 hasBackendKey 要用 ─── */
   const [codeModelOpen, setCodeModelOpen]     = useState(false);
-  const [selectedChannel, setSelectedChannel] = useState<CodeChannel>(() => CODE_CHANNELS[0]);
+  const [selectedChannel, setSelectedChannel] = useState<CodeChannel>(CODE_CHANNELS[0]);
   const [tempChannel, setTempChannel]         = useState<CodeChannel>(CODE_CHANNELS[0]);
 
   /* ── Token 接入弹窗 ───────────────────────────────────── */
@@ -537,7 +448,7 @@ export function AgentCreate() {
   function confirmTokenModal() {
     if (!selectedChannel) return;
     // 平台预设 + 后台已配置Key：直接确认，不需要 Key
-    if (selectedChannel.id === PLATFORM_PRESET_CHANNEL_ID || hasBackendKey) {
+    if (hasBackendKey) {
       setTokenValue(hasBackendKey ? '__backend_key__' : '');
       setCustomBaseUrl(hasBackendKey ? '' : '');
       setTokenModalOpen(false);
@@ -563,10 +474,7 @@ export function AgentCreate() {
 
     // 持久化到后端
     if (tempTokenValue.trim()) {
-      fetch('/api/token-channels', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+      apiClient.post('/token-channels', {
           provider: selectedChannel.id,
           modelName: tempTokenModel?.id || '',
           baseUrl: resolvedUrl,
@@ -574,8 +482,7 @@ export function AgentCreate() {
           authType: selectedChannel.authType,
           enabled: true,
           priority: 0,
-        }),
-      }).catch(() => {});
+        }).catch(() => {});
     }
   }
   function handleCopyToken() {
@@ -665,7 +572,7 @@ export function AgentCreate() {
     setSaving(true);
     try {
       const activeModel: CodeModel = selectedModel ?? selectedChannel.models[0];
-      const isPrivateKey = selectedChannel.id !== PLATFORM_PRESET_CHANNEL_ID;
+      const isPrivateKey = true;
       // temperatureOverride：快捷温度覆盖框有值时使用，否则用 CODE 弹窗里的 customTemp
       const resolvedTemp = tempOverride !== ''
         ? Number(tempOverride)
@@ -1182,14 +1089,14 @@ export function AgentCreate() {
                       {selectedChannel.provider} · 已在 CODE 渠道中选定
                     </div>
                   </div>
-                  {selectedChannel.id === PLATFORM_PRESET_CHANNEL_ID && (
+                  {false && (
                     <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 4, background: '#dcfce7', color: '#16a34a', fontWeight: 500 }}>无需配置</span>
                   )}
                 </div>
               </div>
 
               {/* 填写 Key（平台预设 + 后台已配置 Key 的渠道无需填） */}
-              {selectedChannel.id !== PLATFORM_PRESET_CHANNEL_ID && !hasBackendKey && (
+              {!hasBackendKey && !presetChannel && (
                 <>
                   <div className="tk-divider" />
 
@@ -1281,7 +1188,7 @@ export function AgentCreate() {
               )}
 
               {/* 平台预设 + 后台已配置Key：无需配置提示 */}
-              {(selectedChannel.id === PLATFORM_PRESET_CHANNEL_ID || hasBackendKey) && (
+              {(hasBackendKey) && (
                 <div style={{ padding: '20px 14px', textAlign: 'center', color: '#6b7280', fontSize: 13 }}>
                   ✅ {hasBackendKey ? '管理员已配置此渠道，无需填写 API Key' : '使用平台预设，无需填写 API Key，直接确认即可'}
                 </div>
@@ -1296,7 +1203,7 @@ export function AgentCreate() {
                 <button className="ac-modal-btn-cancel" onClick={closeTokenModal}>取消</button>
                 <button
                   className="ac-modal-btn-confirm"
-                  disabled={selectedChannel.id !== PLATFORM_PRESET_CHANNEL_ID && !hasBackendKey && (!tempTokenValue.trim() || !tempTokenModel)}
+                  disabled={true && !hasBackendKey && (!tempTokenValue.trim() || !tempTokenModel)}
                   onClick={confirmTokenModal}
                 >确认</button>
               </div>
@@ -1591,6 +1498,7 @@ export function AgentCreate() {
                         <div className="ac-model-trigger-info">
                           <div className="ac-model-trigger-name" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                             {selectedChannel.name}
+                            {selectedChannel.isPreset && <span style={{ fontSize: 13 }}>⭐</span>}
                             <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 4, background: '#f3f4f6', color: '#6b7280' }}>
                               {selectedChannel.provider}
                             </span>
@@ -1606,10 +1514,11 @@ export function AgentCreate() {
                       <label style={labelStyle}>Token 接入</label>
                       <div className="ac-token-trigger" onClick={openTokenModal}>
                         <span className="ac-token-trigger-icon"><KeyRound size={16} /></span>
-                        {selectedChannel.id !== PLATFORM_PRESET_CHANNEL_ID ? (
+                        {true ? (
                           <div className="ac-token-trigger-info">
                             <div className="ac-token-trigger-name">
                               {selectedChannel.name}
+                              {selectedChannel.isPreset && <span style={{ fontSize: 13 }}>⭐</span>}
                               {tokenValue && <span className="ac-token-dot" />}
                             </div>
                             <div className="ac-token-trigger-sub">
@@ -1623,7 +1532,7 @@ export function AgentCreate() {
                         )}
                         <span style={{ marginLeft: 'auto', color: '#9ca3af', flexShrink: 0 }}><ChevronDown size={15} /></span>
                       </div>
-                      {selectedChannel.id !== PLATFORM_PRESET_CHANNEL_ID && tokenValue && (
+                      {true && tokenValue && (
                         <button
                           type="button"
                           onClick={handleCopyToken}

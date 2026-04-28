@@ -107,6 +107,8 @@ function createTables(db: any) {
 
   // Migrate: add user_id to token_channels (Phase 2: 多租户隔离)
   try { db.run("ALTER TABLE token_channels ADD COLUMN user_id TEXT NOT NULL DEFAULT ''"); } catch {}
+  // Migrate: add is_preset (标记平台预设渠道)
+  try { db.run("ALTER TABLE token_channels ADD COLUMN is_preset INTEGER NOT NULL DEFAULT 0"); } catch {}
 
   // Token channels: stores API keys for each LLM provider
   db.run(`

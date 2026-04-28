@@ -5,6 +5,7 @@ import { useAgentStore } from '@/stores/agentStore';
 import { DEFAULT_AGENTS } from '@/data/defaultAgents';
 import { Agent } from '@/types';
 import apiClient from '@/api/client';
+import { agentsApi, type AgentRoutingInfo } from '@/api/agents';
 
 /** 可见性标签 */
 function VisibilityBadge({ visibility }: { visibility?: string }) {
@@ -46,13 +47,27 @@ const SKILL_ITEMS: { key: string; label: string; risk: 'high' | 'medium' | 'low'
   { key: 'file_read', label: '文件读取', risk: 'low' },
 ];
 
-/** 模型参数展示栏：只显示渠道（tokenProvider）和模型名（modelName） */
-function ModelParamBar({ agent }: { agent: Agent }) {
+/** 模型参数展示栏：显示实际 LLM 路由 + 渠道 + 模型名 */
+function ModelParamBar({ agent, routing }: { agent: Agent; routing?: AgentRoutingInfo }) {
   const channel = agent.tokenProvider;
   const model   = agent.modelName;
   const isValidModel = !model || VALID_MODELS.includes(model);
 
-  if (!channel && !model) {
+  // 路由来源标识
+  const sourceLabel = routing ? {
+    private: '🔑 私有',
+    global:  '🌐 全局',
+    gateway: '🔄 GW',
+    none:    '⚠️ 无',
+  }[routing.source] : '';
+  const sourceColor = routing ? {
+    private: '#15803d',
+    global:  '#1d4ed8',
+    gateway: '#7c3aed',
+    none:    '#b91c1c',
+  }[routing.source] : '#94a3b8';
+
+  if (!channel && !model && !routing) {
     return (
       <div className="am-model-bar" style={{ justifyContent: 'center', opacity: 0.55 }}>
         <Cpu size={11} />
@@ -63,6 +78,18 @@ function ModelParamBar({ agent }: { agent: Agent }) {
 
   return (
     <div className="am-model-bar" style={{ justifyContent: isValidModel ? 'flex-start' : 'space-between' }}>
+      {/* 路由来源标识 */}
+      {sourceLabel && (
+        <span style={{
+          display: 'inline-flex', alignItems: 'center', gap: 3,
+          padding: '1px 6px', borderRadius: 10, fontSize: 10, fontWeight: 600,
+          background: sourceColor + '15', color: sourceColor,
+          border: `1px solid ${sourceColor}30`, flexShrink: 0,
+        }} title={`LLM 路由：${routing?.effectiveChannel} / ${routing?.effectiveModel}`}>
+          {sourceLabel}
+        </span>
+      )}
+
       <Cpu size={11} color={isValidModel ? '#6b7280' : '#ef4444'} style={{ flexShrink: 0 }} />
 
       {/* 渠道名 */}
@@ -104,7 +131,17 @@ function AgentAvatar({ agent }: { agent: Agent }) {
 export function AgentManager() {
   const { agents, fetchAgents, deleteAgent } = useAgentStore();
   const navigate = useNavigate();
-  useEffect(() => { fetchAgents(); }, [fetchAgents]);
+  const [routings, setRoutings] = useState<AgentRoutingInfo[]>([]);
+
+  useEffect(() => {
+    fetchAgents();
+    agentsApi.routingOverview().then(setRoutings).catch(() => {});
+  }, [fetchAgents]);
+
+  // 路由查找辅助函数
+  function getRouting(agentId: string): AgentRoutingInfo | undefined {
+    return routings.find(r => r.id === agentId);
+  }
 
   // 优先用后端真实数据，接口失败或为空时 fallback 到默认
   const agentList: Agent[] = agents.length > 0 ? agents : DEFAULT_AGENTS;
@@ -126,6 +163,7 @@ export function AgentManager() {
     try {
       await apiClient.put(`/agents/${agent.id}`, { visibility });
       await fetchAgents();
+      agentsApi.routingOverview().then(setRoutings).catch(() => {});
     } catch {
       alert('更新可见性失败');
     } finally {
@@ -151,6 +189,7 @@ export function AgentManager() {
     try {
       await apiClient.put(`/agents/${skillAgent.id}`, { skillsConfig: tempSkills });
       await fetchAgents();
+      agentsApi.routingOverview().then(setRoutings).catch(() => {});
       setSkillAgent(null);
     } catch {
       alert('保存 Skill 配置失败');
@@ -510,7 +549,7 @@ export function AgentManager() {
                   )}
 
                   {/* ── 模型参数行 ── */}
-                  <ModelParamBar agent={agent} />
+                  <ModelParamBar agent={agent} routing={getRouting(agent.id)} />
                 </div>
               ))}
               {/* 新建卡片 */}

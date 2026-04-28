@@ -461,7 +461,7 @@ export class AutoLLMAdapter implements ILLMAdapter {
     }
     const truncated = truncateMessages(systemPrompt, msgsToTruncate, maxTokens);
 
-    // ── 优先:使用 agent 自己配置的私有 Key ──────────────────────────
+    // ── 优先：使用 agent 自己配置的私有 Key ──────────────────────────
     const privateKey = agentConfig.tokenApiKey?.trim();
     if (privateKey) {
       const provider = agentConfig.tokenProvider || "custom";
@@ -512,6 +512,52 @@ export class AutoLLMAdapter implements ILLMAdapter {
         return;
       } catch (err: any) {
         logger.warn(`[Auto] Agent private key failed: ${err.message}, falling back to global channels...`);
+      }
+    }
+
+    // ── 兜底：平台预设渠道（管理员设置的默认渠道，用户未配置时自动使用）──
+    if (!privateKey) {
+      try {
+        const db = getDb();
+        const presetResult = db.exec(
+          `SELECT * FROM token_channels WHERE is_preset=1 AND enabled=1 AND api_key != '' LIMIT 1`
+        );
+        if (presetResult.length && presetResult[0].values.length) {
+          const cols = presetResult[0].columns;
+          const p: any = {};
+          cols.forEach((c, i) => (p[c] = presetResult[0].values[0][i]));
+          const presetProvider = p.provider || "custom";
+          const presetProviderLower = presetProvider.toLowerCase();
+          const presetModelId = p.model_name || "auto";
+          const presetBaseUrl = p.base_url || "https://api.openai.com/v1";
+          const presetAuthType = p.auth_type || "Bearer";
+
+          if (OPENCLAW_PROVIDERS.has(presetProviderLower)) {
+            const { OpenClawAdapter } = await import('./OpenClawAdapter');
+            const adapter = new OpenClawAdapter();
+            return adapter.generateStream(
+              { ...agentConfig, systemPrompt, temperature, maxTokens },
+              truncated, onChunk, onComplete, onError
+            );
+          }
+
+          const controller = new AbortController();
+          try {
+            logger.info(`[Auto] Using preset fallback: provider=${presetProvider} model=${presetModelId}`);
+            const tokenCount = await callOpenAIStream(
+              presetBaseUrl, p.api_key, presetAuthType, presetModelId,
+              systemPrompt, truncated,
+              temperature, maxTokens, topP, frequencyPenalty, presencePenalty,
+              onChunk, onComplete, controller
+            );
+            logger.info(`[Auto] Success via preset fallback (${presetProvider}/${presetModelId}), tokens=${tokenCount}`);
+            return;
+          } catch (err: any) {
+            logger.warn(`[Auto] Preset fallback failed: ${err.message}`);
+          }
+        }
+      } catch (e) {
+        logger.warn(`[Auto] Preset channel lookup failed: ${e}`);
       }
     }
 

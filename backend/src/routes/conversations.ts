@@ -183,4 +183,96 @@ router.post("/:id/generate", authenticate, async (req: Request, res: Response) =
   res.status(201).json({ data: agentMsg });
 });
 
+/**
+ * POST /api/conversations/create-with-overview
+ * 创建全新会话 + 生成项目概述（空白对话 + AI 概述消息）
+ * Body: { title, agentIds[], projectId?, description? }
+ */
+router.post("/create-with-overview", authenticate, async (req: Request, res: Response) => {
+  const userId = (req as any).user?.id;
+  const { title, agentIds, projectId, description } = req.body;
+
+  if (!title || !agentIds || !agentIds.length) {
+    return res.status(400).json({ error: "title and agentIds (non-empty array) are required" });
+  }
+
+  // 校验 agentId
+  for (const id of agentIds) {
+    const agent = AgentService.getById(id);
+    if (!agent) {
+      return res.status(404).json({ error: `Agent not found: ${id}` });
+    }
+  }
+
+  // 1. 创建全新会话（空消息）
+  const conv = ConversationService.create({
+    agentIds,
+    projectId,
+    title,
+    createdBy: userId,
+    userId,
+  });
+
+  // 2. 生成 AI 项目概述并写入为首条 agent 消息
+  const mainAgentId = agentIds[0];
+  const mainAgent = AgentService.getById(mainAgentId);
+  const selectedAgents = agentIds.map(id => AgentService.getById(id)!);
+  const agentNames = selectedAgents.map(a => a.name).join('、');
+  const isProject = agentIds.length >= 2;
+  const typeLabel = isProject ? '项目' : '任务';
+  const descText = description ? `\n\n任务描述：${description}` : '';
+
+  const overviewPrompt = `你是一名${isProject ? '项目经理' : '任务助手'}。请根据以下信息生成一份简洁的项目概述。
+
+${typeLabel}名称：${title}
+参与智能体：${agentNames}
+智能体详情：${selectedAgents.map(a => `  - ${a.name}：擅长${a.expertise?.join('、') || '通用'}，${a.description || '暂无描述'}`).join('\n')}${descText}
+
+请按以下格式输出（使用 Markdown）：
+
+# ${title} — 项目概述
+
+## 项目简介\n简要说明本项目的目标和范围（2-3 句）\n\n## 参与角色\n列出每个智能体的职责分工\n\n## 初始建议\n给出 2-3 条可立即执行的下一步建议\n
+请保持简洁专业。`;
+
+  try {
+    const quotaResult = AgentService.checkQuota(mainAgentId, userId);
+    const maxTokensPerMsg = AgentService.getMaxTokensPerMessage(mainAgentId);
+
+    let fullContent = "";
+    let errorMsg: string | null = null;
+    let tokenCount = 0;
+
+    await new Promise<void>((resolve) => {
+      AgentService.generateStream(
+        mainAgentId,
+        [{ role: "user", content: overviewPrompt }],
+        () => {},
+        (tokens) => { tokenCount = tokens; resolve(); },
+        (err) => { errorMsg = err.message; resolve(); }
+      );
+    });
+
+    if (!errorMsg && fullContent) {
+      AgentService.recordUsage(userId, mainAgentId, tokenCount);
+      AgentService.addTokenUsed(mainAgentId, tokenCount);
+
+      ConversationService.addMessage({
+        conversationId: conv.id,
+        role: "agent",
+        content: fullContent,
+        agentId: mainAgentId,
+        tokenCount,
+      });
+    }
+  } catch (err: any) {
+    // 概述生成失败不影响会话创建，记录警告即可
+    console.warn(`[create-with-overview] Overview generation failed: ${err?.message}`);
+  }
+
+  // 3. 返回完整会话信息（含消息）
+  const messages = ConversationService.getMessages(conv.id);
+  res.status(201).json({ data: { ...conv, messages } });
+});
+
 export default router;

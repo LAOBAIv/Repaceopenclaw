@@ -316,4 +316,84 @@ router.get(
   })
 );
 
+// ============ 智能体 LLM 路由状态概览 ============
+
+/**
+ * GET /api/agents/routing-overview
+ * 返回所有智能体的实际 LLM 路由状态（用于管理后台 + 前端展示）
+ */
+router.get(
+  "/routing-overview",
+  authenticate,
+  asyncHandler(async (_req: Request, res: Response) => {
+    const db = getDb();
+    const agents = AgentService.list();
+
+    const overview = agents.map(agent => {
+      const hasPrivateToken = !!(agent.tokenApiKey?.trim());
+      let effectiveChannel = "";
+      let effectiveModel = "";
+      let source: "private" | "global" | "gateway" | "none" = "none";
+
+      if (hasPrivateToken) {
+        effectiveChannel = agent.tokenProvider || "custom";
+        effectiveModel = (agent.modelName && agent.modelName.toLowerCase() !== "auto")
+          ? agent.modelName
+          : "默认模型";
+        source = "private";
+      } else {
+        const agentModelName = agent.modelName?.trim();
+        if (agentModelName && agentModelName.toLowerCase() !== "auto") {
+          try {
+            const modelRows = db.exec(
+              `SELECT m.name as model_name, mp.name as provider_name
+               FROM models m
+               LEFT JOIN model_providers mp ON m.provider_id = mp.id
+               WHERE m.name = ? AND m.enabled = 1 AND mp.enabled = 1
+               LIMIT 1`,
+              [agentModelName]
+            );
+            if (modelRows.length && modelRows[0].values.length) {
+              const cols = modelRows[0].columns;
+              const row: any = {};
+              modelRows[0].values[0].forEach((v: any, i: number) => { row[cols[i]] = v; });
+              effectiveChannel = row.provider_name || "未知";
+              effectiveModel = row.model_name || agentModelName;
+              source = "global";
+            } else {
+              effectiveChannel = "openclaw";
+              effectiveModel = agentModelName;
+              source = "gateway";
+            }
+          } catch {
+            effectiveChannel = "openclaw";
+            effectiveModel = agentModelName;
+            source = "gateway";
+          }
+        } else {
+          effectiveChannel = "openclaw";
+          effectiveModel = "默认";
+          source = "gateway";
+        }
+      }
+
+      return {
+        id: agent.id,
+        name: agent.name,
+        color: agent.color,
+        status: agent.status,
+        source,
+        effectiveChannel,
+        effectiveModel,
+        hasPrivateToken,
+        tokenProvider: agent.tokenProvider || null,
+        modelName: agent.modelName || null,
+        modelProvider: agent.modelProvider || null,
+      };
+    });
+
+    sendSuccess(res, overview);
+  })
+);
+
 export default router;

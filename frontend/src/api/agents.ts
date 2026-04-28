@@ -1,6 +1,20 @@
 import apiClient from "./client";
 import { Agent } from "../types";
 
+export interface AgentRoutingInfo {
+  id: string;
+  name: string;
+  color: string;
+  status: string;
+  source: 'private' | 'global' | 'gateway' | 'none';
+  effectiveChannel: string;
+  effectiveModel: string;
+  hasPrivateToken: boolean;
+  tokenProvider: string | null;
+  modelName: string | null;
+  modelProvider: string | null;
+}
+
 export const agentsApi = {
   list: async (): Promise<Agent[]> => {
     const res = await apiClient.get("/agents");
@@ -20,5 +34,9 @@ export const agentsApi = {
   },
   delete: async (id: string): Promise<void> => {
     await apiClient.delete(`/agents/${id}`);
+  },
+  routingOverview: async (): Promise<AgentRoutingInfo[]> => {
+    const res = await apiClient.get("/agents/routing-overview");
+    return res.data.data;
   },
 };

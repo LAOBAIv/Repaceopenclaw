@@ -45,6 +45,8 @@ interface ConversationStore {
   sessionTabs: SessionTab[];
   /** 当前激活的 Tab id */
   activeTabId: string | null;
+  /** 用户主动关闭的会话 ID 列表（刷新后不再恢复） */
+  closedSessionIds: string[];
 
   connect: () => void;
   sendMessage: (panelId: string, content: string) => void;
@@ -86,7 +88,7 @@ interface ConversationStore {
   createSessionTab: (title?: string) => string;
   /** 切换激活 Tab（同时同步 activePanelId 由外部 ProjectWorkspace 处理） */
   switchSessionTab: (tabId: string) => void;
-  /** 关闭指定 Tab（同时关闭绑定的 panel） */
+  /** 关闭指定 Tab（同时关闭绑定的 panel，并记录为永久关闭） */
   closeSessionTab: (tabId: string) => void;
   /** 将 panel 绑定到指定 Tab */
   bindPanelToTab: (tabId: string, panelId: string, title: string, color?: string) => void;
@@ -94,6 +96,8 @@ interface ConversationStore {
   syncTabStreamingState: () => void;
   /** 刷新后从持久化的 tabs 恢复 panels 和消息 */
   restoreFromPersist: () => Promise<void>;
+  /** 永久关闭指定会话（刷新后也不再恢复） */
+  permanentlyCloseSession: (conversationId: string) => void;
 }
 
 // WebSocket singleton
@@ -110,6 +114,8 @@ export const useConversationStore = create<ConversationStore>()(
   wsConnected: false,
   sessionTabs: [],
   activeTabId: null,
+  /** 用户主动关闭的会话 ID 列表（刷新后不再恢复） */
+  closedSessionIds: [],
 
   connect: () => {
     if (wsInstance?.readyState === WebSocket.OPEN) return;
@@ -440,8 +446,12 @@ export const useConversationStore = create<ConversationStore>()(
   },
 
   closeSessionTab: (tabId) => {
-    const { sessionTabs, activeTabId, openPanels } = get();
+    const { sessionTabs, activeTabId, openPanels, closedSessionIds } = get();
     const tab = sessionTabs.find((t) => t.id === tabId);
+    // 记录已关闭的会话 ID（刷新后不再恢复）
+    const newClosedIds = tab?.panelId && !closedSessionIds.includes(tab.panelId)
+      ? [...closedSessionIds, tab.panelId]
+      : closedSessionIds;
     // 关闭绑定的 panel
     if (tab?.panelId) {
       set((s) => ({
@@ -456,7 +466,21 @@ export const useConversationStore = create<ConversationStore>()(
       newActiveTabId =
         remaining[idx]?.id ?? remaining[idx - 1]?.id ?? remaining[0]?.id ?? null;
     }
-    set({ sessionTabs: remaining, activeTabId: newActiveTabId });
+    set({ sessionTabs: remaining, activeTabId: newActiveTabId, closedSessionIds: newClosedIds });
+  },
+
+  /** 永久关闭指定会话（不通过 UI 关闭，直接标记为已关闭） */
+  permanentlyCloseSession: (conversationId) => {
+    const { closedSessionIds, sessionTabs, activeTabId } = get();
+    if (closedSessionIds.includes(conversationId)) return;
+    const newClosedIds = [...closedSessionIds, conversationId];
+    // 同时移除相关的 sessionTab
+    const remaining = sessionTabs.filter((t) => t.panelId !== conversationId);
+    let newActiveTabId = activeTabId;
+    if (activeTabId && remaining.find(t => t.id === activeTabId) === undefined) {
+      newActiveTabId = remaining[0]?.id ?? null;
+    }
+    set({ closedSessionIds: newClosedIds, sessionTabs: remaining, activeTabId: newActiveTabId });
   },
 
   bindPanelToTab: (tabId, panelId, title, color) => {
@@ -478,15 +502,145 @@ export const useConversationStore = create<ConversationStore>()(
   },
 
   restoreFromPersist: async () => {
-    // 从 sessions API 恢复（索引 + 预览，参考 OpenClaw 模式）
+    const { sessionTabs: persistedTabs, activeTabId: persistedActiveId, closedSessionIds } = get();
+
+    // ━━━ 第一优先：Zustand persist 是用户真实状态 ━━━
+    // 如果用户之前已经打开过标签页，直接恢复
+    // 刷新页面不会改变用户已打开/已关闭的状态
+    if (persistedTabs && persistedTabs.length > 0) {
+      const restoredPanels: ConversationPanel[] = [];
+      const restoredTabs: SessionTab[] = [];
+      for (const tab of persistedTabs) {
+        if (!tab.panelId) continue;
+        try {
+          const messages = await conversationsApi.getMessages(tab.panelId);
+          let agentId = '';
+          let agentIds: string[] = [];
+          try {
+            const convList = await conversationsApi.list();
+            const conv = convList.find((c) => c.id === tab.panelId);
+            if (conv) {
+              agentId = conv.agentId || conv.agentIds?.[0] || '';
+              agentIds = conv.agentIds || [];
+            }
+          } catch {}
+          let agentName = tab.title || '会话';
+          let agentColor = tab.color || '#9ca3af';
+          if (agentId) {
+            try {
+              const { useAgentStore } = await import('@/stores/agentStore');
+              const agent = useAgentStore.getState().agents.find(a => a.id === agentId);
+              if (agent) {
+                agentName = agent.name;
+                agentColor = agent.color || tab.color || '#9ca3af';
+              }
+            } catch {}
+          }
+          restoredPanels.push({
+            id: tab.panelId,
+            conversationId: tab.panelId,
+            agentId,
+            agentIds,
+            agentName,
+            agentColor,
+            messages,
+            isStreaming: false,
+          });
+          restoredTabs.push(tab);
+        } catch {
+          restoredPanels.push({
+            id: tab.panelId,
+            conversationId: tab.panelId,
+            agentId: '',
+            agentIds: [],
+            agentName: tab.title || '会话',
+            agentColor: tab.color || '#9ca3af',
+            messages: [],
+            isStreaming: false,
+          });
+          restoredTabs.push(tab);
+        }
+      }
+      set({
+        openPanels: restoredPanels,
+        sessionTabs: restoredTabs,
+        activeTabId: persistedActiveId || (restoredTabs.length > 0 ? restoredTabs[0].id : null),
+      });
+      return;
+    }
+
+    // ━━━ 第二优先：首次访问（zustand 无数据），从 conversations API 填充 ━━━
+    // 只恢复尚未被用户关闭的会话
+    try {
+      const { useAgentStore } = await import('@/stores/agentStore');
+      const agents = useAgentStore.getState().agents;
+      const convList = await conversationsApi.list();
+      if (convList && convList.length > 0) {
+        const restoredPanels: ConversationPanel[] = [];
+        const restoredTabs: SessionTab[] = [];
+        for (const conv of convList.slice(0, 10)) {
+          if (closedSessionIds?.includes(conv.id)) continue;
+          try {
+            const messages = await conversationsApi.getMessages(conv.id);
+            const agentId = conv.agentId || conv.agentIds?.[0] || '';
+            const agent = agents.find(a => a.id === agentId);
+            const agentName = agent?.name || conv.title || '会话';
+            const agentColor = agent?.color || '#6366f1';
+            restoredPanels.push({
+              id: conv.id,
+              conversationId: conv.id,
+              agentId,
+              agentIds: conv.agentIds || [],
+              agentName,
+              agentColor,
+              messages,
+              isStreaming: false,
+            });
+            restoredTabs.push({
+              id: conv.id,
+              title: agentName,
+              panelId: conv.id,
+              color: agentColor,
+            });
+          } catch {
+            restoredPanels.push({
+              id: conv.id,
+              conversationId: conv.id,
+              agentId: conv.agentId || '',
+              agentIds: conv.agentIds || [],
+              agentName: conv.title || '会话',
+              agentColor: '#6366f1',
+              messages: [],
+              isStreaming: false,
+            });
+            restoredTabs.push({
+              id: conv.id,
+              title: conv.title || '会话',
+              panelId: conv.id,
+              color: '#6366f1',
+            });
+          }
+        }
+        if (restoredTabs.length > 0) {
+          set({
+            openPanels: restoredPanels,
+            sessionTabs: restoredTabs,
+            activeTabId: restoredTabs[0].id,
+          });
+          return;
+        }
+      }
+    } catch {}
+
+    // ━━━ 兜底：sessions API ━━━
     try {
       const { sessionsApi } = await import('@/api/sessions');
       const sessions = await sessionsApi.list();
       if (sessions && sessions.length > 0) {
         const restoredPanels: ConversationPanel[] = [];
-        const recentSessions = sessions.slice(0, 10);
-
-        for (const session of recentSessions) {
+        const restoredTabs: SessionTab[] = [];
+        for (const session of sessions.slice(0, 10)) {
+          if (closedSessionIds?.includes(session.id)) continue;
           try {
             const preview = await sessionsApi.preview(session.id, 20);
             const messages = (preview?.messages || []).map((m: any) => ({
@@ -496,115 +650,85 @@ export const useConversationStore = create<ConversationStore>()(
               content: m.content,
               createdAt: m.createdAt,
             }));
-
+            const agentId = preview?.agentId || session.agentId || '';
+            let agentName = '';
+            let agentColor = '#6366f1';
+            if (agentId) {
+              try {
+                const { useAgentStore } = await import('@/stores/agentStore');
+                const agent = useAgentStore.getState().agents.find(a => a.id === agentId);
+                if (agent) {
+                  agentName = agent.name;
+                  agentColor = agent.color || '#6366f1';
+                }
+              } catch {}
+            }
+            if (!agentName) {
+              agentName = preview?.title || session.title || '会话';
+            }
             restoredPanels.push({
               id: session.id,
               conversationId: session.id,
-              agentId: session.agentId || "",
-              agentIds: [],
-              agentName: session.title?.replace(/^与\s+/, "").replace(/\s+的对话$/, "") || session.title || "",
-              agentColor: "#6366f1",
+              agentId,
+              agentIds: preview?.agentIds || session.agentIds || [],
+              agentName,
+              agentColor,
               messages,
               isStreaming: false,
+            });
+            restoredTabs.push({
+              id: session.id,
+              title: agentName,
+              panelId: session.id,
+              color: agentColor,
             });
           } catch {
             restoredPanels.push({
               id: session.id,
               conversationId: session.id,
-              agentId: session.agentId || "",
-              agentIds: [],
-              agentName: session.title || "",
-              agentColor: "#6366f1",
+              agentId: session.agentId || '',
+              agentIds: session.agentIds || [],
+              agentName: session.title || '会话',
+              agentColor: '#6366f1',
               messages: [],
               isStreaming: false,
             });
-          }
-        }
-
-        set({ openPanels: restoredPanels });
-        return;
-      }
-    } catch {}
-
-    // fallback: 从 conversations API 恢复
-    try {
-      const convList = await conversationsApi.list();
-      if (convList && convList.length > 0) {
-        const restoredPanels: ConversationPanel[] = [];
-        for (const conv of convList.slice(0, 10)) {
-          try {
-            const messages = await conversationsApi.getMessages(conv.id);
-            restoredPanels.push({
-              id: conv.id,
-              conversationId: conv.id,
-              agentId: conv.agentId || "",
-              agentIds: conv.agentIds || [],
-              agentName: conv.title?.replace(/^与\s+/, "").replace(/\s+的对话$/, "") || "",
-              agentColor: "#6366f1",
-              messages,
-              isStreaming: false,
-            });
-          } catch {
-            restoredPanels.push({
-              id: conv.id,
-              conversationId: conv.id,
-              agentId: "",
-              agentIds: [],
-              agentName: conv.title || "",
-              agentColor: "#6366f1",
-              messages: [],
-              isStreaming: false,
+            restoredTabs.push({
+              id: session.id,
+              title: session.title || '会话',
+              panelId: session.id,
+              color: '#6366f1',
             });
           }
         }
-        set({ openPanels: restoredPanels });
-        return;
+        if (restoredTabs.length > 0) {
+          set({
+            openPanels: restoredPanels,
+            sessionTabs: restoredTabs,
+            activeTabId: restoredTabs[0].id,
+          });
+        }
       }
     } catch {}
-
-    // final fallback: zustand persist
-    const { sessionTabs } = get();
-    if (!sessionTabs || sessionTabs.length === 0) return;
-
-    const restoredPanels: ConversationPanel[] = [];
-    for (const tab of sessionTabs) {
-      if (!tab.panelId) continue;
-      try {
-        const messages = await conversationsApi.getMessages(tab.panelId);
-        const convList = await conversationsApi.list();
-        const conv = convList.find((c) => c.id === tab.panelId);
-        restoredPanels.push({
-          id: tab.panelId,
-          conversationId: tab.panelId,
-          agentId: conv?.agentId || "",
-          agentIds: conv?.agentIds || [],
-          agentName: tab.title,
-          agentColor: tab.color || "#9ca3af",
-          messages,
-          isStreaming: false,
-        });
-      } catch {
-        restoredPanels.push({
-          id: tab.panelId,
-          conversationId: tab.panelId,
-          agentId: "",
-          agentIds: [],
-          agentName: tab.title,
-          agentColor: tab.color || "#9ca3af",
-          messages: [],
-          isStreaming: false,
-        });
-      }
-    }
-    set({ openPanels: restoredPanels });
   },
   }),
   {
     name: "repaceclaw-conversations",
-    // 只持久化 tabs 和 activeTabId，消息从 API 恢复
+    version: 2, // 版本升级：新增 closedSessionIds 字段
+    migrate: (persistedState: any, version: number) => {
+      // v1 → v2: 旧数据没有 closedSessionIds，清空 sessionTabs 让 API 重新填充
+      if (version < 2) {
+        persistedState.sessionTabs = [];
+        persistedState.activeTabId = null;
+        persistedState.closedSessionIds = [];
+      }
+      return persistedState;
+    },
+    // 持久化 tabs、激活状态、已关闭会话列表 — 消息从 API 恢复
     partialize: (state) => ({
       sessionTabs: state.sessionTabs,
       activeTabId: state.activeTabId,
+      closedSessionIds: state.closedSessionIds,
     }),
   }
 )
