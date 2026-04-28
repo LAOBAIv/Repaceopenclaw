@@ -452,9 +452,10 @@ export const useConversationStore = create<ConversationStore>()(
   /** 获取完整 Tab 列表（含 home tab） */
   getTabs: () => {
     const { sessionTabs } = get();
-    const hasHome = sessionTabs.some(t => t.id === 'home');
+    const normalized = sessionTabs.map(t => ({ ...t, type: t.type || (t.id === 'home' ? 'home' : 'session') as 'home' | 'session', }));
+    const hasHome = normalized.some(t => t.id === 'home');
     const homeTab: SessionTab = { id: 'home', type: 'home', title: '工作台', panelId: null };
-    return hasHome ? sessionTabs : [homeTab, ...sessionTabs];
+    return hasHome ? normalized : [homeTab, ...normalized];
   },
 
   /** 切换激活 Tab */
@@ -827,13 +828,30 @@ export const useConversationStore = create<ConversationStore>()(
   }),
   {
     name: "repaceclaw-conversations",
-    version: 2, // 版本升级：新增 closedSessionIds 字段
+    version: 3, // 版本升级：新增 closedSessionIds 字段
     migrate: (persistedState: any, version: number) => {
-      // v1 → v2: 旧数据没有 closedSessionIds，清空 sessionTabs 让 API 重新填充
+      // v1 旧数据：格式不兼容，返回全新状态
       if (version < 2) {
-        persistedState.sessionTabs = [];
-        persistedState.activeTabId = null;
-        persistedState.closedSessionIds = [];
+        return {
+          sessionTabs: [{ id: 'home', type: 'home', title: '工作台', panelId: null }],
+          activeTabId: 'home',
+          closedSessionIds: [],
+        };
+      }
+      // v2 数据：规范化 type 字段
+      if (version < 3) {
+        if (persistedState.sessionTabs && Array.isArray(persistedState.sessionTabs)) {
+          persistedState.sessionTabs = persistedState.sessionTabs.map((t: any) => ({
+            ...t,
+            type: t.type || (t.id === 'home' ? 'home' : 'session'),
+          }));
+        }
+        if (!persistedState.sessionTabs || persistedState.sessionTabs.length === 0) {
+          persistedState.sessionTabs = [{ id: 'home', type: 'home', title: '工作台', panelId: null }];
+        }
+        if (!persistedState.activeTabId) {
+          persistedState.activeTabId = 'home';
+        }
       }
       return persistedState;
     },
