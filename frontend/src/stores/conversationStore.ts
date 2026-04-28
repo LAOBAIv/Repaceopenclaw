@@ -20,18 +20,26 @@ interface ConversationPanel {
   systemBanner?: string;
 }
 
-/** 顶部会话 Tab 数据结构 */
+/** 顶部会话 Tab 数据结构 — 唯一 Tab 数据源 */
 export interface SessionTab {
-  /** 唯一 id，与绑定的 panelId 相同（或新建会话时的临时 id） */
+  /** 唯一 id：'home' 或 conversationId */
   id: string;
-  /** Tab 标题（智能体名称或"新会话 N"） */
+  /** Tab 类型 */
+  type: 'home' | 'session';
+  /** Tab 标题（智能体名称、项目名称或"新会话 N"） */
   title: string;
-  /** 绑定的会话 panel id（未绑定时为 null） */
+  /** 绑定的会话 panel id（home tab 为 null） */
   panelId: string | null;
-  /** Tab 颜色（智能体颜色） */
+  /** Tab 颜色（智能体颜色，home tab 无） */
   color?: string;
   /** 是否正在 streaming */
   isStreaming?: boolean;
+  /** 绑定的会话 ID（与 panelId 相同，冗余字段便于查询） */
+  conversationId?: string;
+  /** 关联的智能体 ID */
+  agentId?: string;
+  /** 关联的智能体名称 */
+  agentName?: string;
 }
 
 interface ConversationStore {
@@ -84,12 +92,6 @@ interface ConversationStore {
   /** 关闭协作任务 Banner */
   dismissBanner: (panelId: string) => void;
 
-  /** 新建一个空 Tab（尚未绑定会话，等待用户发消息或选择智能体时才真正创建） */
-  createSessionTab: (title?: string) => string;
-  /** 切换激活 Tab（同时同步 activePanelId 由外部 ProjectWorkspace 处理） */
-  switchSessionTab: (tabId: string) => void;
-  /** 关闭指定 Tab（同时关闭绑定的 panel，并记录为永久关闭） */
-  closeSessionTab: (tabId: string) => void;
   /** 将 panel 绑定到指定 Tab */
   bindPanelToTab: (tabId: string, panelId: string, title: string, color?: string) => void;
   /** 同步 Tab 的 streaming 状态 */
@@ -98,12 +100,29 @@ interface ConversationStore {
   restoreFromPersist: () => Promise<void>;
   /** 永久关闭指定会话（刷新后也不再恢复） */
   permanentlyCloseSession: (conversationId: string) => void;
+
+  /** ── Tab 管理（统一入口） ── */
+  /** 获取完整 Tab 列表（含 home tab） */
+  getTabs: () => SessionTab[];
+  /** 切换激活 Tab */
+  switchTab: (tabId: string) => void;
+  /** 关闭 Tab（会话 tab 记录到 closedSessionIds，home tab 忽略） */
+  closeTab: (tabId: string) => void;
+  /** 重命名 Tab */
+  renameTab: (tabId: string, newTitle: string) => void;
+  /** 新建会话 Tab（创建 panel + tab + 切换） */
+  createSessionTab: (opts: {
+    agentId: string;
+    agentName: string;
+    agentColor: string;
+    title?: string;
+    conversationId?: string;
+    messages?: Message[];
+  }) => Promise<string>;
 }
 
 // WebSocket singleton
 let wsInstance: WebSocket | null = null;
-/** 新建 Tab 序号计数器 */
-let tabCounter = 1;
 
 export const useConversationStore = create<ConversationStore>()(
   persist(
@@ -112,8 +131,8 @@ export const useConversationStore = create<ConversationStore>()(
   messagesMap: {},
   maxPanels: 4,
   wsConnected: false,
-  sessionTabs: [],
-  activeTabId: null,
+  sessionTabs: [{ id: 'home', type: 'home' as const, title: '工作台', panelId: null }],
+  activeTabId: 'home',
   /** 用户主动关闭的会话 ID 列表（刷新后不再恢复） */
   closedSessionIds: [],
 
@@ -427,46 +446,112 @@ export const useConversationStore = create<ConversationStore>()(
   },
 
   // ─────────────────────────────────────────────
-  // Session Tab 多会话 Tab 管理方法
+  // Session Tab 多会话 Tab 管理方法（统一入口）
   // ─────────────────────────────────────────────
 
-  createSessionTab: (title) => {
-    const id = `tab-${Date.now()}-${tabCounter++}`;
-    const tabTitle = title ?? `新会话 ${tabCounter - 1}`;
-    const newTab: SessionTab = { id, title: tabTitle, panelId: null };
-    set((s) => ({
-      sessionTabs: [...s.sessionTabs, newTab],
-      activeTabId: id,
-    }));
-    return id;
+  /** 获取完整 Tab 列表（含 home tab） */
+  getTabs: () => {
+    const { sessionTabs } = get();
+    const hasHome = sessionTabs.some(t => t.id === 'home');
+    const homeTab: SessionTab = { id: 'home', type: 'home', title: '工作台', panelId: null };
+    return hasHome ? sessionTabs : [homeTab, ...sessionTabs];
   },
 
-  switchSessionTab: (tabId) => {
+  /** 切换激活 Tab */
+  switchTab: (tabId) => {
     set({ activeTabId: tabId });
   },
 
-  closeSessionTab: (tabId) => {
+  /** 关闭 Tab */
+  closeTab: (tabId) => {
     const { sessionTabs, activeTabId, openPanels, closedSessionIds } = get();
-    const tab = sessionTabs.find((t) => t.id === tabId);
+    const tab = sessionTabs.find(t => t.id === tabId);
+    if (!tab) return;
+    if (tab.type === 'home') return; // home tab 不能关闭
     // 记录已关闭的会话 ID（刷新后不再恢复）
-    const newClosedIds = tab?.panelId && !closedSessionIds.includes(tab.panelId)
-      ? [...closedSessionIds, tab.panelId]
+    const convId = tab.panelId || tab.conversationId || tab.id;
+    const newClosedIds = !closedSessionIds.includes(convId)
+      ? [...closedSessionIds, convId]
       : closedSessionIds;
     // 关闭绑定的 panel
-    if (tab?.panelId) {
-      set((s) => ({
-        openPanels: s.openPanels.filter((p) => p.id !== tab.panelId),
+    if (tab.panelId) {
+      set(s => ({
+        openPanels: s.openPanels.filter(p => p.id !== tab.panelId),
       }));
     }
-    const remaining = sessionTabs.filter((t) => t.id !== tabId);
-    // 重新计算激活 Tab：若关闭的是当前激活，切换到相邻 Tab
+    const remaining = sessionTabs.filter(t => t.id !== tabId);
+    // 重新计算激活 Tab：若关闭的是当前激活，切换到相邻 Tab（优先 home）
     let newActiveTabId: string | null = activeTabId;
     if (activeTabId === tabId) {
-      const idx = sessionTabs.findIndex((t) => t.id === tabId);
-      newActiveTabId =
-        remaining[idx]?.id ?? remaining[idx - 1]?.id ?? remaining[0]?.id ?? null;
+      const idx = sessionTabs.findIndex(t => t.id === tabId);
+      const hasHome = remaining.some(t => t.id === 'home');
+      const tabsWithHome = hasHome ? remaining : [
+        { id: 'home', type: 'home' as const, title: '工作台', panelId: null },
+        ...remaining,
+      ];
+      newActiveTabId = tabsWithHome[idx]?.id ?? tabsWithHome[idx - 1]?.id ?? 'home';
     }
     set({ sessionTabs: remaining, activeTabId: newActiveTabId, closedSessionIds: newClosedIds });
+  },
+
+  /** 重命名 Tab */
+  renameTab: (tabId, newTitle) => {
+    set(s => ({
+      sessionTabs: s.sessionTabs.map(t =>
+        t.id === tabId ? { ...t, title: newTitle } : t
+      ),
+    }));
+    // 同步到后端 API（home tab 不同步）
+    if (tabId !== 'home') {
+      import('@/api/sessionTabs').then(({ sessionTabsApi }) => {
+        sessionTabsApi.upsert({
+          browser_tab_key: tabId,
+          title: newTitle,
+          conversation_id: tabId,
+          agent_id: '',
+          agent_name: newTitle,
+          color: '',
+        }).catch(() => {});
+      }).catch(() => {});
+    }
+  },
+
+  /** 新建会话 Tab（创建 panel + tab + 切换） */
+  createSessionTab: async (opts) => {
+    const { sessionTabs, openPanel } = get();
+    const tabId = opts.conversationId || `conv-${Date.now()}`;
+    // 检查是否已存在该 tab，存在则直接切换过去并返回 panelId
+    const existing = sessionTabs.find(t => t.id === tabId);
+    if (existing) {
+      set({ activeTabId: tabId });
+      if (existing.panelId) return existing.panelId;
+    }
+    // 创建 panel
+    const panelId = await openPanel({
+      agentId: opts.agentId,
+      agentName: opts.agentName,
+      agentColor: opts.agentColor,
+      tabId,
+    });
+    // 创建/更新 tab（如果 openPanel 返回了新 panelId，用它来更新）
+    const finalPanelId = panelId || tabId;
+    const newTab: SessionTab = {
+      id: tabId,
+      type: 'session',
+      title: opts.title || opts.agentName,
+      panelId: finalPanelId,
+      color: opts.agentColor,
+      conversationId: opts.conversationId || finalPanelId,
+      agentId: opts.agentId,
+      agentName: opts.agentName,
+    };
+    set(s => ({
+      sessionTabs: s.sessionTabs.some(t => t.id === tabId)
+        ? s.sessionTabs.map(t => t.id === tabId ? { ...t, ...newTab } : t)
+        : [...s.sessionTabs, newTab],
+      activeTabId: tabId,
+    }));
+    return tabId;
   },
 
   /** 永久关闭指定会话（不通过 UI 关闭，直接标记为已关闭） */
@@ -546,7 +631,13 @@ export const useConversationStore = create<ConversationStore>()(
             messages,
             isStreaming: false,
           });
-          restoredTabs.push(tab);
+          restoredTabs.push({
+            ...tab,
+            type: tab.type || 'session',
+            conversationId: tab.conversationId || tab.panelId || tab.id,
+            agentId: tab.agentId || agentId,
+            agentName: tab.agentName || agentName,
+          });
         } catch {
           restoredPanels.push({
             id: tab.panelId,
@@ -558,7 +649,13 @@ export const useConversationStore = create<ConversationStore>()(
             messages: [],
             isStreaming: false,
           });
-          restoredTabs.push(tab);
+          restoredTabs.push({
+            ...tab,
+            type: tab.type || 'session',
+            conversationId: tab.conversationId || tab.panelId || tab.id,
+            agentId: tab.agentId || '',
+            agentName: tab.agentName || (tab.title || '会话'),
+          });
         }
       }
       set({
@@ -598,9 +695,13 @@ export const useConversationStore = create<ConversationStore>()(
             });
             restoredTabs.push({
               id: conv.id,
+              type: 'session',
               title: agentName,
               panelId: conv.id,
               color: agentColor,
+              conversationId: conv.id,
+              agentId,
+              agentName,
             });
           } catch {
             restoredPanels.push({
@@ -615,9 +716,13 @@ export const useConversationStore = create<ConversationStore>()(
             });
             restoredTabs.push({
               id: conv.id,
+              type: 'session',
               title: conv.title || '会话',
               panelId: conv.id,
               color: '#6366f1',
+              conversationId: conv.id,
+              agentId: conv.agentId || '',
+              agentName: conv.title || '会话',
             });
           }
         }
@@ -678,9 +783,13 @@ export const useConversationStore = create<ConversationStore>()(
             });
             restoredTabs.push({
               id: session.id,
+              type: 'session',
               title: agentName,
               panelId: session.id,
               color: agentColor,
+              conversationId: session.id,
+              agentId,
+              agentName,
             });
           } catch {
             restoredPanels.push({
@@ -695,9 +804,13 @@ export const useConversationStore = create<ConversationStore>()(
             });
             restoredTabs.push({
               id: session.id,
+              type: 'session',
               title: session.title || '会话',
               panelId: session.id,
               color: '#6366f1',
+              conversationId: session.id,
+              agentId: session.agentId || '',
+              agentName: session.title || '会话',
             });
           }
         }

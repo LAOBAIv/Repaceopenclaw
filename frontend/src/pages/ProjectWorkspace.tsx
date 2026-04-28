@@ -1923,13 +1923,22 @@ export function ProjectWorkspace() {
 
   /* ── Store 接入 ─────────────────────────────────────────── */
   const { currentProject, projects, fetchProjects } = useProjectStore();
-  const { openPanels, openPanel, sendMessage, connect, closePanel, wsConnected, restoreFromPersist } = useConversationStore();
+  const { openPanels, openPanel, sendMessage, connect, closePanel, wsConnected, restoreFromPersist,
+    sessionTabs: storeSessionTabs, activeTabId: storeActiveTabId } = useConversationStore();
+  // 统一 Tab 管理（方案 A：sessionTabs 作为唯一数据源）
+  const allTabs = useConversationStore(s => s.getTabs());
+  const storeActiveId = useConversationStore(s => s.activeTabId);
+  const switchTab = useConversationStore(s => s.switchTab);
+  const closeTabFn = useConversationStore(s => s.closeTab);
+  const renameTab = useConversationStore(s => s.renameTab);
+  const createSessionTabFn = useConversationStore(s => s.createSessionTab);
+  const activeTab = allTabs.find(t => t.id === storeActiveId);
   const { agents, fetchAgents } = useAgentStore();
   const { addTaskFromChat, tasks, updateTask } = useTaskStore();
   const { projects: kanbanProjects, updateProject: updateKanbanProject, addProject: addKanbanProject } = useProjectKanbanStore();
 
   /* ── 本地状态 ────────────────────────────────────────────── */
-  const [activeTab, setActiveTab] = useState<string | null>(null);
+  const [activeSideTab, setActiveSideTab] = useState<string | null>(null);
   const [showPriorityModal, setShowPriorityModal] = useState(false);
   const [showChannelModal, setShowChannelModal] = useState(false);
   const [inputValue, setInputValue] = useState('');
@@ -2104,7 +2113,7 @@ export function ProjectWorkspace() {
     const closingTab = browserTabs[idx];
     // 同时调用 conversationStore.closeSessionTab 以记录 closedSessionIds
     if (closingTab?.conversationId) {
-      useConversationStore.getState().closeSessionTab(closingTab.key);
+      useConversationStore.getState().closeTab(closingTab.key);
     }
     setBrowserTabs(prev => prev.filter(t => t.key !== key));
     if (activeBrowserTabKey === key) {
@@ -2241,7 +2250,7 @@ export function ProjectWorkspace() {
       });
 
       // 6. 关闭标签管理弹窗（让用户看到新会话）
-      setActiveTab(null);
+      setActiveSideTab(null);
 
       // 7. 新建 BrowserTab 并切换激活状态（关键：清除旧会话的 activePanelId）
       setActivePanelId(null); // 先清空，防止旧消息闪烁
@@ -2523,13 +2532,13 @@ export function ProjectWorkspace() {
 
   function handleTabClick(tab: string) {
     if (tab === '优先级') {
-      setActiveTab(null);
+      setActiveSideTab(null);
       setShowPriorityModal(true);
     } else if (tab === '消息渠道') {
-      setActiveTab(null);
+      setActiveSideTab(null);
       setShowChannelModal(true);
     } else {
-      setActiveTab(activeTab === tab ? null : tab);
+      setActiveSideTab(activeSideTab === tab ? null : tab);
     }
   }
 
@@ -2849,7 +2858,7 @@ export function ProjectWorkspace() {
             {FUNCTION_TABS.map(tab => (
               <button
                 key={tab}
-                className={`function-tab${activeTab === tab ? ' active' : ''}`}
+                className={`function-tab${activeSideTab === tab ? ' active' : ''}`}
                 onClick={() => handleTabClick(tab)}
               >
                 {tab}
@@ -2904,10 +2913,10 @@ export function ProjectWorkspace() {
       )}
 
       {/* Tab 面板弹窗（标签管理、飞书配对、快捷指令、技能、定时任务、智能体等） */}
-      {activeTab && activeTab !== '优先级' && activeTab !== '消息渠道' && (
+      {activeSideTab && activeSideTab !== '优先级' && activeSideTab !== '消息渠道' && (
         <TabPanel
-          tab={activeTab}
-          onClose={() => setActiveTab(null)}
+          tab={activeSideTab}
+          onClose={() => setActiveSideTab(null)}
           tags={currentTags}
           onAddTag={addTag}
           onRemoveTag={removeTag}
