@@ -17,7 +17,7 @@ interface CreateTaskModalProps {
 }
 
 export function CreateTaskModal({ open, onClose }: CreateTaskModalProps) {
-  const [title, setTitle] = useState('');
+  const [taskName, setTaskName] = useState('');
   const [description, setDescription] = useState('');
   const [priority, setPriority] = useState<ProjectPriority>('mid');
   const [selectedAgentIds, setSelectedAgentIds] = useState<string[]>([]);
@@ -40,7 +40,7 @@ export function CreateTaskModal({ open, onClose }: CreateTaskModalProps) {
   }
 
   async function handleCreate() {
-    if (!title.trim()) {
+    if (!taskName.trim()) {
       showToast('请输入任务名称', 'warning');
       return;
     }
@@ -66,7 +66,7 @@ export function CreateTaskModal({ open, onClose }: CreateTaskModalProps) {
       const newTask = {
         id: taskId,
         baseId, // 基础ID，升级降级时保持不变
-        title: title.trim(),
+        title: taskName.trim(),
         description: description.trim(),
         agent: mainAgent.name,
         agentColor: mainAgent.color ?? '#6366f1',
@@ -136,7 +136,7 @@ export function CreateTaskModal({ open, onClose }: CreateTaskModalProps) {
             : '';
           sendMessage(
             firstPanelId, 
-            `开始新${typeLabel}：${title.trim()}${participantInfo}\n\n${description.trim() || '暂无描述'}`
+            `开始新${typeLabel}：${taskName.trim()}${participantInfo}\n\n${description.trim() || '暂无描述'}`
           );
         }
       }, 100);
@@ -149,7 +149,7 @@ export function CreateTaskModal({ open, onClose }: CreateTaskModalProps) {
   }
 
   function resetAndClose() {
-    setTitle('');
+    setTaskName('');
     setDescription('');
     setPriority('mid');
     setSelectedAgentIds([]);
@@ -248,8 +248,8 @@ export function CreateTaskModal({ open, onClose }: CreateTaskModalProps) {
               任务名称<span style={{ color: '#ef4444', fontSize: 13, lineHeight: 1, marginLeft: 2 }}>*</span>
             </label>
             <input
-              value={title}
-              onChange={e => setTitle(e.target.value)}
+              value={taskName}
+              onChange={e => setTaskName(e.target.value)}
               placeholder="请输入任务名称"
               style={{
                 width: '100%', height: 44, padding: '0 16px',
@@ -477,15 +477,15 @@ export function CreateTaskModal({ open, onClose }: CreateTaskModalProps) {
 
           <button
             onClick={handleCreate}
-            disabled={!title.trim() || selectedAgentIds.length === 0 || creating}
+            disabled={!taskName.trim() || selectedAgentIds.length === 0 || creating}
             style={{
               height: 40, padding: '0 28px', fontSize: 14, borderRadius: 8,
               border: 'none',
               background: isProject ? '#6366f1' : '#3b82f6',
-              cursor: (!title.trim() || selectedAgentIds.length === 0 || creating) ? 'not-allowed' : 'pointer',
+              cursor: (!taskName.trim() || selectedAgentIds.length === 0 || creating) ? 'not-allowed' : 'pointer',
               color: '#fff', fontWeight: 600,
               fontFamily: '"Microsoft YaHei","Segoe UI",sans-serif',
-              opacity: (!title.trim() || selectedAgentIds.length === 0 || creating) ? 0.6 : 1,
+              opacity: (!taskName.trim() || selectedAgentIds.length === 0 || creating) ? 0.6 : 1,
               transition: 'background 0.15s, box-shadow 0.15s',
               boxShadow: isProject 
                 ? '0 2px 8px rgba(99,102,241,0.25)' 
@@ -493,7 +493,7 @@ export function CreateTaskModal({ open, onClose }: CreateTaskModalProps) {
               display: 'inline-flex', alignItems: 'center', gap: 6,
             }}
             onMouseEnter={e => {
-              if (title.trim() && selectedAgentIds.length > 0 && !creating) {
+              if (taskName.trim() && selectedAgentIds.length > 0 && !creating) {
                 e.currentTarget.style.background = isProject ? '#4f46e5' : '#2563eb';
                 e.currentTarget.style.boxShadow = isProject
                   ? '0 4px 12px rgba(79,70,229,0.35)'

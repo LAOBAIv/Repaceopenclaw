@@ -746,13 +746,13 @@ export function AgentConsole() {
             <div className="pc-left">
 
               <div className="pc-field">
-                <label className="pc-label">{editTask ? '任务名称' : '项目名称'}<em>*</em></label>
+                <label className="pc-label">任务名称<em>*</em></label>
                 <input className="pc-input" placeholder={editTask ? '为本次任务起一个名字…' : '为本次协作项目起一个名字…'}
                   value={taskName} onChange={e => setTaskName(e.target.value)} />
               </div>
 
               <div className="pc-field">
-                <label className="pc-label">{editTask ? '任务描述' : '项目描述'}</label>
+                <label className="pc-label">任务描述</label>
                 <textarea className="pc-textarea" style={{ height: 76 }} placeholder={editTask ? '描述任务背景与预期产出…' : '描述项目背景与预期产出…'}
                   value={taskDesc} onChange={e => setTaskDesc(e.target.value)} />
               </div>

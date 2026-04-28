@@ -2228,16 +2228,17 @@ export function ProjectWorkspace() {
           import('@/api/sessions').then(({ sessionsApi }) => {
             sessionsApi.get(navState.sessionId!).then(session => {
               if (session) {
-                openPanel({
-                  agentId: session.agentId || session.agentIds?.[0] || '',
-                  agentName: session.title || '会话',
+                const agentId = session.agentId || session.agentIds?.[0] || '';
+                const agentName = session.title || '会话';
+                // 先创建 Tab，再打开面板（Tab 和 Panel 绑定）
+                createSessionTabFn({
+                  agentId,
+                  agentName,
                   agentColor: '#6366f1',
-                  initialMessage: undefined,
-                }).then(panelId => {
-                  if (panelId) {
-                    setActivePanelId(panelId);
-                    switchTab(panelId);
-                  }
+                  title: agentName,
+                  conversationId: navState.sessionId!,
+                }).then(() => {
+                  setActivePanelId(navState.sessionId!);
                 });
               }
             });

@@ -18,7 +18,7 @@ interface TagSessionModalProps {
 }
 
 export function TagSessionModal({ open, tag, onClose, onCreated }: TagSessionModalProps) {
-  const [title, setTitle] = useState(tag || '');
+  const [taskName, setTaskName] = useState(tag || '');
   const [description, setDescription] = useState('');
   const [selectedAgentIds, setSelectedAgentIds] = useState<string[]>([]);
   const [creating, setCreating] = useState(false);
@@ -40,7 +40,7 @@ export function TagSessionModal({ open, tag, onClose, onCreated }: TagSessionMod
   }
 
   async function handleCreate() {
-    if (!title.trim()) {
+    if (!taskName.trim()) {
       showToast('请输入任务名称', 'warning');
       return;
     }
@@ -56,7 +56,7 @@ export function TagSessionModal({ open, tag, onClose, onCreated }: TagSessionMod
 
       // 1. 通过后端新建会话 + AI 生成概述
       const result = await conversationsApi.createWithOverview({
-        title: title.trim(),
+        title: taskName.trim(),
         agentIds: selectedAgentIds,
         description: description.trim() || undefined,
       });
@@ -76,7 +76,7 @@ export function TagSessionModal({ open, tag, onClose, onCreated }: TagSessionMod
 
       addKanbanProject({
         id: projectId,
-        title: title.trim(),
+        title: taskName.trim(),
         description: description.trim(),
         tags: [tag, isProject ? '项目' : '任务', `tid_${Date.now()}`],
         priority: 'low',
@@ -110,7 +110,7 @@ export function TagSessionModal({ open, tag, onClose, onCreated }: TagSessionMod
       const tabKey = convId;
       const newTab = {
         key: tabKey,
-        title: title.trim(),
+        title: taskName.trim(),
         conversationId: convId,
         agentId: mainAgent.id,
         agentName: mainAgent.name,
@@ -123,7 +123,7 @@ export function TagSessionModal({ open, tag, onClose, onCreated }: TagSessionMod
       // 5. 同步到后端 sessionTabs 绑定
       sessionTabsApi.upsert({
         browser_tab_key: tabKey,
-        title: title.trim(),
+        title: taskName.trim(),
         conversation_id: convId,
         agent_id: mainAgent.id,
         agent_name: mainAgent.name,
@@ -141,7 +141,7 @@ export function TagSessionModal({ open, tag, onClose, onCreated }: TagSessionMod
   }
 
   function resetAndClose() {
-    setTitle(tag || '');
+    setTaskName(tag || '');
     setDescription('');
     setSelectedAgentIds([]);
     onClose();
@@ -234,8 +234,8 @@ export function TagSessionModal({ open, tag, onClose, onCreated }: TagSessionMod
               任务名称<span style={{ color: '#ef4444', fontSize: 13, lineHeight: 1, marginLeft: 2 }}>*</span>
             </label>
             <input
-              value={title}
-              onChange={e => setTitle(e.target.value)}
+              value={taskName}
+              onChange={e => setTaskName(e.target.value)}
               placeholder="请输入任务名称"
               style={{
                 width: '100%', height: 44, padding: '0 16px',
@@ -414,15 +414,15 @@ export function TagSessionModal({ open, tag, onClose, onCreated }: TagSessionMod
 
           <button
             onClick={handleCreate}
-            disabled={!title.trim() || selectedAgentIds.length === 0 || creating}
+            disabled={!taskName.trim() || selectedAgentIds.length === 0 || creating}
             style={{
               height: 40, padding: '0 28px', fontSize: 14, borderRadius: 8,
               border: 'none',
               background: isProject ? '#6366f1' : '#3b82f6',
-              cursor: (!title.trim() || selectedAgentIds.length === 0 || creating) ? 'not-allowed' : 'pointer',
+              cursor: (!taskName.trim() || selectedAgentIds.length === 0 || creating) ? 'not-allowed' : 'pointer',
               color: '#fff', fontWeight: 600,
               fontFamily: '"Microsoft YaHei","Segoe UI",sans-serif',
-              opacity: (!title.trim() || selectedAgentIds.length === 0 || creating) ? 0.6 : 1,
+              opacity: (!taskName.trim() || selectedAgentIds.length === 0 || creating) ? 0.6 : 1,
               transition: 'background 0.15s, box-shadow 0.15s',
               boxShadow: isProject
                 ? '0 2px 8px rgba(99,102,241,0.25)'
@@ -430,7 +430,7 @@ export function TagSessionModal({ open, tag, onClose, onCreated }: TagSessionMod
               display: 'inline-flex', alignItems: 'center', gap: 6,
             }}
             onMouseEnter={e => {
-              if (title.trim() && selectedAgentIds.length > 0 && !creating) {
+              if (taskName.trim() && selectedAgentIds.length > 0 && !creating) {
                 e.currentTarget.style.background = isProject ? '#4f46e5' : '#2563eb';
                 e.currentTarget.style.boxShadow = isProject
                   ? '0 4px 12px rgba(79,70,229,0.35)'

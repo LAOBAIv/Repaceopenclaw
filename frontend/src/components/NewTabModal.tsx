@@ -15,7 +15,7 @@ interface NewTabModalProps {
 }
 
 export function NewTabModal({ open, onClose, onCreated }: NewTabModalProps) {
-  const [title, setTitle] = useState('');
+  const [taskName, setTaskName] = useState('');
   const [selectedAgentIds, setSelectedAgentIds] = useState<string[]>([]);
   const [creating, setCreating] = useState(false);
   const { agents } = useAgentStore();
@@ -33,7 +33,7 @@ export function NewTabModal({ open, onClose, onCreated }: NewTabModalProps) {
   }
 
   async function handleCreate() {
-    if (!title.trim()) {
+    if (!taskName.trim()) {
       showToast('请输入任务名称', 'warning');
       return;
     }
@@ -49,7 +49,7 @@ export function NewTabModal({ open, onClose, onCreated }: NewTabModalProps) {
 
       // 调用后端创建会话+概述
       const result = await conversationsApi.createWithOverview({
-        title: title.trim(),
+        title: taskName.trim(),
         agentIds: selectedAgentIds,
         description: '',
       });
@@ -67,7 +67,7 @@ export function NewTabModal({ open, onClose, onCreated }: NewTabModalProps) {
       };
       useConversationStore.setState(state => ({ openPanels: [...state.openPanels, panel] }));
 
-      onCreated(result.id, mainAgent.name, mainAgent.color ?? '#6366f1', title.trim());
+      onCreated(result.id, mainAgent.name, mainAgent.color ?? '#6366f1', taskName.trim());
       showToast(`${isProject ? '协作项目' : '会话'}创建成功`, 'success');
       resetAndClose();
     } catch (err: any) {
@@ -79,7 +79,7 @@ export function NewTabModal({ open, onClose, onCreated }: NewTabModalProps) {
   }
 
   function resetAndClose() {
-    setTitle('');
+    setTaskName('');
     setSelectedAgentIds([]);
     onClose();
   }
@@ -164,8 +164,8 @@ export function NewTabModal({ open, onClose, onCreated }: NewTabModalProps) {
               任务名称<span style={{ color: '#ef4444', fontSize: 13, lineHeight: 1, marginLeft: 2 }}>*</span>
             </label>
             <input
-              value={title}
-              onChange={e => setTitle(e.target.value)}
+              value={taskName}
+              onChange={e => setTaskName(e.target.value)}
               placeholder="请输入任务名称"
               autoFocus
               style={{
@@ -275,15 +275,15 @@ export function NewTabModal({ open, onClose, onCreated }: NewTabModalProps) {
 
           <button
             onClick={handleCreate}
-            disabled={!title.trim() || selectedAgentIds.length === 0 || creating}
+            disabled={!taskName.trim() || selectedAgentIds.length === 0 || creating}
             style={{
               height: 40, padding: '0 28px', fontSize: 14, borderRadius: 8,
               border: 'none',
               background: isProject ? '#6366f1' : '#3b82f6',
-              cursor: (!title.trim() || selectedAgentIds.length === 0 || creating) ? 'not-allowed' : 'pointer',
+              cursor: (!taskName.trim() || selectedAgentIds.length === 0 || creating) ? 'not-allowed' : 'pointer',
               color: '#fff', fontWeight: 600,
               fontFamily: '"Microsoft YaHei","Segoe UI",sans-serif',
-              opacity: (!title.trim() || selectedAgentIds.length === 0 || creating) ? 0.6 : 1,
+              opacity: (!taskName.trim() || selectedAgentIds.length === 0 || creating) ? 0.6 : 1,
               boxShadow: isProject
                 ? '0 2px 8px rgba(99,102,241,0.25)'
                 : '0 2px 8px rgba(59,130,246,0.25)',

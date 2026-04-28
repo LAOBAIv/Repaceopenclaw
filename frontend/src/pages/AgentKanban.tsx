@@ -740,6 +740,7 @@ function TaskCard({
           state: {
             projectName: task.title,
             taskId: task.id,
+            sessionId: task.sessionId,
             // 将任务关联的智能体名称列表传入对话页，对话页智能体面板按此名单过滤
             agentNames: (task.agents ?? [{ name: task.agent, color: task.agentColor }]).map(a => a.name),
           },
@@ -758,6 +759,7 @@ function TaskCard({
           state: {
             projectName: task.title,
             taskId: task.id,
+            sessionId: task.sessionId,
             agentNames: (task.agents ?? [{ name: task.agent, color: task.agentColor }]).map(a => a.name),
           },
         })}
@@ -822,6 +824,7 @@ function TaskCard({
             state: {
               projectName: task.title,
               taskId: task.id,
+            sessionId: task.sessionId,
               agentNames: (task.agents ?? [{ name: task.agent, color: task.agentColor }]).map(a => a.name),
             },
           })}
@@ -931,6 +934,7 @@ function ProjectCard({
           state: {
             projectName: project.title,
             projectId: project.id,
+            sessionId: project.sessionId,
             // 将项目关联的智能体名称列表传入对话页，对话页智能体面板按此名单过滤
             agentNames: (project.agents ?? [{ name: project.agent, color: project.agentColor }]).map(a => a.name),
           },
@@ -949,6 +953,7 @@ function ProjectCard({
           state: {
             projectName: project.title,
             projectId: project.id,
+            sessionId: project.sessionId,
             agentNames: (project.agents ?? [{ name: project.agent, color: project.agentColor }]).map(a => a.name),
           },
         })}

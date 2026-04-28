@@ -44,6 +44,8 @@ export interface KanbanProject {
   updatedAt: string;
   taskCount: number;
   memberCount: number;
+  /** 关联的会话 ID */
+  sessionId?: string;
 }
 
 export type ProjectColumn = 'progress' | 'done';
