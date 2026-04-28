@@ -41,7 +41,7 @@ export function CreateTaskModal({ open, onClose }: CreateTaskModalProps) {
 
   async function handleCreate() {
     if (!title.trim()) {
-      showToast('请输入任务标题', 'warning');
+      showToast('请输入任务名称', 'warning');
       return;
     }
     if (selectedAgentIds.length === 0) {
@@ -245,12 +245,12 @@ export function CreateTaskModal({ open, onClose }: CreateTaskModalProps) {
               display: 'flex', alignItems: 'center', gap: 2,
               fontSize: 13, fontWeight: 600, color: '#374151', marginBottom: 7,
             }}>
-              标题<span style={{ color: '#ef4444', fontSize: 13, lineHeight: 1, marginLeft: 2 }}>*</span>
+              任务名称<span style={{ color: '#ef4444', fontSize: 13, lineHeight: 1, marginLeft: 2 }}>*</span>
             </label>
             <input
               value={title}
               onChange={e => setTitle(e.target.value)}
-              placeholder="请输入任务标题"
+              placeholder="请输入任务名称"
               style={{
                 width: '100%', height: 44, padding: '0 16px',
                 border: '1.5px solid #e5e7eb',

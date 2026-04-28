@@ -1925,12 +1925,19 @@ export function ProjectWorkspace() {
   const { openPanels, openPanel, sendMessage, connect, closePanel, wsConnected, restoreFromPersist,
     sessionTabs: storeSessionTabs, activeTabId: storeActiveTabId } = useConversationStore();
   // 统一 Tab 管理（方案 A：sessionTabs 作为唯一数据源）
-  const allTabs = useConversationStore(s => s.getTabs());
+  const rawSessionTabs = useConversationStore(s => s.sessionTabs);
   const storeActiveId = useConversationStore(s => s.activeTabId);
   const switchTab = useConversationStore(s => s.switchTab);
   const closeTabFn = useConversationStore(s => s.closeTab);
   const renameTab = useConversationStore(s => s.renameTab);
   const createSessionTabFn = useConversationStore(s => s.createSessionTab);
+  const allTabs = React.useMemo(() => {
+    const tabs = rawSessionTabs || [];
+    const hasHome = tabs.some(t => t.id === 'home');
+    const homeTab = { id: 'home', type: 'home' as const, title: '工作台', panelId: null };
+    const normalized = tabs.map(t => ({ ...t, type: t.type || (t.id === 'home' ? 'home' : 'session') as 'home' | 'session' }));
+    return hasHome ? normalized : [homeTab, ...normalized];
+  }, [rawSessionTabs]);
   const activeTab = allTabs.find(t => t.id === storeActiveId);
   const { agents, fetchAgents } = useAgentStore();
   const { addTaskFromChat, tasks, updateTask } = useTaskStore();
@@ -1995,16 +2002,6 @@ export function ProjectWorkspace() {
   /** 新建标签页弹窗状态 */
   const [showNewTabModal, setShowNewTabModal] = useState(false);
 
-  /* ── taskName 变化时同步 home tab 标题 ── */
-  useEffect(() => {
-    if (taskName) {
-      const homeTab = allTabs.find(t => t.id === 'home');
-      if (homeTab && homeTab.title !== taskName) {
-        renameTab('home', taskName);
-      }
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [taskName]);
   const taskProgress = 68; // 真实进度字段后端暂无，保留占位
 
   /* ── 找到 kanban 中对应的项目（项目模式用来读写 tags/priority）── */
@@ -2265,14 +2262,14 @@ export function ProjectWorkspace() {
     let agentName = '';
     let agentColor = '#9ca3af';
 
-    if (activePanel) {
-      // 已有会话 panel，直接发消息
+    if (activePanel && !activePanel.id.startsWith('local-')) {
+      // 已有有效会话 panel，直接发消息
       sendMessage(activePanel.id, text);
       panelId = activePanel.id;
       agentName = activePanel.agentName;
       agentColor = activePanel.agentColor ?? '#9ca3af';
-    } else {
-      // 没有 panel：用第一个可用智能体自动开启一个会话
+    } else if (!activePanel || activePanel.id.startsWith('local-')) {
+      // 没有 panel 或 panel 是本地临时面板：用第一个可用智能体自动开启一个会话
       const defaultAgent = agents[0];
       if (defaultAgent) {
         await openPanel({

@@ -451,11 +451,13 @@ export const useConversationStore = create<ConversationStore>()(
 
   /** 获取完整 Tab 列表（含 home tab） */
   getTabs: () => {
-    const { sessionTabs } = get();
-    const normalized = sessionTabs.map(t => ({ ...t, type: t.type || (t.id === 'home' ? 'home' : 'session') as 'home' | 'session', }));
-    const hasHome = normalized.some(t => t.id === 'home');
+    const { sessionTabs, activeTabId } = get();
+    const key = JSON.stringify(sessionTabs?.map(t => t.id));
+    const tabs = sessionTabs || [];
+    const hasHome = tabs.some(t => t.id === 'home');
     const homeTab: SessionTab = { id: 'home', type: 'home', title: '工作台', panelId: null };
-    return hasHome ? normalized : [homeTab, ...normalized];
+    if (!hasHome) return [homeTab, ...tabs.map(t => ({ ...t, type: t.type || (t.id === 'home' ? 'home' : 'session') as 'home' | 'session' }))];
+    return tabs.map(t => ({ ...t, type: t.type || (t.id === 'home' ? 'home' : 'session') as 'home' | 'session' }));
   },
 
   /** 切换激活 Tab */
@@ -598,6 +600,8 @@ export const useConversationStore = create<ConversationStore>()(
       const restoredTabs: SessionTab[] = [];
       for (const tab of persistedTabs) {
         if (!tab.panelId) continue;
+        // 跳过本地面板（API 不可用时创建的临时面板）
+        if (tab.panelId.startsWith('local-')) continue;
         try {
           const messages = await conversationsApi.getMessages(tab.panelId);
           let agentId = '';

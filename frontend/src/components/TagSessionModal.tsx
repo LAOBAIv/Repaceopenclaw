@@ -236,7 +236,7 @@ export function TagSessionModal({ open, tag, onClose, onCreated }: TagSessionMod
             <input
               value={title}
               onChange={e => setTitle(e.target.value)}
-              placeholder="请输入任务/项目名称"
+              placeholder="请输入任务名称"
               style={{
                 width: '100%', height: 44, padding: '0 16px',
                 border: '1.5px solid #e5e7eb',
