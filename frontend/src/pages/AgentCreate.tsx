@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import { PlusCircle, X, Check, ChevronDown, Code2, KeyRound, Eye, EyeOff, Copy, CheckCheck } from 'lucide-react';
 import { useAgentStore } from '@/stores/agentStore';
+import { useAuthStore } from '@/stores/authStore';
 import { DEFAULT_AGENTS } from '@/data/defaultAgents';
 import { showToast } from '@/components/Toast';
 import apiClient from '@/api/client';
@@ -77,7 +78,11 @@ const BADGE_COLOR: Record<string, { bg: string; color: string }> = {
 
 /* ─── Token 本地缓存（按渠道 ID 存取，跨智能体复用） ─── */
 const TOKEN_CACHE_PREFIX = 'wb_token_';
-interface TokenCache { apiKey: string; baseUrl: string; }
+interface TokenCache {
+  apiKey: string;
+  baseUrl: string;
+  modelId?: string;
+}
 function saveTokenCache(channelId: string, data: TokenCache) {
   try { localStorage.setItem(TOKEN_CACHE_PREFIX + channelId, JSON.stringify(data)); } catch { /* ignore */ }
 }
@@ -100,6 +105,9 @@ const AUTH_TYPE_LABEL: Record<string, string> = {
 export function AgentCreate() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+  const location = useLocation();
+  const user = useAuthStore((s) => s.user);
+  const isAdmin = user?.role === 'admin' || user?.role === 'super_admin';
   const editId = searchParams.get('id');           // 编辑模式：携带 ?id=xxx
   const isEdit = !!editId;
 
@@ -214,7 +222,7 @@ export function AgentCreate() {
   const [skills, setSkills]         = useState<string[]>([]);
   const [description, setDescription] = useState('');
   const [boundary, setBoundary]     = useState('');
-  const [outputFmt, setOutputFmt]   = useState('纯文本');
+  const [outputFmt, setOutputFmt]   = useState('预览+完整代码');
   // Phase 3: 可见性
   const [visibility, setVisibility] = useState<'private' | 'public' | 'template'>('private');
   // Phase 3: Skill 安全管控
@@ -244,7 +252,7 @@ export function AgentCreate() {
       setSkills(agent.expertise ?? []);
       setDescription(agent.description ?? '');
       setBoundary((agent as any).boundary ?? '');
-      setOutputFmt((agent as any).outputFormat ?? '纯文本');
+      setOutputFmt((agent as any).outputFormat ?? '预览+完整代码');
       setVisibility((agent as any).visibility ?? 'private');
       return;
     }
@@ -256,7 +264,7 @@ export function AgentCreate() {
     setSkills(agent.expertise ?? []);
     setDescription(agent.description ?? '');
     setBoundary((agent as any).boundary ?? '');
-    setOutputFmt((agent as any).outputFormat ?? '纯文本');
+    setOutputFmt((agent as any).outputFormat ?? '预览+完整代码');
     // Phase 3: 回填可见性和 Skill 配置
     setVisibility((agent as any).visibility ?? 'private');
     const sc = (agent as any).skillsConfig;
@@ -314,6 +322,11 @@ export function AgentCreate() {
   /* ── 编辑模式：加载智能体数据预填表单 ─────────────────── */
   useEffect(() => {
     if (!isEdit) return;
+    if ((editId === '24cf6cc5-da0d-48df-814e-11582e398007' || editId === 'platform-assistant' || editId === 'repaceclaw-platform-assistant') && !isAdmin) {
+      showToast('平台助手设置仅管理员可查看', 'warning');
+      navigate('/agents');
+      return;
+    }
     const agent = findAgent(editId!);
     if (agent) {
       fillForm(agent);
@@ -324,7 +337,7 @@ export function AgentCreate() {
         .catch(() => fetchAgents());
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editId]);
+  }, [editId, isAdmin, navigate]);
 
   /* ── 渠道加载完成后，编辑模式重新回填表单 ───────────── */
   useEffect(() => {
@@ -371,6 +384,26 @@ export function AgentCreate() {
       setRole(
         `你是负责以下项目的专属智能体，请围绕项目目标提供帮助。\n\n${lines.join('\n')}`
       );
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // 处理从模板跳转的参数（location.state）
+  useEffect(() => {
+    const templateData = (location.state as {
+      templateId?: string;
+      name?: string;
+      model?: string;
+      description?: string;
+      expertise?: string[];
+      systemPrompt?: string;
+      vibe?: string;
+    } | null);
+    if (!templateData || isEdit) return;
+    if (templateData.name) setName(templateData.name);
+    if (templateData.description) setDescription(templateData.description);
+    if (templateData.systemPrompt) {
+      setRole(templateData.systemPrompt);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -449,20 +482,52 @@ export function AgentCreate() {
     if (!selectedChannel) return;
     // 平台预设 + 后台已配置Key：直接确认，不需要 Key
     if (hasBackendKey) {
-      setTokenValue(hasBackendKey ? '__backend_key__' : '');
-      setCustomBaseUrl(hasBackendKey ? '' : '');
+      setTokenValue('__backend_key__');
+      setCustomBaseUrl('');
       setTokenModalOpen(false);
       return;
     }
-    const resolvedUrl = selectedChannel.id === 'custom' ? tempCustomUrl : selectedChannel.baseUrl;
-    setTokenValue(tempTokenValue);
+
+    const isCustomChannel = selectedChannel.id === 'custom';
+    const resolvedUrl = isCustomChannel ? tempCustomUrl.trim() : selectedChannel.baseUrl;
+    const resolvedModelId = tempTokenModel?.id?.trim() || '';
+
+    if (isCustomChannel) {
+      if (!resolvedUrl) {
+        showToast('请填写自定义渠道的 API Base URL', 'warning');
+        return;
+      }
+      if (!/^https?:\/\//i.test(resolvedUrl)) {
+        showToast('自定义 Base URL 必须以 http:// 或 https:// 开头', 'warning');
+        return;
+      }
+      if (!resolvedModelId) {
+        showToast('请填写自定义模型 ID', 'warning');
+        return;
+      }
+    }
+
+    if (!tempTokenValue.trim()) {
+      showToast('请填写 API Key', 'warning');
+      return;
+    }
+
+    setTokenValue(tempTokenValue.trim());
     setCustomBaseUrl(resolvedUrl);
+
     // 写入本地缓存，下次同渠道自动回填
-    saveTokenCache(selectedChannel.id, { apiKey: tempTokenValue, baseUrl: resolvedUrl });
+    saveTokenCache(selectedChannel.id, {
+      apiKey: tempTokenValue.trim(),
+      baseUrl: resolvedUrl,
+      modelId: resolvedModelId,
+    });
+
     // 同步 Token 弹窗中选择的模型回 CODE 渠道选中模型
     if (tempTokenModel) {
       setSelectedModel({
         ...tempTokenModel,
+        id: resolvedModelId || tempTokenModel.id,
+        name: tempTokenModel.name?.trim() || resolvedModelId || tempTokenModel.id,
         maxTokens:        Number(customMaxTokens) || tempTokenModel.maxTokens,
         temperature:      Number(customTemp)       ?? tempTokenModel.temperature,
         topP:             Number(customTopP)        ?? tempTokenModel.topP,
@@ -470,20 +535,8 @@ export function AgentCreate() {
         presencePenalty:  Number(customPresPenalty) ?? tempTokenModel.presencePenalty,
       });
     }
-    setTokenModalOpen(false);
 
-    // 持久化到后端
-    if (tempTokenValue.trim()) {
-      apiClient.post('/token-channels', {
-          provider: selectedChannel.id,
-          modelName: tempTokenModel?.id || '',
-          baseUrl: resolvedUrl,
-          apiKey: tempTokenValue.trim(),
-          authType: selectedChannel.authType,
-          enabled: true,
-          priority: 0,
-        }).catch(() => {});
-    }
+    setTokenModalOpen(false);
   }
   function handleCopyToken() {
     if (!tokenValue) return;
@@ -508,13 +561,24 @@ export function AgentCreate() {
 
   function openCodeModal() {
     setTempChannel(selectedChannel);
-    const initModel = selectedModel ?? selectedChannel.models[0];
+    const cached = loadTokenCache(selectedChannel.id);
+    const initModel = selectedChannel.id === 'custom'
+      ? {
+          ...(selectedModel ?? selectedChannel.models[0]),
+          id: cached?.modelId || selectedModel?.id || selectedChannel.models[0].id,
+          name: cached?.modelId || selectedModel?.name || selectedChannel.models[0].name,
+        }
+      : (selectedModel ?? selectedChannel.models[0]);
     setTempModel(initModel);
     setCustomMaxTokens(String(initModel.maxTokens));
     setCustomTemp(String(initModel.temperature));
     setCustomTopP(String(initModel.topP));
     setCustomFreqPenalty(String(initModel.frequencyPenalty));
     setCustomPresPenalty(String(initModel.presencePenalty));
+    if (selectedChannel.id === 'custom') {
+      setTempCustomUrl(cached?.baseUrl || customBaseUrl || '');
+      setTempTokenValue(cached?.apiKey || tokenValue || '');
+    }
     setCodeModelOpen(true);
   }
 
@@ -522,14 +586,28 @@ export function AgentCreate() {
 
   function selectTempChannel(ch: CodeChannel) {
     setTempChannel(ch);
-    // 切换渠道时默认选第一个模型
-    const first = ch.models[0];
+    const cached = loadTokenCache(ch.id);
+
+    // 切换渠道时默认选第一个模型；自定义渠道优先回填本地缓存的模型名
+    const first = ch.id === 'custom'
+      ? {
+          ...ch.models[0],
+          id: cached?.modelId || ch.models[0].id,
+          name: cached?.modelId || ch.models[0].name,
+        }
+      : ch.models[0];
+
     setTempModel(first);
     setCustomMaxTokens(String(first.maxTokens));
     setCustomTemp(String(first.temperature));
     setCustomTopP(String(first.topP));
     setCustomFreqPenalty(String(first.frequencyPenalty));
     setCustomPresPenalty(String(first.presencePenalty));
+
+    if (ch.id === 'custom') {
+      setTempCustomUrl(cached?.baseUrl || customBaseUrl || '');
+      setTempTokenValue(cached?.apiKey || tokenValue || '');
+    }
   }
 
   function selectPreset(m: CodeModel) {
@@ -543,9 +621,25 @@ export function AgentCreate() {
 
   function confirmCodeModal() {
     if (!tempModel) return;
+
+    if (tempChannel.id === 'custom') {
+      const modelId = tempModel.id?.trim() || '';
+      const baseUrl = tempCustomUrl.trim();
+      if (!modelId) {
+        showToast('请填写自定义模型 ID', 'warning');
+        return;
+      }
+      if (!baseUrl) {
+        showToast('请填写自定义渠道的 API Base URL', 'warning');
+        return;
+      }
+    }
+
     setSelectedChannel(tempChannel);
     setSelectedModel({
       ...tempModel,
+      id: tempModel.id?.trim() || tempModel.id,
+      name: tempModel.name?.trim() || tempModel.id,
       maxTokens:        Number(customMaxTokens) || tempModel.maxTokens,
       temperature:      Number(customTemp)       ?? tempModel.temperature,
       topP:             Number(customTopP)        ?? tempModel.topP,
@@ -557,7 +651,9 @@ export function AgentCreate() {
     if (!tokenValue.trim()) {
       setTokenValue(cached?.apiKey   ?? '');
     }
-    if (!customBaseUrl.trim()) {
+    if (tempChannel.id === 'custom') {
+      setCustomBaseUrl(tempCustomUrl.trim());
+    } else if (!customBaseUrl.trim()) {
       setCustomBaseUrl(cached?.baseUrl ?? '');
     }
     setCodeModelOpen(false);
@@ -569,9 +665,17 @@ export function AgentCreate() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!name.trim()) { showToast('请填写智能体名称', 'warning'); return; }
+
+    const activeModel: CodeModel = selectedModel ?? selectedChannel.models[0];
+    const isCustomChannel = selectedChannel.id === 'custom';
+    if (isCustomChannel) {
+      if (!customBaseUrl.trim()) { showToast('请先配置自定义渠道的 Base URL', 'warning'); return; }
+      if (!activeModel?.id?.trim()) { showToast('请先配置自定义模型 ID', 'warning'); return; }
+      if (!tokenValue.trim()) { showToast('请先填写自定义渠道的 API Key', 'warning'); return; }
+    }
+
     setSaving(true);
     try {
-      const activeModel: CodeModel = selectedModel ?? selectedChannel.models[0];
       const isPrivateKey = true;
       // temperatureOverride：快捷温度覆盖框有值时使用，否则用 CODE 弹窗里的 customTemp
       const resolvedTemp = tempOverride !== ''
@@ -597,14 +701,14 @@ export function AgentCreate() {
         temperatureOverride: tempOverride !== '' ? Number(tempOverride) : null,
         // CODE 渠道 + 模型参数
         modelName: activeModel.id,
-        modelProvider: selectedChannel.provider,
+        modelProvider: selectedChannel.id === 'custom' ? 'custom' : selectedChannel.provider,
         temperature: resolvedTemp,
         maxTokens: Number(customMaxTokens) || activeModel.maxTokens,
         topP: Number(customTopP) || activeModel.topP,
         frequencyPenalty: Number(customFreqPenalty) ?? activeModel.frequencyPenalty,
         presencePenalty: Number(customPresPenalty) ?? activeModel.presencePenalty,
         // Token 接入
-        tokenProvider: isPrivateKey ? selectedChannel.id : '',
+        tokenProvider: isPrivateKey ? (selectedChannel.id === 'custom' ? 'custom' : selectedChannel.id) : '',
         tokenApiKey: isPrivateKey ? tokenValue : '',
         tokenBaseUrl: isPrivateKey ? customBaseUrl : '',
         // Phase 3: 可见性 + Skill 管控
@@ -1259,37 +1363,135 @@ export function AgentCreate() {
                       </div>
                     );
                   })}
+                  {/* ── 自定义渠道选项 ── */}
+                  <div
+                    onClick={() => {
+                      const customChannel: CodeChannel = {
+                        id: 'custom',
+                        name: '自定义',
+                        provider: 'custom',
+                        badge: '自定义',
+                        desc: '使用自定义 API 配置',
+                        baseUrl: '',
+                        authType: 'Bearer',
+                        models: [{ id: 'custom-model', name: '自定义模型', contextWindow: '-', maxTokens: 4096, temperature: 0.7, topP: 0.95, frequencyPenalty: 0, presencePenalty: 0, desc: '请在右侧填写模型名称' }],
+                      }; selectTempChannel(customChannel); setTempCustomUrl(customBaseUrl || '');
+                    }}
+                    style={{
+                      padding: '8px 12px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6,
+                      background: tempChannel.id === 'custom' ? '#f0f4ff' : 'transparent',
+                      borderLeft: tempChannel.id === 'custom' ? '3px solid #2a3b4d' : '3px solid transparent',
+                      transition: 'all 0.1s',
+                    }}
+                  >
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                        <span style={{ fontSize: 12, fontWeight: tempChannel.id === 'custom' ? 600 : 400, color: tempChannel.id === 'custom' ? '#1e293b' : '#374151' }}>➕ 自定义</span>
+                        <span style={{ fontSize: 10, padding: '0 5px', borderRadius: 3, background: '#fef3c7', color: '#d97706', fontWeight: 500 }}>自定义</span>
+                      </div>
+                      <div style={{ fontSize: 10, color: '#9ca3af', marginTop: 1 }}>自定义 API 配置</div>
+                    </div>
+                  </div>
                 </div>
 
                 {/* ── 第二列：模型列表 ── */}
                 <div className="cm-col-models" style={{ flex: '0 0 220px', borderRight: '1px solid #f0f0f0' }}>
-                  <div className="cm-section-title">{tempChannel.name} 模型</div>
+                  <div className="cm-section-title">{tempChannel.id === 'custom' ? '自定义配置' : tempChannel.name + ' 模型'}</div>
                   <div className="cm-preset-list">
-                    {tempChannel.models.map(m => {
-                      const sel = tempModel?.id === m.id;
-                      const bc  = m.badge ? BADGE_COLOR[m.badge] : null;
-                      return (
-                        <div
-                          key={m.id}
-                          className={`cm-preset-item${sel ? ' selected' : ''}`}
-                          onClick={() => selectPreset(m)}
-                        >
-                          <div className="ac-modal-check" style={{ marginTop: 2 }}>
-                            {sel && <Check size={13} color="#fff" strokeWidth={3} />}
-                          </div>
-                          <div className="cm-preset-info">
-                            <div className="cm-preset-name-row">
-                              <span className="cm-preset-name">{m.name}</span>
-                              {m.badge && bc && (
-                                <span className="cm-preset-badge" style={{ background: bc.bg, color: bc.color }}>{m.badge}</span>
-                              )}
-                            </div>
-                            <div className="cm-preset-ctx">上下文：{m.contextWindow}</div>
-                            {m.desc && <div className="cm-preset-desc">{m.desc}</div>}
-                          </div>
+                    {/* 自定义渠道：显示输入框 */}
+                    {tempChannel.id === 'custom' ? (
+                      <div style={{ padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+                        {/* Base URL */}
+                        <div>
+                          <label style={{ fontSize: 11, fontWeight: 500, color: '#374151', marginBottom: 4, display: 'block' }}>API Base URL</label>
+                          <input
+                            type="text"
+                            placeholder="https://api.example.com/v1"
+                            value={tempCustomUrl}
+                            onChange={e => setTempCustomUrl(e.target.value)}
+                            style={{ width: '100%', padding: '6px 10px', fontSize: 12, border: '1px solid #d1d5db', borderRadius: 6, outline: 'none' }}
+                            onFocus={e => e.target.style.borderColor = '#2a3b4d'}
+                            onBlur={e => e.target.style.borderColor = '#d1d5db'}
+                          />
+                          <span style={{ fontSize: 10, color: '#9ca3af', marginTop: 2 }}>OpenAI 兼容格式的 API 地址</span>
                         </div>
-                      );
-                    })}
+                        {/* 模型名称 */}
+                        <div>
+                          <label style={{ fontSize: 11, fontWeight: 500, color: '#374151', marginBottom: 4, display: 'block' }}>模型 ID</label>
+                          <input
+                            type="text"
+                            placeholder="gpt-4o, claude-3-opus 等"
+                            value={tempTokenModel?.id || ''}
+                            onChange={e => {
+                              const newModel: CodeModel = {
+                                id: e.target.value,
+                                name: e.target.value || '自定义模型',
+                                contextWindow: '-',
+                                maxTokens: Number(customMaxTokens) || 4096,
+                                temperature: Number(customTemp) || 0.7,
+                                topP: Number(customTopP) || 0.95,
+                                frequencyPenalty: Number(customFreqPenalty) || 0,
+                                presencePenalty: Number(customPresPenalty) || 0,
+                                desc: '自定义模型',
+                              }; setTempTokenModel(newModel);
+                            }}
+                            style={{ width: '100%', padding: '6px 10px', fontSize: 12, border: '1px solid #d1d5db', borderRadius: 6, outline: 'none' }}
+                            onFocus={e => e.target.style.borderColor = '#2a3b4d'}
+                            onBlur={e => e.target.style.borderColor = '#d1d5db'}
+                          />
+                          <span style={{ fontSize: 10, color: '#9ca3af', marginTop: 2 }}>实际调用的模型名称</span>
+                        </div>
+                        {/* API Key */}
+                        <div>
+                          <label style={{ fontSize: 11, fontWeight: 500, color: '#374151', marginBottom: 4, display: 'block' }}>API Key</label>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <input
+                              type={showToken ? 'text' : 'password'}
+                              placeholder="sk-..."
+                              value={tempTokenValue}
+                              onChange={e => setTempTokenValue(e.target.value)}
+                              style={{ width: '100%', padding: '6px 10px', fontSize: 12, border: '1px solid #d1d5db', borderRadius: 6, outline: 'none' }}
+                              onFocus={e => e.target.style.borderColor = '#2a3b4d'}
+                              onBlur={e => e.target.style.borderColor = '#d1d5db'}
+                            />
+                            <button
+                              onClick={() => setShowToken(!showToken)}
+                              style={{ padding: '4px 8px', background: '#f3f4f6', border: '1px solid #d1d5db', borderRadius: 4, cursor: 'pointer' }}
+                            >
+                              {showToken ? <EyeOff size={14} /> : <Eye size={14} />}
+                            </button>
+                          </div>
+                          <span style={{ fontSize: 10, color: '#9ca3af', marginTop: 2 }}>您的 API 密钥</span>
+                        </div>
+                      </div>
+                    ) : (
+                      /* 非自定义渠道：显示模型列表 */
+                      tempChannel.models.map(m => {
+                        const sel = tempModel?.id === m.id;
+                        const bc  = m.badge ? BADGE_COLOR[m.badge] : null;
+                        return (
+                          <div
+                            key={m.id}
+                            className={`cm-preset-item${sel ? ' selected' : ''}`}
+                            onClick={() => selectPreset(m)}
+                          >
+                            <div className="ac-modal-check" style={{ marginTop: 2 }}>
+                              {sel && <Check size={13} color="#fff" strokeWidth={3} />}
+                            </div>
+                            <div className="cm-preset-info">
+                              <div className="cm-preset-name-row">
+                                <span className="cm-preset-name">{m.name}</span>
+                                {m.badge && bc && (
+                                  <span className="cm-preset-badge" style={{ background: bc.bg, color: bc.color }}>{m.badge}</span>
+                                )}
+                              </div>
+                              <div className="cm-preset-ctx">上下文：{m.contextWindow}</div>
+                              {m.desc && <div className="cm-preset-desc">{m.desc}</div>}
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
                   </div>
                 </div>
 
@@ -1522,9 +1724,11 @@ export function AgentCreate() {
                               {tokenValue && <span className="ac-token-dot" />}
                             </div>
                             <div className="ac-token-trigger-sub">
-                              {tokenValue
-                                ? `${tokenValue.slice(0, 6)}${'•'.repeat(Math.min(10, tokenValue.length - 6))} 已配置`
-                                : '未填写 Token'}
+                              {hasBackendKey
+                                ? '管理员已配置，无需填写'
+                                : tokenValue
+                                  ? `${tokenValue.slice(0, 6)}${'•'.repeat(Math.max(0, Math.min(10, tokenValue.length - 6)))} 已配置`
+                                  : '未填写 Token'}
                             </div>
                           </div>
                         ) : (

@@ -9,7 +9,6 @@ import { useTaskStore } from '@/stores/taskStore';
 import { useProjectKanbanStore, type ProjectPriority } from '@/stores/projectKanbanStore';
 import { showToast } from '@/components/Toast';
 import { SessionAgentBar } from '@/components/SessionAgentBar';
-import { TagSessionModal } from '@/components/TagSessionModal';
 import { NewTabModal } from '@/components/NewTabModal';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -28,7 +27,7 @@ import {
   SkillPanel,
   SchedulePanel,
   ShortcutPanel,
-  TagPanel,
+  TaskTagPanel,
   FUNCTION_TABS,
   CHANNEL_LIST,
   PRIORITY_OPTIONS,
@@ -265,6 +264,7 @@ function AgentPanel({
   activePanelId,
   onSwitchPanel,
   onOpenPanel,
+  onSwitchAgent,
   onClosePanel,
   currentProjectId,
   collabNodes,
@@ -284,6 +284,7 @@ function AgentPanel({
   activePanelId: string | null;
   onSwitchPanel: (panelId: string) => void;
   onOpenPanel: (agentId: string, agentName: string, agentColor: string, initialMessage?: string) => void;
+  onSwitchAgent: (agentId: string, agentName: string, agentColor: string) => void;
   onClosePanel: (panelId: string) => void;
   currentProjectId?: string;
   collabNodes: FlowNode[];
@@ -299,12 +300,12 @@ function AgentPanel({
 }) {
   const [subTab, setSubTab] = useState<'switch'|'collab'>('switch');
 
-  /* ── 智能体列表过滤 ── */
+  /* ── 智能体列表 ── */
   const allAgents = agents ?? [];
-  const agentList =
-    incomingAgentNames && incomingAgentNames.length > 0
-      ? allAgents.filter(a => incomingAgentNames.includes(a.name))
-      : allAgents;
+  // 关键规则："切换智能体"必须能看到全部可用 agent，不能被看板传入的 incomingAgentNames 限制。
+  // 否则从任务/会话列表进入时，弹窗通常只会剩当前那 1 个 agent，无法在同一 session 内切换到别的 agent。
+  // incomingAgentNames 只适合做展示/默认关联，不适合限制切换候选池。
+  const agentList = allAgents;
 
   /* ══════════ 协作 Tab：FlowNode 流程节点 ══════════ */
   // nodes/setNodes 是外层持久化状态的别名，关闭弹窗后数据不会丢失
@@ -451,49 +452,48 @@ function AgentPanel({
             }}>
               {agentList.map(agent => {
                 const statusInfo = agentStatusMap[agent.status ?? 'idle'] ?? { label: '离线', color: '#9ca3af' };
-                const existingPanel = openPanels.find(p => p.agentId === agent.id);
-                const isActive = existingPanel?.id === activePanelId;
+                const currentSessionPanel = openPanels.find(p => p.id === activePanelId) ?? openPanels[0] ?? null;
+                const isCurrentAgent = currentSessionPanel?.agentId === agent.id;
                 const accentColor = agent.color ?? '#6366f1';
                 return (
                   <button
                     key={agent.id}
                     onClick={() => {
-                      if (existingPanel) { onSwitchPanel(existingPanel.id); }
-                      else { onOpenPanel(agent.id, agent.name, agent.color); }
+                      onSwitchAgent(agent.id, agent.name, agent.color);
                     }}
                     style={{
                       display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 6,
                       padding: '10px 11px', borderRadius: 9, border: '1.5px solid',
-                      borderColor: isActive ? accentColor : '#e5e7eb',
-                      background: isActive ? accentColor + '0d' : '#fafafa',
+                      borderColor: isCurrentAgent ? accentColor : '#e5e7eb',
+                      background: isCurrentAgent ? accentColor + '0d' : '#fafafa',
                       cursor: 'pointer', transition: 'all 0.15s', textAlign: 'left',
                       fontFamily: '"Microsoft YaHei","Segoe UI",sans-serif',
                       width: '100%', boxSizing: 'border-box',
                       position: 'relative',
                     }}
                     onMouseEnter={e => {
-                      if (!isActive) {
+                      if (!isCurrentAgent) {
                         (e.currentTarget as HTMLButtonElement).style.borderColor = accentColor + '88';
                         (e.currentTarget as HTMLButtonElement).style.background = accentColor + '08';
                       }
                     }}
                     onMouseLeave={e => {
-                      if (!isActive) {
+                      if (!isCurrentAgent) {
                         (e.currentTarget as HTMLButtonElement).style.borderColor = '#e5e7eb';
                         (e.currentTarget as HTMLButtonElement).style.background = '#fafafa';
                       }
                     }}
                   >
-                    {/* 右上角状态标注：当前 / 切换（只在已激活或已开启时显示） */}
-                    {(isActive || existingPanel) && (
+                    {/* 右上角状态标注：仅标识当前会话正在使用的 agent */}
+                    {isCurrentAgent && (
                       <span style={{
                         position: 'absolute', top: 7, right: 8,
                         fontSize: 10, padding: '1px 6px', borderRadius: 20, flexShrink: 0,
-                        background: isActive ? accentColor + '18' : '#f3f4f6',
-                        color: isActive ? accentColor : '#9ca3af',
+                        background: accentColor + '18',
+                        color: accentColor,
                         fontWeight: 600,
                       }}>
-                        {isActive ? '当前' : '切换'}
+                        当前
                       </span>
                     )}
 
@@ -515,7 +515,7 @@ function AgentPanel({
                     {/* 名称 */}
                     <div style={{
                       fontSize: 13, fontWeight: 600, lineHeight: 1.3,
-                      color: isActive ? accentColor : '#1a202c',
+                      color: isCurrentAgent ? accentColor : '#1a202c',
                       width: '100%', paddingRight: 36,
                       whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
                     }}>{agent.name}</div>
@@ -1000,7 +1000,6 @@ function AgentPanel({
 
 function TabPanel({
   tab, onClose,
-  tags, onAddTag, onRemoveTag,
   agents, tasks, taskName,
   onInject, onSend,
   matchedProject,
@@ -1009,6 +1008,7 @@ function TabPanel({
   activePanelId,
   onSwitchPanel,
   onOpenAgentPanel,
+  onSwitchAgentInSession,
   onCloseAgentPanel,
   currentProjectId,
   collabNodes,
@@ -1020,9 +1020,6 @@ function TabPanel({
 }: {
   tab: string;
   onClose: () => void;
-  tags?: string[];
-  onAddTag?: (tag: string) => void;
-  onRemoveTag?: (tag: string) => void;
   agents?: import('../types').Agent[];
   tasks?: import('../stores/taskStore').Task[];
   taskName?: string;
@@ -1035,6 +1032,7 @@ function TabPanel({
   activePanelId: string | null;
   onSwitchPanel: (panelId: string) => void;
   onOpenAgentPanel: (agentId: string, agentName: string, agentColor: string, initialMessage?: string) => void;
+  onSwitchAgentInSession: (agentId: string, agentName: string, agentColor: string) => void;
   onCloseAgentPanel: (panelId: string) => void;
   currentProjectId?: string;
   /** 协作流程节点（持久化，由外层维护） */
@@ -1049,6 +1047,9 @@ function TabPanel({
   /** 项目降级为任务回调 */
   onDowngradeToTask?: (keptAgentName: string) => void;
 }) {
+  /* 根据activePanelId推导当前激活的panel */
+  const activePanel = (activePanelId ? openPanels.find(p => p.id === activePanelId) : null) ?? openPanels[0] ?? null;
+
   /* 文件快传状态 */
   const [uploadedFiles, setUploadedFiles] = useState<{ name: string; size: string; type: string }[]>([]);
   const [dragOver, setDragOver] = useState(false);
@@ -1172,48 +1173,6 @@ function TabPanel({
             </div>
           )}
 
-          {tab === '飞书配对' && (
-            <div>
-              <div style={itemStyle}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <div style={{
-                    width: 36, height: 36, borderRadius: 8, flexShrink: 0,
-                    background: 'linear-gradient(135deg,#00b96b,#06d6a0)',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  }}>
-                    <svg width="16" height="16" viewBox="0 0 17 17" fill="none">
-                      <circle cx="8.5" cy="8.5" r="5.5" stroke="white" strokeWidth="1.4"/>
-                      <path d="M6 8.5L8 10.5L11 7" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-                    </svg>
-                  </div>
-                  <div>
-                    <div style={{ fontWeight: 600, fontSize: 13, color: '#1a202c' }}>飞书账号绑定</div>
-                    <div style={{ fontSize: 12, color: '#9ca3af', marginTop: 2 }}>未绑定 · 点击右侧按钮开始</div>
-                  </div>
-                </div>
-                <button style={{
-                  fontSize: 13, padding: '6px 18px', borderRadius: 7, border: 'none',
-                  background: '#00b96b', color: '#fff', cursor: 'pointer', fontWeight: 600,
-                  fontFamily: '"Microsoft YaHei","Segoe UI",sans-serif',
-                }}>立即绑定</button>
-              </div>
-              <div style={{ fontSize: 12, color: '#9ca3af', marginTop: 10, padding: '12px 14px', background: '#f9fafb', borderRadius: 8, lineHeight: 1.7 }}>
-                <div style={{ fontWeight: 600, color: '#6b7280', marginBottom: 4 }}>绑定后可获得：</div>
-                {['在飞书群中 @ 智能体自动回复', '飞书日历事件自动同步至项目', '消息推送与任务提醒通知'].map(tip => (
-                  <div key={tip} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <span style={{ color: '#00b96b', fontSize: 14, lineHeight: 1 }}>✓</span>
-                    <span>{tip}</span>
-                  </div>
-                ))}
-              </div>
-              {taskName && (
-                <div style={{ marginTop: 10, padding: '9px 14px', background: '#f0fdf4', borderRadius: 8, border: '1px solid #bbf7d0', fontSize: 12, color: '#16a34a' }}>
-                  绑定后，飞书消息将关联至当前项目：<b>{taskName}</b>
-                </div>
-              )}
-            </div>
-          )}
-
           {tab === '快捷指令' && (
             <ShortcutPanel
               taskName={taskName}
@@ -1285,17 +1244,7 @@ function TabPanel({
             </div>
           )}
 
-          {tab === '标签管理' && (
-            <TagPanel
-              key={tags?.join(',') ?? ''}
-              tags={tags}
-              onAddTag={onAddTag}
-              onRemoveTag={onRemoveTag}
-              taskName={taskName}
-            />
-          )}
-
-          {tab === '技能' && (
+          {tab === '技能应用' && (
             <SkillPanel
               taskName={taskName}
               onInject={text => { if (onInject) { onInject(text); onClose(); } }}
@@ -1309,7 +1258,7 @@ function TabPanel({
             />
           )}
 
-          {tab === '智能体' && (
+          {tab === '多智能体' && (
             <AgentPanel
               agents={agents}
               agentStatusMap={agentStatusMap}
@@ -1320,6 +1269,7 @@ function TabPanel({
               activePanelId={activePanelId}
               onSwitchPanel={panelId => { onSwitchPanel(panelId); onClose(); }}
               onOpenPanel={(agentId, agentName, agentColor, initialMessage) => { onOpenAgentPanel(agentId, agentName, agentColor, initialMessage); onClose(); }}
+              onSwitchAgent={(agentId, agentName, agentColor) => { onSwitchAgentInSession(agentId, agentName, agentColor); onClose(); }}
               onClosePanel={onCloseAgentPanel}
               currentProjectId={currentProjectId}
               onInject={text => { if (onInject) { onInject(text); onClose(); } }}
@@ -1331,6 +1281,8 @@ function TabPanel({
               onDowngradeToTask={onDowngradeToTask}
             />
           )}
+
+          {tab === '任务标签' && <TaskTagPanel conversationId={activePanel?.conversationId} taskName={taskName} />}
 
         </div>
 
@@ -1905,7 +1857,7 @@ function ChannelConfigModal({ onClose }: { onClose: () => void }) {
 }
 export function ProjectWorkspace() {
   const location = useLocation();
-  type NavState = { projectName?: string; projectId?: string; taskId?: string; agentNames?: string[]; sessionId?: string } | null;
+  type NavState = { projectName?: string; projectId?: string; taskId?: string; agentNames?: string[]; sessionId?: string; precreatedTabId?: string; navNonce?: number } | null;
   const navState = location.state as NavState;
   /** 从项目协作页跳转时携带的项目名（任务/项目通用） */
   const incomingProjectName = navState?.projectName;
@@ -1931,12 +1883,10 @@ export function ProjectWorkspace() {
   const closeTabFn = useConversationStore(s => s.closeTab);
   const renameTab = useConversationStore(s => s.renameTab);
   const createSessionTabFn = useConversationStore(s => s.createSessionTab);
+  const switchAgentFn = useConversationStore(s => s.switchAgent);
   const allTabs = React.useMemo(() => {
     const tabs = rawSessionTabs || [];
-    const hasHome = tabs.some(t => t.id === 'home');
-    const homeTab = { id: 'home', type: 'home' as const, title: '工作台', panelId: null };
-    const normalized = tabs.map(t => ({ ...t, type: t.type || (t.id === 'home' ? 'home' : 'session') as 'home' | 'session' }));
-    return hasHome ? normalized : [homeTab, ...normalized];
+    return tabs.map(t => ({ ...t, type: (t.type || 'session') as 'home' | 'session' }));
   }, [rawSessionTabs]);
   const activeTab = allTabs.find(t => t.id === storeActiveId);
   const { agents, fetchAgents } = useAgentStore();
@@ -2001,6 +1951,7 @@ export function ProjectWorkspace() {
 
   /** 新建标签页弹窗状态 */
   const [showNewTabModal, setShowNewTabModal] = useState(false);
+  const [restoreReady, setRestoreReady] = useState(false);
 
   const taskProgress = 68; // 真实进度字段后端暂无，保留占位
 
@@ -2018,104 +1969,6 @@ export function ProjectWorkspace() {
   /* ── 统一的 tags / priority 数据源：任务模式用 taskStore，项目模式用 kanbanStore ── */
   const currentTags: string[] = matchedTask?.tags ?? matchedKanbanProject?.tags ?? [];
   const currentPriority: ProjectPriority | null = (matchedTask?.priority as ProjectPriority | undefined) ?? matchedKanbanProject?.priority ?? null;
-
-  /* ── 标签弹窗状态 ── */
-  const [showTagSessionModal, setShowTagSessionModal] = useState(false);
-  const [pendingTag, setPendingTag] = useState<string>('');
-
-  /* ── 标签编辑（直接创建新会话）──────────── */
-  async function addTag(raw: string) {
-    const tag = raw.trim();
-    console.log('[addTag] called with:', raw, '| trimmed:', tag);
-    if (!tag) { console.log('[addTag] empty tag, returning'); return; }
-    if (currentTags.includes(tag)) { console.log('[addTag] tag already exists, returning'); return; }
-    console.log('[addTag] currentTags:', currentTags, '| matchedTask:', !!matchedTask, '| matchedKanbanProject:', !!matchedKanbanProject);
-
-    // 1. 写回标签到 store
-    if (matchedTask) {
-      updateTask(matchedTask.id, { tags: [...currentTags, tag] });
-    } else if (matchedKanbanProject) {
-      updateKanbanProject(matchedKanbanProject.id, { tags: [...currentTags, tag] });
-    }
-
-    // 2. 取默认智能体
-    const defaultAgent = agents[0];
-    if (!defaultAgent) {
-      console.log('[addTag] no agents available');
-      return;
-    }
-    console.log('[addTag] using agent:', defaultAgent.name, defaultAgent.id);
-
-    try {
-      // 3. 调用后端创建会话+概述接口（确保生成全新 conversationId）
-      const result = await conversationsApi.createWithOverview({
-        title: tag,
-        agentIds: [defaultAgent.id],
-        description: '',
-      });
-      console.log('[addTag] conversation created:', result.id);
-
-      // 4. 创建 Panel（直接 setState，绕过 openPanel 复用逻辑）
-      const panel: import('../types').ConversationPanel = {
-        id: result.id,
-        conversationId: result.id,
-        agentId: defaultAgent.id,
-        agentIds: result.agentIds?.length ? result.agentIds : [defaultAgent.id],
-        agentName: defaultAgent.name,
-        agentColor: defaultAgent.color,
-        messages: result.messages || [],
-        isStreaming: false,
-      };
-      useConversationStore.setState(state => ({ openPanels: [...state.openPanels, panel] }));
-
-      // 5. 更新 participatingAgentNames（确保协作 Tab 显示最新参与智能体）
-      setParticipatingAgentNames(prev => {
-        const agentName = defaultAgent.name;
-        if (prev.includes(agentName)) return prev;
-        return [...prev, agentName];
-      });
-
-      // 6. 关闭标签管理弹窗（让用户看到新会话）
-      setActiveSideTab(null);
-
-      // 7. 创建 Tab 并切换（使用 store 统一管理）
-      setActivePanelId(null);
-      setActivePanelId(result.id);
-      createSessionTabFn({
-        agentId: defaultAgent.id,
-        agentName: defaultAgent.name,
-        agentColor: defaultAgent.color,
-        title: tag,
-        conversationId: result.id,
-      });
-
-      console.log('[addTag] done, switched to new tab/session:', result.id);
-    } catch (err: any) {
-      console.error('[addTag] failed:', err);
-    }
-  }
-
-  function removeTag(tag: string) {
-    if (matchedTask) {
-      updateTask(matchedTask.id, { tags: currentTags.filter(t => t !== tag) });
-    } else if (matchedKanbanProject) {
-      updateKanbanProject(matchedKanbanProject.id, { tags: currentTags.filter(t => t !== tag) });
-    }
-  }
-
-  /* ── 标签弹窗创建成功回调 ── */
-  function handleTagSessionCreated(convId: string) {
-    const panel = openPanels.find(p => p.id === convId || p.conversationId === convId);
-    createSessionTabFn({
-      agentId: panel?.agentId || '',
-      agentName: panel?.agentName || pendingTag || '新会话',
-      agentColor: panel?.agentColor || '#6366f1',
-      title: panel?.agentName || pendingTag || '新会话',
-      conversationId: convId,
-    });
-    setActivePanelId(convId);
-    setPendingTag('');
-  }
 
   /* ── 优先级读写 ──────────────────────────────────────────── */
   function setPriority(p: ProjectPriority) {
@@ -2202,14 +2055,14 @@ export function ProjectWorkspace() {
     connect();
     restoreFromPersist().then(() => {
       const panels = useConversationStore.getState().openPanels;
-      const sessionTabs = useConversationStore.getState().sessionTabs;
+      const tabs = useConversationStore.getState().sessionTabs;
       const activeTabId = useConversationStore.getState().activeTabId;
 
-      // 设置激活的面板（优先用 activeTabId 对应的 panel）
+      // 设置激活的面板：优先通过 activeTab -> panelId 映射，避免多 tab 场景下按 tabId 误查 panel
       if (activeTabId) {
-        const activePanel = panels.find(p => p.id === activeTabId || p.conversationId === activeTabId);
-        if (activePanel) {
-          setActivePanelId(activePanel.id);
+        const activeTab = tabs.find(t => t.id === activeTabId);
+        if (activeTab?.panelId) {
+          setActivePanelId(activeTab.panelId);
         } else if (panels.length > 0) {
           setActivePanelId(panels[0].id);
         }
@@ -2217,41 +2070,76 @@ export function ProjectWorkspace() {
         setActivePanelId(panels[0].id);
       }
 
-      // 如果从会话列表/kanban 导航过来，打开指定会话
-      if (navState?.sessionId) {
-        const targetPanel = panels.find(p => p.id === navState.sessionId || p.conversationId === navState.sessionId);
-        if (targetPanel) {
-          setActivePanelId(targetPanel.id);
-          switchTab(targetPanel.conversationId);
-        } else {
-          // 面板未恢复，尝试从 API 加载并打开
-          import('@/api/sessions').then(({ sessionsApi }) => {
-            sessionsApi.get(navState.sessionId!).then(session => {
-              if (session) {
-                const agentId = session.agentId || session.agentIds?.[0] || '';
-                const agentName = session.title || '会话';
-                // 先创建 Tab，再打开面板（Tab 和 Panel 绑定）
-                createSessionTabFn({
-                  agentId,
-                  agentName,
-                  agentColor: '#6366f1',
-                  title: agentName,
-                  conversationId: navState.sessionId!,
-                }).then(() => {
-                  setActivePanelId(navState.sessionId!);
-                });
-              }
-            });
-          }).catch(() => {});
-        }
-      }
+      setRestoreReady(true);
+    }).catch(() => {
+      setRestoreReady(true);
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  /* ── 消息列表滚动到底部 ─────────────────────────────────── */
+  /* ── 从会话列表/kanban 进入工作区：会话列表页已创建 tab，这里只负责激活它 ── */
+  const handledNavKeyRef = useRef<string | null>(null);
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (!restoreReady || !navState?.sessionId) return;
+
+    const navKey = `${location.key}:${navState.sessionId}:${navState.precreatedTabId || ''}:${navState.navNonce || ''}`;
+    if (handledNavKeyRef.current === navKey) return;
+    handledNavKeyRef.current = navKey;
+
+    if (navState.precreatedTabId) {
+      switchTab(navState.precreatedTabId);
+      const tabs = useConversationStore.getState().sessionTabs;
+      const hitTab = tabs.find(t => t.id === navState.precreatedTabId);
+      if (hitTab?.panelId) {
+        setActivePanelId(hitTab.panelId);
+      }
+      return;
+    }
+
+    // 兜底：其他来源未预创建 tab，仍允许在 workspace 内创建
+    conversationsApi.list().then(convList => {
+      const conv = convList.find(c => c.id === navState.sessionId);
+      const agentId = conv?.currentAgentId || conv?.agentId || conv?.agentIds?.[0] || '';
+      const agentName = conv?.title || navState.projectName || '会话';
+      createSessionTabFn({
+        agentId,
+        agentName,
+        agentColor: '#6366f1',
+        title: agentName,
+        conversationId: navState.sessionId!,
+        forceNewTab: true,
+      }).then((newTabId) => {
+        const tabs = useConversationStore.getState().sessionTabs;
+        const hitTab = tabs.find(t => t.id === newTabId);
+        if (hitTab?.panelId) {
+          setActivePanelId(hitTab.panelId);
+        }
+        switchTab(newTabId);
+      });
+    }).catch(() => {});
+  }, [restoreReady, location.key, navState?.sessionId, navState?.projectName, navState?.precreatedTabId, navState?.navNonce, createSessionTabFn, switchTab]);
+
+  /* ── activeTab 变化时同步 activePanel，避免标签切换后仍指向旧面板 ── */
+  useEffect(() => {
+    const tab = allTabs.find(t => t.id === storeActiveId);
+    if (tab?.panelId) {
+      setActivePanelId(tab.panelId);
+    }
+  }, [allTabs, storeActiveId]);
+
+  /* ── 消息列表滚动到底部 ─────────────────────────────────── */
+  const prevMsgCountRef = useRef(0);
+  useEffect(() => {
+    const msgCount = activePanel?.messages?.length || 0;
+    // 只在新增消息时自动滚动（消息数增加），流式更新内容时不触发滚动，
+    // 否则大量内容流式输出时 smooth scroll 会与内容增长打架，导致页面上下闪烁
+    if (msgCount > prevMsgCountRef.current) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    } else if (msgCount < prevMsgCountRef.current) {
+      // 消息减少（如清除/重新加载）时瞬间滚动
+      messagesEndRef.current?.scrollIntoView({ behavior: 'auto' });
+    }
+    prevMsgCountRef.current = msgCount;
   }, [activePanel?.messages]);
 
   /* ── 发送消息 ─────────────────────────────────────────────── */
@@ -2309,10 +2197,7 @@ export function ProjectWorkspace() {
   }
 
   function handleTabClick(tab: string) {
-    if (tab === '优先级') {
-      setActiveSideTab(null);
-      setShowPriorityModal(true);
-    } else if (tab === '消息渠道') {
+    if (tab === '消息渠道') {
       setActiveSideTab(null);
       setShowChannelModal(true);
     } else {
@@ -2355,7 +2240,7 @@ export function ProjectWorkspace() {
           border: 1px solid;
         }
         .welcome-area {
-          flex: 1; min-height: 0; background: #ffffff; overflow-y: auto;
+          flex: 1; min-height: 0; background: #ffffff; overflow-y: auto; overflow-x: hidden;
         }
         .function-tabs {
           display: flex; gap: 8px; padding: 10px 20px; flex-wrap: wrap;
@@ -2372,17 +2257,29 @@ export function ProjectWorkspace() {
           position: relative; padding: 16px 20px 12px; flex-shrink: 0;
           background: #fafbfc; border-top: 1px solid #ebedf0;
         }
+        .resize-bar {
+          display: flex; align-items: center; justify-content: center;
+          height: 8px; cursor: ns-resize; border-radius: 4px 4px 0 0;
+          background: transparent; transition: background 0.15s;
+          margin-bottom: -1px;
+        }
+        .resize-bar:hover { background: rgba(140,111,255,0.15); }
+        .resize-bar::after {
+          content: ''; width: 40px; height: 3px; border-radius: 2px;
+          background: #d1d5db; transition: background 0.15s;
+        }
+        .resize-bar:hover::after { background: #8c6fff; }
         .main-input {
-          width: 100%; padding: 10px 50px 10px 14px; border: 1px solid #d9d9d9;
-          border-radius: 8px; min-height: 80px; resize: none; background: #ffffff;
+          width: 100%; padding: 12px 50px 12px 14px; border: 1px solid #d9d9d9;
+          border-radius: 0 0 8px 8px; min-height: 140px; max-height: 300px; resize: none; background: #ffffff;
           font-size: 14px; font-family: "Microsoft YaHei", "Segoe UI", sans-serif;
           color: #1a1d23; line-height: 1.6; box-sizing: border-box; outline: none;
           transition: border-color 0.15s, box-shadow 0.15s;
         }
         .main-input:focus { border-color: #1890ff; box-shadow: 0 0 0 2px rgba(24,144,255,0.2); }
         .send-btn {
-          position: absolute; right: 30px; bottom: 28px;
-          width: 28px; height: 28px; border-radius: 50%;
+          position: absolute; right: 30px; bottom: 22px;
+          width: 32px; height: 32px; border-radius: 50%;
           background: #8c6fff; border: none; cursor: pointer;
           display: flex; align-items: center; justify-content: center;
           transition: background 0.15s, transform 0.1s;
@@ -2586,55 +2483,100 @@ export function ProjectWorkspace() {
 
           {/* ══════════ 对话工作台 ══════════ */}
 
-          {/* 多智能体 Agent 栏 */}
+          {/* 多智能体 Agent 栏（仅跟随当前激活 tab 对应的 panel） */}
           {activePanel && (
             <SessionAgentBar
               conversationId={activePanel.conversationId}
               participants={(agents ?? []).filter(a => activePanel.agentIds.includes(a.id)).map(a => ({ id: a.id, name: a.name, color: a.color }))}
-              onParticipantsChange={() => fetchAgents()}
+              onParticipantsChange={async (updatedConversation) => {
+                // 这里只同步参与者列表/agent 元数据，绝不能新开 tab。
+                // “切换 agent”应始终留在当前会话、当前 panel、当前 tab 内完成。
+                await fetchAgents();
+                if (!updatedConversation) return;
+                useConversationStore.setState((state) => ({
+                  openPanels: state.openPanels.map((panel) =>
+                    panel.conversationId === activePanel.conversationId || panel.id === activePanel.conversationId
+                      ? {
+                          ...panel,
+                          sessionCode: (updatedConversation as any).sessionCode || panel.sessionCode,
+                          agentId: updatedConversation.currentAgentId || panel.agentId,
+                          currentAgentCode: (updatedConversation as any).currentAgentCode || panel.currentAgentCode,
+                          agentIds: updatedConversation.agentIds?.length ? updatedConversation.agentIds : panel.agentIds,
+                        }
+                      : panel
+                  ),
+                  sessionTabs: state.sessionTabs.map((tab) =>
+                    tab.conversationId === activePanel.conversationId || tab.panelId === activePanel.conversationId
+                      ? {
+                          ...tab,
+                          sessionCode: (updatedConversation as any).sessionCode || tab.sessionCode,
+                          agentId: updatedConversation.currentAgentId || tab.agentId,
+                          currentAgentCode: (updatedConversation as any).currentAgentCode || tab.currentAgentCode,
+                        }
+                      : tab
+                  ),
+                }));
+              }}
             />
           )}
-          {/* 2. 消息展示区 */}
-          <div className="welcome-area" style={{ padding: messages.length ? '16px 24px' : 0 }}>
-            {messages.length === 0 && (
-              <div style={{
-                height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                flexDirection: 'column', gap: 8, color: '#c0c4ce',
-              }}>
-                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-                  <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
-                </svg>
-                <span style={{ fontSize: 13 }}>输入消息与智能体开始对话</span>
-              </div>
-            )}
-            {messages.map((msg) => (
-              <div key={msg.id} style={{
-                display: 'flex',
-                justifyContent: msg.role === 'user' ? 'flex-end' : 'flex-start',
-                marginBottom: 10,
-              }}>
-                <div style={{
-                  maxWidth: '72%', padding: '8px 14px',
-                  borderRadius: msg.role === 'user' ? '12px 12px 2px 12px' : '12px 12px 12px 2px',
-                  background: msg.role === 'user' ? '#2a3b4d' : '#f3f4f6',
-                  color: msg.role === 'user' ? '#fff' : '#1a202c',
-                  fontSize: 13, lineHeight: 1.6,
-                }}>
-                  {msg.content ? (
-                    <div className="markdown-body" style={{
-                      ...(msg.role === 'user' ? { color: '#fff' } : {}),
+          {/* 2. 消息展示区：panel 层叠保留，但只展示当前激活 tab 对应的 panel */}
+          <div className="welcome-area" style={{ padding: messages.length ? '16px 24px' : 0, position: 'relative' }}>
+            {openPanels.map((panel) => {
+              const isActivePanel = activePanel?.id === panel.id;
+              const panelMessages = panel.messages ?? [];
+              return (
+                <div
+                  key={panel.id}
+                  style={{
+                    position: isActivePanel ? 'relative' : 'absolute',
+                    inset: isActivePanel ? 'auto' : 0,
+                    display: isActivePanel ? 'block' : 'none',
+                    height: '100%',
+                    width: '100%',
+                  }}
+                >
+                  {panelMessages.length === 0 && (
+                    <div style={{
+                      height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      flexDirection: 'column', gap: 8, color: '#c0c4ce',
                     }}>
-                      <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                        {msg.content}
-                      </ReactMarkdown>
+                      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                      </svg>
+                      <span style={{ fontSize: 13 }}>输入消息与智能体开始对话</span>
                     </div>
-                  ) : (
-                    <span style={{ opacity: 0.4 }}>●●●</span>
                   )}
+                  {panelMessages.map((msg) => (
+                    <div key={msg.id} style={{
+                      display: 'flex',
+                      justifyContent: msg.role === 'user' ? 'flex-end' : 'flex-start',
+                      marginBottom: 10,
+                    }}>
+                      <div style={{
+                        maxWidth: '72%', padding: '8px 14px',
+                        borderRadius: msg.role === 'user' ? '12px 12px 2px 12px' : '12px 12px 12px 2px',
+                        background: msg.role === 'user' ? '#2a3b4d' : '#f3f4f6',
+                        color: msg.role === 'user' ? '#fff' : '#1a202c',
+                        fontSize: 13, lineHeight: 1.6,
+                        wordBreak: 'break-word',
+                        overflowWrap: 'break-word',
+                      }}>
+                        {msg.content ? (
+                          <div className="markdown-body" style={{ ...(msg.role === 'user' ? { color: '#fff' } : {}) }}>
+                            <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                              {msg.content}
+                            </ReactMarkdown>
+                          </div>
+                        ) : (
+                          <span style={{ opacity: 0.4 }}>●●●</span>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                  {isActivePanel && <div ref={messagesEndRef} />}
                 </div>
-              </div>
-            ))}
-            <div ref={messagesEndRef} />
+              );
+            })}
           </div>
 
           {/* 3. 功能标签栏 */}
@@ -2652,6 +2594,27 @@ export function ProjectWorkspace() {
 
           {/* 4. 输入区 */}
           <div className="input-container">
+            <div
+              className="resize-bar"
+              onMouseDown={e => {
+                e.preventDefault();
+                const startY = e.clientY;
+                const ta = textareaRef.current;
+                if (!ta) return;
+                const startH = ta.offsetHeight;
+                const onMove = (ev: MouseEvent) => {
+                  const delta = startY - ev.clientY;
+                  const newH = Math.min(300, Math.max(140, startH + delta));
+                  ta.style.height = newH + 'px';
+                };
+                const onUp = () => {
+                  document.removeEventListener('mousemove', onMove);
+                  document.removeEventListener('mouseup', onUp);
+                };
+                document.addEventListener('mousemove', onMove);
+                document.addEventListener('mouseup', onUp);
+              }}
+            />
             <textarea
               ref={textareaRef}
               className="main-input"
@@ -2696,14 +2659,11 @@ export function ProjectWorkspace() {
         />
       )}
 
-      {/* Tab 面板弹窗（标签管理、飞书配对、快捷指令、技能、定时任务、智能体等） */}
-      {activeSideTab && activeSideTab !== '优先级' && activeSideTab !== '消息渠道' && (
+      {/* Tab 面板弹窗（标签管理、快捷指令、技能应用、定时任务、多智能体等） */}
+      {activeSideTab && activeSideTab !== '消息渠道' && (
         <TabPanel
           tab={activeSideTab}
           onClose={() => setActiveSideTab(null)}
-          tags={currentTags}
-          onAddTag={addTag}
-          onRemoveTag={removeTag}
           agents={agents}
           tasks={[...tasks.progress, ...tasks.done]}
           taskName={taskName}
@@ -2737,6 +2697,22 @@ export function ProjectWorkspace() {
               }
             }
           }}
+          onSwitchAgentInSession={async (agentId, agentName, agentColor) => {
+            const current = activePanel ?? openPanels.find(p => p.id === activePanelId) ?? openPanels[0] ?? null;
+            if (!current?.conversationId) return;
+
+            // 会话内切换智能体的业务规则：
+            // 1) sessionId / conversationId 不变
+            // 2) 不新开 tab，不新建 panel
+            // 3) 新 agent 继承当前 conversationId 下的全部历史消息
+            // 4) 当前展示 panel 只反映“当前激活 agent”，不能把旧 agent 一起挂在 UI 上
+            //
+            // 也就是说，记忆继承依赖的是同一个 conversationId，
+            // 不是“同时保留多个 agent chip / 多个 panel”。
+            await switchAgentFn(current.conversationId, agentId);
+            setParticipatingAgentNames(prev => prev.includes(agentName) ? prev : [...prev, agentName]);
+            setActivePanelId(current.id);
+          }}
           onCloseAgentPanel={panelId => {
             closePanel(panelId);
             setActivePanelId(prev => prev === panelId ? (openPanels.find(p => p.id !== panelId)?.id ?? null) : prev);
@@ -2753,16 +2729,6 @@ export function ProjectWorkspace() {
 
       {showChannelModal && (
         <ChannelConfigModal onClose={() => setShowChannelModal(false)} />
-      )}
-
-      {/* 标签 → 新建会话弹窗 */}
-      {showTagSessionModal && (
-        <TagSessionModal
-          open={showTagSessionModal}
-          tag={pendingTag}
-          onClose={() => { setShowTagSessionModal(false); setPendingTag(''); }}
-          onCreated={handleTagSessionCreated}
-        />
       )}
 
       {/* 首页 + 号新建标签页弹窗 */}

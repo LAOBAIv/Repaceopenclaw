@@ -1,13 +1,21 @@
 import { v4 as uuidv4 } from "uuid";
+import fs from 'fs';
 import { logger } from '../utils/logger';
 import { getDb, saveDb } from "../db/client";
-import { AutoLLMAdapter } from "./llm/AutoLLMAdapter";
+import { IdGenerator } from '../utils/IdGenerator';
+import { OpenClawAdapter } from "./llm/OpenClawAdapter";
 import { ILLMAdapter } from "./llm/LLMAdapter";
 import * as AgentBridge from "./AgentBridge";
 
 
 export interface Agent {
   id: string;
+  /** 系统保留智能体：平台级公共服务智能体 */
+  isSystem?: boolean;
+  /** 业务智能体编码：8 位，同一用户下唯一 */
+  agentCode?: string;
+  /** 所属用户 ID */
+  userId?: string;
   name: string;
   color: string;
   systemPrompt: string;
@@ -41,12 +49,16 @@ export interface Agent {
   quotaConfig: { maxDailyTokens?: number; maxDailyConversations?: number; maxTokensPerMessage?: number };
   // Route C: OpenClaw agentId 映射
   openclawAgentId: string | null;
+  /** 业务类型：dev | data | creative | pm | research | ops | decision | general */
+  agentType?: string;
   createdAt: string;
 }
 
 function rowToAgent(obj: any): Agent {
   return {
     id: obj.id,
+    agentCode: obj.agent_code || undefined,
+    userId: obj.user_id || undefined,
     name: obj.name,
     color: obj.color,
     systemPrompt: obj.system_prompt,
@@ -73,31 +85,134 @@ function rowToAgent(obj: any): Agent {
     skillsConfig: JSON.parse(obj.skills_config || '{}'),
     quotaConfig: JSON.parse(obj.quota_config || '{}'),
     openclawAgentId: obj.openclaw_agent_id || null,
+    agentType: obj.agent_type || 'general',
     createdAt: obj.created_at,
+    isSystem: false,
+  };
+}
+
+function loadPlatformAssistantRuntimeConfig() {
+  try {
+    const raw = fs.readFileSync('/root/.openclaw/openclaw.json', 'utf-8');
+    const obj = JSON.parse(raw);
+    const agent = (obj?.agents?.list || []).find((a: any) => a?.id === 'repaceclaw-platform-assistant');
+    return {
+      name: agent?.name || 'RepaceClaw 平台助手',
+      workspace: agent?.workspace || '/root/.openclaw/workspace',
+      model: agent?.model || 'linkApi/claude-opus-4-6',
+      skills: Array.isArray(agent?.skills) ? agent.skills : [],
+      agentDir: agent?.agentDir || '/root/.openclaw/agents/repaceclaw-platform-assistant/agent',
+    };
+  } catch {
+    return {
+      name: 'RepaceClaw 平台助手',
+      workspace: '/root/.openclaw/workspace',
+      model: 'linkApi/claude-opus-4-6',
+      skills: [],
+      agentDir: '/root/.openclaw/agents/repaceclaw-platform-assistant/agent',
+    };
+  }
+}
+
+function buildPlatformAssistantAgent(): Agent {
+  const runtime = loadPlatformAssistantRuntimeConfig();
+  // 从 DB 读取真实 UUID，保证 list() / getById() / 前端引用使用同一个 id
+  let dbId = 'repaceclaw-platform-assistant';
+  try {
+    const db = getDb();
+    const result = db.exec(`SELECT id FROM agents WHERE openclaw_agent_id = 'repaceclaw-platform-assistant' AND name LIKE '%平台助手%' LIMIT 1`);
+    if (result.length && result[0].values.length) {
+      dbId = result[0].values[0][0] as string;
+    }
+  } catch {}
+  return {
+    id: dbId,
+    agentCode: 'platform-assistant',
+    userId: '',
+    name: runtime.name,
+    color: '#2563eb',
+    systemPrompt: '平台级全域服务智能体，负责平台答疑、使用帮助、功能说明。',
+    writingStyle: 'professional',
+    expertise: ['platform', 'help', 'guide', ...runtime.skills.map(String)],
+    description: `平台公共服务智能体，对所有登录用户开放，用于解答 RepaceClaw 平台使用问题。工作区：${runtime.workspace}`,
+    status: 'active',
+    modelName: `openclaw/repaceclaw-platform-assistant`,
+    modelProvider: 'openclaw',
+    temperature: 0.3,
+    maxTokens: 4096,
+    topP: 1,
+    frequencyPenalty: 0,
+    presencePenalty: 0,
+    tokenProvider: '',
+    tokenApiKey: '',
+    tokenBaseUrl: '',
+    outputFormat: '纯文本',
+    boundary: '仅回答平台功能、操作说明、使用帮助，不代替用户业务智能体执行私人任务。',
+    memoryTurns: 0,
+    temperatureOverride: null,
+    tokenUsed: 0,
+    visibility: 'public',
+    skillsConfig: {},
+    quotaConfig: {},
+    openclawAgentId: 'repaceclaw-platform-assistant',
+    createdAt: new Date(0).toISOString(),
+    isSystem: true,
   };
 }
 
 export const AgentService = {
+  isPlatformAssistantId(id?: string | null) {
+    // 同时识别 UUID、硬编码字符串、alias，兼容迁移前后
+    if (!id) return false;
+    return id === 'platform-assistant'
+      || id === 'repaceclaw-platform-assistant'
+      || id === '24cf6cc5-da0d-48df-814e-11582e398007';  // DB 平台助手 UUID
+  },
   list(userId?: string): Agent[] {
     const db = getDb();
     let sql = "SELECT * FROM agents";
     const params: any[] = [];
     if (userId) {
-      sql += " WHERE user_id = ?";
+      sql += " WHERE user_id = ? OR visibility = 'public'";
       params.push(userId);
     }
     sql += " ORDER BY created_at DESC";
     const result = db.exec(sql, params.length ? params : undefined);
-    if (!result.length) return [];
-    const cols = result[0].columns;
-    return result[0].values.map((row) => {
+    let agents = !result.length ? [] : result[0].values.map((row) => {
       const obj: any = {};
-      cols.forEach((c, i) => (obj[c] = row[i]));
+      result[0].columns.forEach((c, i) => (obj[c] = row[i]));
       return rowToAgent(obj);
     });
+
+    if (!userId) {
+      // 未认证时也要返回平台助手（公共服务，全局可见）
+      const platformAssistant = buildPlatformAssistantAgent();
+      const exists = agents.some((a) => a.id === platformAssistant.id || a.openclawAgentId === platformAssistant.openclawAgentId);
+      if (!exists) agents.unshift(platformAssistant);
+      return agents.map((a) => this.isPlatformAssistantId(a.id) ? { ...a, isSystem: true } : a);
+    }
+
+    // 已认证：平台助手在列表中可见（标记 isSystem=true），但不可编辑/删除/选中
+    // 用户只能通过专属入口打开会话沟通，不能作为协作者添加到其他会话
+    const platformAssistant = buildPlatformAssistantAgent();
+    const exists = agents.some((a) => a.id === platformAssistant.id || a.openclawAgentId === platformAssistant.openclawAgentId);
+    if (!exists) {
+      agents.unshift(platformAssistant);
+    }
+    // 标记为系统级
+    agents = agents.map((a) =>
+      this.isPlatformAssistantId(a.id)
+        ? { ...a, isSystem: true }
+        : a
+    );
+
+    return agents;
   },
 
   getById(id: string): Agent | null {
+    if (id === 'platform-assistant' || id === 'repaceclaw-platform-assistant') {
+      return buildPlatformAssistantAgent();
+    }
     const db = getDb();
     const result = db.exec(`SELECT * FROM agents WHERE id = ?`, [id]);
     if (!result.length || !result[0].values.length) return null;
@@ -108,9 +223,53 @@ export const AgentService = {
     return rowToAgent(obj);
   },
 
+  /**
+   * Dual-code Phase 2：接口层允许同时传 UUID 或 agent_code。
+   * 注意 agent_code 只保证“同一用户下唯一”，所以优先要求调用方传 userId。
+   */
+  getByIdOrCode(idOrCode: string, userId?: string): Agent | null {
+    if (idOrCode === 'platform-assistant' || idOrCode === 'repaceclaw-platform-assistant') {
+      return buildPlatformAssistantAgent();
+    }
+    const byId = this.getById(idOrCode);
+    if (byId) return byId;
+
+    const db = getDb();
+    const sql = userId
+      ? `SELECT * FROM agents WHERE user_id = ? AND agent_code = ? LIMIT 1`
+      : `SELECT * FROM agents WHERE agent_code = ? LIMIT 1`;
+    const params = userId ? [userId, idOrCode] : [idOrCode];
+    const result = db.exec(sql, params);
+    if (!result.length || !result[0].values.length) return null;
+    const cols = result[0].columns;
+    const row = result[0].values[0];
+    const obj: any = {};
+    cols.forEach((c, i) => (obj[c] = row[i]));
+    return rowToAgent(obj);
+  },
+
+  /** 将 UUID/agent_code 统一解析成真实 UUID，便于后续更新/删除/外键写入。 */
+  resolveId(idOrCode: string, userId?: string): string | null {
+    return this.getByIdOrCode(idOrCode, userId)?.id || null;
+  },
+
+  /** 通过 OpenClaw Agent ID 查找 RepaceClaw agent */
+  getByOpenClawAgentId(ocAgentId: string): Agent | null {
+    const db = getDb();
+    const result = db.exec(`SELECT * FROM agents WHERE openclaw_agent_id = ?`, [ocAgentId]);
+    if (!result.length || !result[0].values.length) return null;
+    const cols = result[0].columns;
+    const row = result[0].values[0];
+    const obj: any = {};
+    cols.forEach((c, i) => (obj[c] = row[i]));
+    return rowToAgent(obj);
+  },
+
   create(data: Partial<Agent> & { name: string; userId?: string }): Agent {
     const db = getDb();
+    // Dual-code Phase 1：底层主键切回 UUID；agent_code 负责业务标识。
     const id = uuidv4();
+    const agentCode = IdGenerator.agentCode();
     const now = new Date().toISOString();
 
     // Phase 3: 高危 Skill 默认禁用
@@ -129,15 +288,15 @@ export const AgentService = {
     const quotaConfig = data.quotaConfig || {};
 
     db.run(
-      `INSERT INTO agents (id, name, color, system_prompt, writing_style, expertise, description, status,
+      `INSERT INTO agents (id, agent_code, name, color, system_prompt, writing_style, expertise, description, status,
         model_name, model_provider, temperature, max_tokens, top_p, frequency_penalty, presence_penalty,
         token_provider, token_api_key, token_base_url,
         output_format, boundary, memory_turns, temperature_override, user_id,
-        visibility, skills_config, quota_config,
+        visibility, skills_config, quota_config, agent_type,
         created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
-        id, data.name, data.color, data.systemPrompt, data.writingStyle,
+        id, agentCode, data.name, data.color, data.systemPrompt, data.writingStyle,
         JSON.stringify(data.expertise), data.description || "", data.status || "idle",
         data.modelName || "", data.modelProvider || "",
         data.temperature ?? 0.7, data.maxTokens ?? 4096,
@@ -149,6 +308,7 @@ export const AgentService = {
         data.visibility || "private",
         JSON.stringify(skillsConfig),
         JSON.stringify(quotaConfig),
+        data.agentType || 'general',
         now,
       ]
     );
@@ -198,13 +358,10 @@ export const AgentService = {
     // Route C Phase 1: 如果 systemPrompt、writingStyle、expertise、outputFormat、boundary、modelName 有变更，更新 OpenClaw workspace
     const relevantFields = ['systemPrompt', 'writingStyle', 'expertise', 'outputFormat', 'boundary', 'modelName', 'modelProvider'];
     const hasRelevantChange = relevantFields.some(f => data[f] !== undefined);
-    if (hasRelevantChange && existing.openclawAgentId) {
-      const parsed = AgentBridge.fromOpenClawAgentId(existing.openclawAgentId);
-      if (parsed) {
-        AgentBridge.updateAgent(parsed.userId, id, updated).catch((err) => {
-          logger.error(`[AgentService] Failed to update agent ${id} workspace:`, err.message);
-        });
-      }
+    if (hasRelevantChange && existing.userId) {
+      AgentBridge.updateAgent(existing.userId, id, updated).catch((err) => {
+        logger.error(`[AgentService] Failed to update agent ${id} mapping:`, err.message);
+      });
     }
 
     return updated;
@@ -215,13 +372,10 @@ export const AgentService = {
     const existing = this.getById(id);
 
     // Route C Phase 1: 先从 OpenClaw 注销
-    if (existing && existing.openclawAgentId) {
-      const parsed = AgentBridge.fromOpenClawAgentId(existing.openclawAgentId);
-      if (parsed) {
-        AgentBridge.unregisterAgent(parsed.userId, id).catch((err) => {
-          logger.error(`[AgentService] Failed to unregister agent ${id} from OpenClaw:`, err.message);
-        });
-      }
+    if (existing && existing.userId) {
+      AgentBridge.unregisterAgent(existing.userId, id).catch((err) => {
+        logger.error(`[AgentService] Failed to unregister agent ${id} from OpenClaw:`, err.message);
+      });
     }
 
     db.run(`DELETE FROM agents WHERE id=?`, [id]);
@@ -336,15 +490,11 @@ export const AgentService = {
       temperatureOverride: agent.temperatureOverride,
     };
 
-    // ── 路由策略：完全使用 RepaceClaw 自带接口 ─────────────────────────────
-    // 1. 优先：智能体有独立 API Key（tokenApiKey）→ 直接调用
-    // 2. 默认：从 RepaceClaw token_channels 表自动选择渠道
-    // 3. 兜底：全部失败 → Mock 保底
-    //
-    // 不依赖 OpenClaw Gateway，RepaceClaw 完全自包含
-
-    logger.info(`[AgentService] Agent "${agent.name}" → RepaceClaw AutoLLMAdapter (self-contained)`);
-    const adapter: ILLMAdapter = new AutoLLMAdapter();
+    // V1 强制统一：所有 RepaceClaw 智能体执行一律经 OpenClaw Gateway。
+    // - 不再允许 tokenApiKey / token_channels 直连外部模型绕过 Gateway
+    // - 所有请求统一带 x-openclaw-message-channel: repaceclaw
+    logger.info(`[AgentService] Agent "${agent.name}" → OpenClawAdapter (gateway-forced)`);
+    const adapter: ILLMAdapter = new OpenClawAdapter();
     await adapter.generateStream(agentConfig, messages, onChunk, onComplete, onError);
   },
 };

@@ -1,48 +1,85 @@
 /**
- * AgentMapper — RepaceClaw userId:agentId ↔ OpenClaw agentId 双向映射
+ * AgentMapper — RepaceClaw agent ↔ OpenClaw agentId 双向映射
  *
- * 命名规则:
- *   OpenClaw agentId = "rc_{userId}_{agentId}"
- *   rc = RepaceClaw 前缀，避免与 OpenClaw 原生 agent 冲突
+ * 策略：按业务类型（agent_type）映射到对应的 OpenClaw agent
+ * 
+ * 类型映射表：
+ *   dev      → rc-dev-agent        开发/工程
+ *   data     → rc-data-agent       数据分析
+ *   creative → rc-creative-agent   内容/创作
+ *   pm       → rc-pm-agent         产品/管理
+ *   research → rc-research-agent   AI/研究
+ *   ops      → rc-ops-agent        运营
+ *   decision → rc-decision-agent   决策
+ *   general  → rc-general-agent    通用/助手
+ * 
+ * 平台助手（repaceclaw-platform-assistant）独立存在，不走此映射。
  */
-
-const OC_PREFIX = 'rc';
 
 /**
- * 将 RepaceClaw 的 userId + agentId 转换为 OpenClaw agentId
+ * 业务类型 → OpenClaw agentId 映射表
  */
-export function toOpenClawAgentId(userId: string, agentId: string): string {
-  return `${OC_PREFIX}_${userId}_${agentId}`;
+const AGENT_TYPE_MAP: Record<string, string> = {
+  dev: 'rc-dev-agent',
+  data: 'rc-data-agent',
+  creative: 'rc-creative-agent',
+  pm: 'rc-pm-agent',
+  research: 'rc-research-agent',
+  ops: 'rc-ops-agent',
+  decision: 'rc-decision-agent',
+  general: 'rc-general-agent',
+};
+
+/**
+ * 默认类型（未指定 agent_type 时使用）
+ */
+const DEFAULT_AGENT_TYPE = 'general';
+
+/**
+ * 将 RepaceClaw 业务智能体映射到 OpenClaw agentId
+ * 
+ * @param agentType 业务类型（dev/data/creative/pm/research/ops/decision/general）
+ * @returns OpenClaw agentId
+ */
+export function toOpenClawAgentId(agentType?: string): string {
+  const type = agentType || DEFAULT_AGENT_TYPE;
+  return AGENT_TYPE_MAP[type] || AGENT_TYPE_MAP[DEFAULT_AGENT_TYPE];
 }
 
 /**
- * 从 OpenClaw agentId 解析出 userId 和 agentId
- * @returns null 如果不是 RepaceClaw 管理的 agent
+ * 从 OpenClaw agentId 反推业务类型
  */
-export function fromOpenClawAgentId(ocAgentId: string): { userId: string; agentId: string } | null {
-  if (!ocAgentId.startsWith(`${OC_PREFIX}_`)) return null;
-
-  const parts = ocAgentId.split('_');
-  if (parts.length < 3) return null;
-
-  // rc_{userId}_{agentId} — userId 和 agentId 都可能包含下划线
-  // 约定: rc_ 后面第一段是 userId，剩余部分是 agentId
-  const userId = parts[1];
-  const agentId = parts.slice(2).join('_');
-
-  return { userId, agentId };
+export function fromOpenClawAgentId(ocAgentId: string): string | null {
+  for (const [type, id] of Object.entries(AGENT_TYPE_MAP)) {
+    if (id === ocAgentId) return type;
+  }
+  return null;
 }
 
 /**
- * 生成 workspace 路径
+ * 获取对应类型智能体的工作区路径
  */
 export function getWorkspacePath(ocAgentId: string): string {
-  return `/root/.openclaw/workspace-${ocAgentId}`;
+  return `/root/.openclaw/agents/${ocAgentId}/agent`;
 }
 
 /**
- * 生成 agentDir 路径
+ * 获取对应类型智能体的 agent 目录
  */
 export function getAgentDir(ocAgentId: string): string {
   return `/root/.openclaw/agents/${ocAgentId}/agent`;
+}
+
+/**
+ * 获取所有 OpenClaw agentId 列表
+ */
+export function getAllOpenClawAgentIds(): string[] {
+  return Object.values(AGENT_TYPE_MAP);
+}
+
+/**
+ * 获取所有业务类型列表
+ */
+export function getAllAgentTypes(): string[] {
+  return Object.keys(AGENT_TYPE_MAP);
 }

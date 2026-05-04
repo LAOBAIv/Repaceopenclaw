@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { tasksApi } from '../api/tasks';
 
 /* ─── 业务规则（重要）───────────────────────────────────────────
  * 【单任务智能体规则】
@@ -68,53 +69,103 @@ export type Column = 'progress' | 'done';
 
 export type TaskBoard = Record<Column, Task[]>;
 
-/* ─── Mock 初始数据 ─────────────────────────────────────────── */
-const INIT_TASKS: TaskBoard = {
-  progress: [
-    {
-      id: 't4', title: '市场趋势分析',
-      description: '基于过去 12 个月的行业数据，分析 AI 工具市场的增长趋势和主要驱动因素。',
-      agent: '研究员', agentColor: '#3b82f6',
-      /* 本任务包含 1 个智能体（满足最低要求：>=1）*/
-      agents: [{ name: '研究员', color: '#3b82f6' }],
-      priority: 'high', tags: ['市场分析', '数据'],
-      updatedAt: '30min前', dueDate: '03/18', commentCount: 3, fileCount: 1, source: 'manual',
-      progress: 65,
-    },
-    {
-      id: 't5', title: '产品功能规划',
-      description: '整理 Q2 产品路线图，优先级排序核心功能，并拆解成可执行的迭代任务。',
-      agent: '策划助手', agentColor: '#6366f1',
-      /* 本任务包含 1 个智能体（满足最低要求：>=1）*/
-      agents: [{ name: '策划助手', color: '#6366f1' }],
-      priority: 'mid', tags: ['产品'],
-      updatedAt: '1h前', dueDate: '03/19', commentCount: 5, fileCount: 0, source: 'manual',
-      progress: 30,
-    },
-  ],
-  done: [
-    {
-      id: 't7', title: '需求文档初稿',
-      description: '完成核心功能的需求说明文档，包括用例流程图和接口定义。',
-      agent: '撰写助手', agentColor: '#22c55e',
-      agents: [{ name: '撰写助手', color: '#22c55e' }],
-      priority: 'low', tags: ['文档'],
-      updatedAt: '2d前', dueDate: '03/10', commentCount: 2, fileCount: 1, source: 'manual',
-    },
-    {
-      id: 't8', title: '技术架构图',
-      description: '绘制系统整体架构图，标注各模块职责和数据流向。',
-      agent: '策划助手', agentColor: '#6366f1',
-      agents: [{ name: '策划助手', color: '#6366f1' }],
-      priority: 'mid', tags: ['技术'],
-      updatedAt: '3d前', dueDate: '03/08', commentCount: 1, fileCount: 2, source: 'manual',
-    },
-  ],
+/* ─── 初始数据（空数组，数据从后端 API 加载）────────────────── */
+/**
+ * 不再使用 MOCK 假数据。
+ * Store 初始化时为空，通过 restoreFromPersist() 从后端 API 拉取真实数据。
+ */
+const EMPTY_TASKS: TaskBoard = {
+  progress: [],
+  done: [],
 };
 
-/* ─── Store ─────────────────────────────────────────────────── */
+/* ─── 数据库 Task → 前端 Task 映射 ──────────────────────────── */
+/**
+ * 将后端返回的 DbTask（数据库格式）转换为前端 Task（Zustand store 格式）
+ * 处理字段命名转换、JSON 解析、日期格式化等
+ */
+function dbTaskToFrontend(dbTask: any): Task {
+  // tags 后端存的是 JSON 字符串，需要解析
+  let tags: string[] = [];
+  try {
+    tags = typeof dbTask.tags === 'string' ? JSON.parse(dbTask.tags) : (dbTask.tags || []);
+  } catch {
+    tags = [];
+  }
+
+  // 日期格式化：2026-04-12T12:24:07.796Z → 04/12
+  let dueDate = '';
+  if (dbTask.due_date) {
+    try {
+      const d = new Date(dbTask.due_date);
+      if (!isNaN(d.getTime())) {
+        const mm = String(d.getMonth() + 1).padStart(2, '0');
+        const dd = String(d.getDate()).padStart(2, '0');
+        dueDate = `${mm}/${dd}`;
+      }
+    } catch {
+      dueDate = dbTask.due_date;
+    }
+  }
+
+  // updatedAt 时间转换为相对时间
+  let updatedAt = '未知';
+  if (dbTask.updated_at) {
+    try {
+      const now = new Date();
+      const updated = new Date(dbTask.updated_at);
+      const diffMs = now.getTime() - updated.getTime();
+      const diffMin = Math.floor(diffMs / 60000);
+      const diffHr = Math.floor(diffMin / 60);
+      const diffDay = Math.floor(diffHr / 24);
+      if (diffMin < 1) updatedAt = '刚刚';
+      else if (diffMin < 60) updatedAt = `${diffMin}分钟前`;
+      else if (diffHr < 24) updatedAt = `${diffHr}小时前`;
+      else updatedAt = `${diffDay}天前`;
+    } catch {
+      updatedAt = '未知';
+    }
+  }
+
+  const agent = dbTask.agent || '未指定';
+  const agentColor = dbTask.agent_color || '#6366F1';
+
+  return {
+    id: dbTask.id,
+    title: dbTask.title,
+    description: dbTask.description || '',
+    agent,
+    agentColor,
+    agents: [{ name: agent, color: agentColor }],
+    agentIds: dbTask.agent_id ? [dbTask.agent_id] : undefined,
+    priority: (dbTask.priority as Task['priority']) || 'mid',
+    tags,
+    updatedAt,
+    dueDate,
+    commentCount: dbTask.comment_count || 0,
+    fileCount: dbTask.file_count || 0,
+    source: 'manual',
+    /** 后端 task 没有 sessionId 字段，用 task.id 作为 sessionId 保证每个任务有唯一会话 */
+    sessionId: dbTask.id,
+    userId: dbTask.user_id,
+  };
+}
+
+/**
+ * 列映射：后端 column_id → 前端 Column
+ * todo → progress, review → progress, progress → progress, done → done
+ */
+function mapColumn(columnId: string): Column {
+  if (columnId === 'done') return 'done';
+  return 'progress';
+}
+
+/* ─── Store 接口 ─────────────────────────────────────────────── */
 interface TaskState {
   tasks: TaskBoard;
+
+  /** 从后端 API 恢复数据（替换 localStorage 缓存） */
+  restoreFromPersist: () => Promise<void>;
 
   /** 新建任务（手动）- 调用方须保证 task.agents.length >= 1 */
   addTask: (task: Task, col?: Column) => void;
@@ -152,143 +203,184 @@ interface TaskState {
   findTaskCol: (taskId: string) => Column | null;
 }
 
+/* ─── Store 实现 ─────────────────────────────────────────────── */
 export const useTaskStore = create<TaskState>()(
   persist(
     (set, get) => ({
-  tasks: INIT_TASKS,
+      tasks: EMPTY_TASKS,
 
-  addTask: (task, col = 'progress') => {
-    /* 前端防御：确保 agents 不为空，至少保留主智能体 */
-    const safeAgents: TaskAgent[] =
-      task.agents && task.agents.length > 0
-        ? task.agents
-        : [{ name: task.agent, color: task.agentColor }];
-    set(state => ({
-      tasks: { ...state.tasks, [col]: [{ ...task, agents: safeAgents }, ...state.tasks[col]] },
-    }));
-  },
+      /**
+       * 从后端 API 拉取任务列表，转换为前端格式后写入 store。
+       * 后端返回格式：{ todo: [...], progress: [...], review: [...], done: [...] }
+       * 前端只使用 progress 和 done 两列（todo/review 合并到 progress）
+       */
+      restoreFromPersist: async () => {
+        try {
+          const dbData = await tasksApi.list();
+          const result: TaskBoard = { progress: [], done: [] };
 
-  addTaskFromChat: ({ title, agentName, agentColor, panelId, sessionId, agentId, userId, taskId: externalTaskId }) => {
-    const now = new Date();
-    const mm = String(now.getMonth() + 1).padStart(2, '0');
-    const dd = String(now.getDate()).padStart(2, '0');
-    // 优先使用外部指定的 taskId，其次用 panelId，最后生成新的
-    const taskId = externalTaskId ?? panelId ?? `chat_${Date.now()}`;
-    // 提取基础数字ID（用于升级/降级时保持一致）
-    const baseId = taskId.replace(/^(task_|proj_|chat_)/, '');
-    const resolvedSessionId = sessionId ?? panelId;
-    const newTask: Task = {
-      id: taskId,
-      baseId,
-      title: title.length > 40 ? title.slice(0, 40) + '...' : title,
-      description: '',
-      agent: agentName,
-      agentColor,
-      agents: [{ name: agentName, color: agentColor }],
-      agentIds: agentId ? [agentId] : undefined,
-      priority: 'mid',
-      // tag 绑定 taskId + sessionId
-      tags: [
-        '对话生成',
-        ...(resolvedSessionId ? [`sid:${resolvedSessionId.slice(0, 8)}`] : []),
-      ],
-      updatedAt: '刚刚',
-      dueDate: `${mm}/${String(Number(dd) + 7).padStart(2, '0')}`,
-      commentCount: 0,
-      fileCount: 0,
-      source: 'chat',
-      panelId,
-      sessionId: resolvedSessionId,
-      sessionIds: resolvedSessionId ? [resolvedSessionId] : [],
-      userId,
-    };
-    set(state => {
-      // 幂等插入：基于 baseId 去重（相同数字仅保留一条）
-      const alreadyExists = state.tasks.progress.some(t => (t.baseId ?? t.id) === baseId)
-        || state.tasks.done.some(t => (t.baseId ?? t.id) === baseId);
-      if (alreadyExists) {
-        // 已存在：更新 sessionId 和 tags
-        const cols: Column[] = ['progress', 'done'];
-        const newTasks = { ...state.tasks };
-        for (const col of cols) {
-          const idx = newTasks[col].findIndex(t => (t.baseId ?? t.id) === baseId);
-          if (idx !== -1) {
-            const existing = newTasks[col][idx];
-            const updatedSessionIds = resolvedSessionId
-              ? [...new Set([...(existing.sessionIds ?? []), resolvedSessionId])]
-              : existing.sessionIds;
-            newTasks[col] = [...newTasks[col]];
-            newTasks[col][idx] = {
-              ...existing,
-              sessionId: resolvedSessionId ?? existing.sessionId,
-              sessionIds: updatedSessionIds,
-              panelId: panelId ?? existing.panelId,
-              updatedAt: '刚刚',
-            };
-            break;
+          for (const [colId, dbTasks] of Object.entries(dbData)) {
+            if (!Array.isArray(dbTasks)) continue;
+            const targetCol = mapColumn(colId);
+            for (const dbTask of dbTasks) {
+              result[targetCol].push(dbTaskToFrontend(dbTask));
+            }
           }
+
+          // 按 sort_order 排序
+          for (const col of ['progress', 'done'] as Column[]) {
+            result[col].sort((a, b) => {
+              // 简单按 updatedAt 排序（后端 sort_order 已映射不到前端）
+              return 0;
+            });
+          }
+
+          set({ tasks: result });
+        } catch (err) {
+          console.error('[TaskStore] restoreFromPersist 失败，使用空数据:', err);
+          set({ tasks: EMPTY_TASKS });
         }
-        return { tasks: newTasks };
-      }
-      return { tasks: { ...state.tasks, progress: [newTask, ...state.tasks.progress] } };
-    });
-    return newTask;
-  },
+      },
 
-  moveTask: (taskId, fromCol, toCol) => {
-    set(state => {
-      const task = state.tasks[fromCol].find(t => t.id === taskId);
-      if (!task) return state;
-      return {
-        tasks: {
-          ...state.tasks,
-          [fromCol]: state.tasks[fromCol].filter(t => t.id !== taskId),
-          [toCol]: [{ ...task, updatedAt: '刚刚' }, ...state.tasks[toCol]],
-        },
-      };
-    });
-  },
+      addTask: (task, col = 'progress') => {
+        /* 前端防御：确保 agents 不为空，至少保留主智能体 */
+        const safeAgents: TaskAgent[] =
+          task.agents && task.agents.length > 0
+            ? task.agents
+            : [{ name: task.agent, color: task.agentColor }];
+        set(state => ({
+          tasks: { ...state.tasks, [col]: [{ ...task, agents: safeAgents }, ...state.tasks[col]] },
+        }));
+      },
 
-  updateTask: (taskId, patch) => {
-    set(state => {
-      const cols: Column[] = ['progress', 'done'];
-      const newTasks = { ...state.tasks };
-      for (const col of cols) {
-        const idx = newTasks[col].findIndex(t => t.id === taskId);
-        if (idx !== -1) {
-          newTasks[col] = [...newTasks[col]];
-          newTasks[col][idx] = { ...newTasks[col][idx], ...patch, updatedAt: '刚刚' };
-          break;
+      addTaskFromChat: ({ title, agentName, agentColor, panelId, sessionId, agentId, userId, taskId: externalTaskId }) => {
+        const now = new Date();
+        const mm = String(now.getMonth() + 1).padStart(2, '0');
+        const dd = String(now.getDate()).padStart(2, '0');
+        // 优先使用外部指定的 taskId，其次用 panelId，最后生成新的
+        const taskId = externalTaskId ?? panelId ?? `chat_${Date.now()}`;
+        // 提取基础数字ID（用于升级/降级时保持一致）
+        const baseId = taskId.replace(/^(task_|proj_|chat_)/, '');
+        const resolvedSessionId = sessionId ?? panelId;
+        const newTask: Task = {
+          id: taskId,
+          baseId,
+          title: title.length > 40 ? title.slice(0, 40) + '...' : title,
+          description: '',
+          agent: agentName,
+          agentColor,
+          agents: [{ name: agentName, color: agentColor }],
+          agentIds: agentId ? [agentId] : undefined,
+          priority: 'mid',
+          // tag 绑定 taskId + sessionId
+          tags: [
+            '对话生成',
+            ...(resolvedSessionId ? [`sid:${resolvedSessionId.slice(0, 8)}`] : []),
+          ],
+          updatedAt: '刚刚',
+          dueDate: `${mm}/${String(Number(dd) + 7).padStart(2, '0')}`,
+          commentCount: 0,
+          fileCount: 0,
+          source: 'chat',
+          panelId,
+          sessionId: resolvedSessionId,
+          sessionIds: resolvedSessionId ? [resolvedSessionId] : [],
+          userId,
+        };
+        set(state => {
+          // 幂等插入：基于 baseId 去重（相同数字仅保留一条）
+          const alreadyExists = state.tasks.progress.some(t => (t.baseId ?? t.id) === baseId)
+            || state.tasks.done.some(t => (t.baseId ?? t.id) === baseId);
+          if (alreadyExists) {
+            // 已存在：更新 sessionId 和 tags
+            const cols: Column[] = ['progress', 'done'];
+            const newTasks = { ...state.tasks };
+            for (const col of cols) {
+              const idx = newTasks[col].findIndex(t => (t.baseId ?? t.id) === baseId);
+              if (idx !== -1) {
+                const existing = newTasks[col][idx];
+                const updatedSessionIds = resolvedSessionId
+                  ? [...new Set([...(existing.sessionIds ?? []), resolvedSessionId])]
+                  : existing.sessionIds;
+                newTasks[col] = [...newTasks[col]];
+                newTasks[col][idx] = {
+                  ...existing,
+                  sessionId: resolvedSessionId ?? existing.sessionId,
+                  sessionIds: updatedSessionIds,
+                  panelId: panelId ?? existing.panelId,
+                  updatedAt: '刚刚',
+                };
+                break;
+              }
+            }
+            return { tasks: newTasks };
+          }
+          return { tasks: { ...state.tasks, progress: [newTask, ...state.tasks.progress] } };
+        });
+        return newTask;
+      },
+
+      moveTask: (taskId, fromCol, toCol) => {
+        set(state => {
+          const task = state.tasks[fromCol].find(t => t.id === taskId);
+          if (!task) return state;
+          return {
+            tasks: {
+              ...state.tasks,
+              [fromCol]: state.tasks[fromCol].filter(t => t.id !== taskId),
+              [toCol]: [{ ...task, updatedAt: '刚刚' }, ...state.tasks[toCol]],
+            },
+          };
+        });
+      },
+
+      updateTask: (taskId, patch) => {
+        set(state => {
+          const cols: Column[] = ['progress', 'done'];
+          const newTasks = { ...state.tasks };
+          for (const col of cols) {
+            const idx = newTasks[col].findIndex(t => t.id === taskId);
+            if (idx !== -1) {
+              newTasks[col] = [...newTasks[col]];
+              newTasks[col][idx] = { ...newTasks[col][idx], ...patch, updatedAt: '刚刚' };
+              break;
+            }
+          }
+          return { tasks: newTasks };
+        });
+      },
+
+      /** 删除任务 */
+      removeTask: async (taskId: string) => {
+        try {
+          await tasksApi.delete(taskId);
+        } catch (e) {
+          console.error('删除任务失败:', e);
+          // API 失败也要更新本地状态，避免不一致
         }
-      }
-      return { tasks: newTasks };
-    });
-  },
+        set(state => {
+          const cols: Column[] = ['progress', 'done'];
+          const newTasks = { ...state.tasks };
+          for (const col of cols) {
+            const idx = newTasks[col].findIndex(t => t.id === taskId);
+            if (idx !== -1) {
+              newTasks[col] = newTasks[col].filter(t => t.id !== taskId);
+              break;
+            }
+          }
+          return { tasks: newTasks };
+        });
+      },
 
-  removeTask: (taskId) => {
-    set(state => {
-      const cols: Column[] = ['progress', 'done'];
-      const newTasks = { ...state.tasks };
-      for (const col of cols) {
-        const idx = newTasks[col].findIndex(t => t.id === taskId);
-        if (idx !== -1) {
-          newTasks[col] = newTasks[col].filter(t => t.id !== taskId);
-          break;
+      findTaskCol: (taskId) => {
+        const cols: Column[] = ['progress', 'done'];
+        const { tasks } = get();
+        for (const col of cols) {
+          if (tasks[col].find(t => t.id === taskId)) return col;
         }
-      }
-      return { tasks: newTasks };
-    });
-  },
-
-  findTaskCol: (taskId) => {
-    const cols: Column[] = ['progress', 'done'];
-    const { tasks } = get();
-    for (const col of cols) {
-      if (tasks[col].find(t => t.id === taskId)) return col;
-    }
-    return null;
-  },
-}),
+        return null;
+      },
+    }),
     {
       name: 'wb-task-store',   // localStorage key
     }

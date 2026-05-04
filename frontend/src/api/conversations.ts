@@ -9,6 +9,8 @@ export const conversationsApi = {
 
   /**
    * 创建会话并生成项目概述（空白对话 + AI 概述消息）
+   * ⚠️ 修复：AI 概述生成耗时 8-15s，全局 10s 超时不够用
+   *    之前前端报超时但后端实际已成功，表现为“提示失败但列表里能看到会话”
    */
   createWithOverview: async (data: {
     title: string;
@@ -16,7 +18,9 @@ export const conversationsApi = {
     projectId?: string;
     description?: string;
   }): Promise<Conversation & { messages: Message[] }> => {
-    const res = await apiClient.post("/conversations/create-with-overview", data);
+    const res = await apiClient.post("/conversations/create-with-overview", data, {
+      timeout: 30000, // 30s 超时，适配 AI 模型生成概述
+    });
     return res.data.data;
   },
 
@@ -58,18 +62,26 @@ export const conversationsApi = {
   },
 
   /** 向已有会话追加新智能体（幂等） */
-  addAgent: async (conversationId: string, agentId: string): Promise<void> => {
-    await apiClient.post(`/conversations/${conversationId}/agents`, { agentId });
+  addAgent: async (conversationId: string, agentId: string): Promise<Conversation | undefined> => {
+    const res = await apiClient.post(`/conversations/${conversationId}/agents`, { agentId });
+    return res.data?.data;
   },
 
   /** 从会话中移除某个智能体 */
-  removeAgent: async (conversationId: string, agentId: string): Promise<void> => {
-    await apiClient.delete(`/conversations/${conversationId}/agents/${agentId}`);
+  removeAgent: async (conversationId: string, agentId: string): Promise<Conversation | undefined> => {
+    const res = await apiClient.delete(`/conversations/${conversationId}/agents/${agentId}`);
+    return res.data?.data;
   },
 
   /** 切换会话的当前 Agent */
   switchAgent: async (conversationId: string, agentId: string) => {
     const res = await apiClient.post(`/conversations/${conversationId}/switch-agent`, { agentId });
+    return res.data?.data;
+  },
+
+  /** 更新会话状态 */
+  updateStatus: async (conversationId: string, status: 'in_progress' | 'completed' | 'archived' | 'deleted') => {
+    const res = await apiClient.patch(`/conversations/${conversationId}/status`, { status });
     return res.data?.data;
   },
 };

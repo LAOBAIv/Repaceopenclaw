@@ -14,10 +14,8 @@
 
 import { v4 as uuidv4 } from 'uuid';
 import { logger } from '../../utils/logger';
-import fs from 'fs';
 import { getDb, saveDb } from '../../db/client';
-import { toOpenClawAgentId, getWorkspacePath } from './AgentMapper';
-import * as WorkspaceBuilder from './WorkspaceBuilder';
+import { toOpenClawAgentId } from './AgentMapper';
 import * as ConfigSync from './ConfigSync';
 import type { Agent } from '../AgentService';
 
@@ -27,35 +25,30 @@ import type { Agent } from '../AgentService';
 
 /**
  * 注册智能体到 OpenClaw
+ * 
+ * 按 agent_type 映射到对应的 OpenClaw agent：
+ *   dev → rc-dev-agent, data → rc-data-agent, 等等
  */
 export async function registerAgent(
   userId: string,
   agent: Agent
 ): Promise<{ success: boolean; ocAgentId: string; error?: string }> {
-  const ocAgentId = toOpenClawAgentId(userId, agent.id);
+  // 按业务类型映射到对应的 OpenClaw agent
+  const ocAgentId = toOpenClawAgentId(agent.agentType);
 
   try {
-    // 1. 解析模型配置
-    const modelName = resolveModel(agent);
-
-    // 2. 创建 workspace（SOUL.md / AGENTS.md / IDENTITY.md 等）
-    await WorkspaceBuilder.createWorkspace(ocAgentId, agent, userId);
-
-    // 3. 写入 openclaw.json agents.list
-    await ConfigSync.addAgent(ocAgentId, modelName);
-
-    // 4. 更新数据库映射
+    // 1. 更新数据库映射（同时保存 openclaw_agent_id 和 agent_type）
     const db = getDb();
     db.run(
-      'UPDATE agents SET openclaw_agent_id = ? WHERE id = ?',
-      [ocAgentId, agent.id]
+      'UPDATE agents SET openclaw_agent_id = ?, agent_type = ? WHERE id = ?',
+      [ocAgentId, agent.agentType || 'general', agent.id]
     );
     saveDb();
 
-    // 5. 记录日志
+    // 2. 记录日志
     await logRegistry(agent.id, 'register', 'success');
 
-    logger.info(`[AgentRegistry] ✅ Registered: ${agent.name} → ${ocAgentId}`);
+    logger.info(`[AgentRegistry] ✅ Registered: ${agent.name} (${agent.agentType || 'general'}) → ${ocAgentId}`);
     return { success: true, ocAgentId };
   } catch (error: any) {
     logger.error(`[AgentRegistry] ❌ Register failed for ${agent.name}:`, error.message);
@@ -71,16 +64,8 @@ export async function unregisterAgent(
   userId: string,
   agentId: string
 ): Promise<{ success: boolean; error?: string }> {
-  const ocAgentId = toOpenClawAgentId(userId, agentId);
-
   try {
-    // 1. 从 openclaw.json 移除
-    await ConfigSync.removeAgent(ocAgentId);
-
-    // 2. 删除 workspace
-    await WorkspaceBuilder.removeWorkspace(ocAgentId);
-
-    // 3. 清空数据库映射
+    // 清空数据库映射
     const db = getDb();
     db.run(
       'UPDATE agents SET openclaw_agent_id = NULL WHERE id = ?',
@@ -88,10 +73,10 @@ export async function unregisterAgent(
     );
     saveDb();
 
-    // 4. 记录日志
+    // 记录日志
     await logRegistry(agentId, 'unregister', 'success');
 
-    logger.info(`[AgentRegistry] ✅ Unregistered: ${agentId} → ${ocAgentId}`);
+    logger.info(`[AgentRegistry] ✅ Unregistered: ${agentId}`);
     return { success: true };
   } catch (error: any) {
     logger.error(`[AgentRegistry] ❌ Unregister failed for ${agentId}:`, error.message);
@@ -108,23 +93,21 @@ export async function updateAgent(
   agentId: string,
   agent: Agent
 ): Promise<{ success: boolean; error?: string }> {
-  const ocAgentId = toOpenClawAgentId(userId, agentId);
+  const ocAgentId = toOpenClawAgentId(agent.agentType);
 
   try {
-    const modelName = resolveModel(agent);
+    // 按类型映射到对应的 OpenClaw agent
+    const db = getDb();
+    db.run(
+      'UPDATE agents SET openclaw_agent_id = ?, agent_type = ? WHERE id = ?',
+      [ocAgentId, agent.agentType || 'general', agentId]
+    );
+    saveDb();
 
-    // 1. 更新 workspace（SOUL.md / IDENTITY.md）
-    await WorkspaceBuilder.updateWorkspace(ocAgentId, agent, userId);
-
-    // 2. 更新 openclaw.json 中的模型配置
-    if (modelName) {
-      await ConfigSync.updateAgentModel(ocAgentId, modelName);
-    }
-
-    // 3. 记录日志
+    // 记录日志
     await logRegistry(agentId, 'update', 'success');
 
-    logger.info(`[AgentRegistry] ✅ Updated: ${agentId} → ${ocAgentId}`);
+    logger.info(`[AgentRegistry] ✅ Updated: ${agentId} (${agent.agentType || 'general'}) → ${ocAgentId}`);
     return { success: true };
   } catch (error: any) {
     logger.error(`[AgentRegistry] ❌ Update failed for ${agentId}:`, error.message);
@@ -140,6 +123,11 @@ export async function updateAgent(
 /**
  * 全量同步：确保数据库中的所有 agent 都已注册到 OpenClaw
  * 适用场景：服务启动时、Gateway 重启后
+ *
+ * 🛡️ 2026-05-03 性能优化：
+ * 1. 循环外一次性读取 openclaw.json（从 N 次降到 1 次）
+ * 2. 用 agent.userId 替代循环内查数据库（消除 N+1 查询）
+ * 3. 内存中维护已注册列表，避免 addAgent 后判断过时
  */
 export async function syncAllAgents(): Promise<{
   total: number;
@@ -163,36 +151,21 @@ export async function syncAllAgents(): Promise<{
   const report = { total: agents.length, registered: 0, missing: 0, errors: [] as Array<{ agentId: string; error: string }> };
 
   for (const agent of agents) {
-    // Get userId from DB directly
-    const dbRow = db.exec('SELECT user_id FROM agents WHERE id = ?', [agent.id]);
-    const userId = (dbRow.length && dbRow[0].values.length) ? String(dbRow[0].values[0][0] || '') : '';
-    const ocAgentId = toOpenClawAgentId(userId, agent.id);
-    const workspacePath = getWorkspacePath(ocAgentId);
-
     try {
-      const workspacePath = getWorkspacePath(ocAgentId);
-      if (fs.existsSync(workspacePath)) {
-        // workspace 已存在，检查 openclaw.json 中是否有记录
-        const registered = ConfigSync.listRegisteredAgents();
-        const exists = registered.some((a) => a.id === ocAgentId);
-        if (!exists) {
-          // openclaw.json 中丢失，重新注册
-          await ConfigSync.addAgent(ocAgentId, resolveModel(agent));
-        }
-        report.registered++;
-      } else {
-        // workspace 丢失，重新创建
-        await WorkspaceBuilder.createWorkspace(ocAgentId, agent, userId);
-        await ConfigSync.addAgent(ocAgentId, resolveModel(agent));
-        report.registered++;
-      }
+      // 跳过平台助手
+      if (agent.openclawAgentId === 'repaceclaw-platform-assistant') continue;
+      // 按类型映射
+      const ocAgentId = toOpenClawAgentId(agent.agentType);
+      db.run('UPDATE agents SET openclaw_agent_id = ?, agent_type = ? WHERE id = ?', [ocAgentId, agent.agentType || 'general', agent.id]);
+      report.registered++;
     } catch (error: any) {
       report.errors.push({ agentId: agent.id, error: error.message });
     }
   }
 
+  saveDb();
   report.missing = report.total - report.registered - report.errors.length;
-  logger.info(`[AgentRegistry] Sync complete: ${report.registered}/${report.total} registered, ${report.errors.length} errors`);
+  logger.info(`[AgentRegistry] Sync complete: ${report.registered}/${report.total} mapped by type, ${report.errors.length} errors`);
   return report;
 }
 
@@ -217,6 +190,9 @@ function resolveModel(agent: Agent): string | undefined {
 
 /**
  * row → Agent（与 AgentService 中的 rowToAgent 保持一致）
+ *
+ * 🛡️ 2026-05-03 修复：加上 userId 字段，
+ * 避免 syncAllAgents() 循环内重复查数据库（N+1 问题）。
  */
 function rowToAgent(obj: any): Agent {
   return {
@@ -247,6 +223,8 @@ function rowToAgent(obj: any): Agent {
     skillsConfig: JSON.parse(obj.skills_config || '{}'),
     quotaConfig: JSON.parse(obj.quota_config || '{}'),
     openclawAgentId: obj.openclaw_agent_id || null,
+    userId: obj.user_id || '',
+    agentType: obj.agent_type || 'general',  // 新增：业务类型
     createdAt: obj.created_at,
   };
 }

@@ -91,4 +91,80 @@ export const AgentTemplateService = {
     });
     return agent;
   },
+
+  /** 创建新模板 */
+  create(data: Partial<AgentTemplate>): AgentTemplate {
+    const db = getDb();
+    const id = uuidv4();
+    const now = new Date().toISOString();
+    const template: AgentTemplate = {
+      id,
+      name: data.name || "",
+      category: data.category || "general",
+      emoji: data.emoji || "🤖",
+      color: data.color || "#3b82f6",
+      vibe: data.vibe || "专业",
+      description: data.description || "",
+      systemPrompt: data.systemPrompt || "",
+      writingStyle: data.writingStyle || "专业",
+      expertise: data.expertise || [],
+      outputFormat: data.outputFormat || "markdown",
+      githubSource: data.githubSource || "",
+      createdAt: now,
+    };
+
+    db.run(
+      `INSERT INTO agent_templates (
+        id, name, category, emoji, color, vibe, description, system_prompt,
+        writing_style, expertise, output_format, github_source, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        template.id, template.name, template.category, template.emoji, template.color,
+        template.vibe, template.description, template.systemPrompt, template.writingStyle,
+        JSON.stringify(template.expertise), template.outputFormat, template.githubSource, template.createdAt
+      ]
+    );
+    saveDb();
+    return template;
+  },
+
+  /** 更新模板 */
+  update(id: string, data: Partial<AgentTemplate>): AgentTemplate | null {
+    const existing = this.getById(id);
+    if (!existing) return null;
+
+    const db = getDb();
+    const updates: string[] = [];
+    const values: any[] = [];
+
+    if (data.name !== undefined) { updates.push("name = ?"); values.push(data.name); }
+    if (data.category !== undefined) { updates.push("category = ?"); values.push(data.category); }
+    if (data.emoji !== undefined) { updates.push("emoji = ?"); values.push(data.emoji); }
+    if (data.color !== undefined) { updates.push("color = ?"); values.push(data.color); }
+    if (data.vibe !== undefined) { updates.push("vibe = ?"); values.push(data.vibe); }
+    if (data.description !== undefined) { updates.push("description = ?"); values.push(data.description); }
+    if (data.systemPrompt !== undefined) { updates.push("system_prompt = ?"); values.push(data.systemPrompt); }
+    if (data.writingStyle !== undefined) { updates.push("writing_style = ?"); values.push(data.writingStyle); }
+    if (data.expertise !== undefined) { updates.push("expertise = ?"); values.push(JSON.stringify(data.expertise)); }
+    if (data.outputFormat !== undefined) { updates.push("output_format = ?"); values.push(data.outputFormat); }
+    if (data.githubSource !== undefined) { updates.push("github_source = ?"); values.push(data.githubSource); }
+
+    if (updates.length === 0) return existing;
+
+    values.push(id);
+    db.run(`UPDATE agent_templates SET ${updates.join(", ")} WHERE id = ?`, values);
+    saveDb();
+    return this.getById(id);
+  },
+
+  /** 删除模板 */
+  delete(id: string): boolean {
+    const existing = this.getById(id);
+    if (!existing) return false;
+
+    const db = getDb();
+    db.run("DELETE FROM agent_templates WHERE id = ?", [id]);
+    saveDb();
+    return true;
+  },
 };

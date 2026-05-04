@@ -21,6 +21,7 @@
 
 import { ILLMAdapter } from "./LLMAdapter";
 import { logger } from '../../utils/logger';
+import { REPACECLAW_MESSAGE_CHANNEL, resolveOpenClawGateway } from '../../utils/openclawGateway';
 import { MockLLMAdapter } from "./MockLLMAdapter";
 import { getDb } from "../../db/client";
 import https from "https";
@@ -28,8 +29,7 @@ import http from "http";
 import { URL } from "url";
 
 // ─── Gateway 配置(底层模型调用统一走 Gateway)─────────────────────────────
-const GATEWAY_URL = process.env.OPENCLAW_GATEWAY_URL || 'http://localhost:18789';
-const GATEWAY_TOKEN = process.env.OPENCLAW_GATEWAY_TOKEN || '';
+const { url: GATEWAY_URL, token: GATEWAY_TOKEN } = resolveOpenClawGateway();
 
 /** 判断是否是 Gateway 地址 */
 function isGatewayUrl(baseUrl: string): boolean {
@@ -354,6 +354,7 @@ function callOpenAIStream(
         "Content-Type": "application/json",
         "Content-Length": Buffer.byteLength(body),
         Authorization: actualAuth,
+        ...(useGateway ? { "x-openclaw-message-channel": REPACECLAW_MESSAGE_CHANNEL } : {}),
       },
     };
 

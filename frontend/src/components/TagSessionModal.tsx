@@ -94,7 +94,9 @@ export function TagSessionModal({ open, tag, onClose, onCreated }: TagSessionMod
       const panel = {
         id: convId,
         conversationId: convId,
-        agentId: mainAgent.id,
+        sessionCode: result.sessionCode,
+        agentId: result.currentAgentId || mainAgent.id,
+        currentAgentCode: result.currentAgentCode,
         agentIds: result.agentIds?.length ? result.agentIds : selectedAgentIds,
         agentName: mainAgent.name,
         agentColor: mainAgent.color ?? '#6366f1',

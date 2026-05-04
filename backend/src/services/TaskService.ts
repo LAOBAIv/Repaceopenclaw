@@ -1,11 +1,14 @@
 import { v4 as uuidv4 } from "uuid";
 import { getDb, saveDb } from "../db/client";
+import { IdGenerator } from "../utils/IdGenerator";
 
 export type TaskColumn = "todo" | "progress" | "review" | "done";
 export type TaskPriority = "high" | "mid" | "low";
 
 export interface Task {
   id: string;
+  /** 业务任务编码：21 位 */
+  taskCode?: string;
   title: string;
   description: string;
   columnId: TaskColumn;
@@ -37,6 +40,7 @@ function execToRows(db: any, sql: string, params?: any[]): any[] {
 
 const rowToTask = (obj: any): Task => ({
   id: obj.id,
+  taskCode: obj.task_code || undefined,
   title: obj.title,
   description: obj.description,
   columnId: obj.column_id as TaskColumn,
@@ -93,6 +97,24 @@ export const TaskService = {
     return rowToTask(rows[0]);
   },
 
+  /**
+   * Dual-code Phase 2：接口层允许同时传 UUID 或 task_code。
+   * task_code 当前是全局唯一，因此这里可直接解析。
+   */
+  getByIdOrCode(idOrCode: string): Task | null {
+    const byId = this.getById(idOrCode);
+    if (byId) return byId;
+    const db = getDb();
+    const rows = execToRows(db, "SELECT * FROM tasks WHERE task_code=?", [idOrCode]);
+    if (!rows.length) return null;
+    return rowToTask(rows[0]);
+  },
+
+  /** 将 UUID/task_code 统一解析成真实 UUID。 */
+  resolveId(idOrCode: string): string | null {
+    return this.getByIdOrCode(idOrCode)?.id || null;
+  },
+
   create(data: {
     title: string;
     description?: string;
@@ -114,11 +136,17 @@ export const TaskService = {
     const orderRows = execToRows(db, "SELECT MAX(sort_order) as m FROM tasks WHERE column_id=?", [col]);
     const sortOrder = (orderRows[0]?.m ?? -1) + 1;
 
+    // Dual-code Phase 1：任务创建开始双写 UUID + taskCode。
+    // taskCode 尽量挂在真实 user_code 下面，便于后续按用户维度检索/排障。
+    const userCodeRow = data.userId ? execToRows(db, "SELECT user_code FROM users WHERE id=?", [data.userId])[0] : null;
+    const taskCode = IdGenerator.taskCode(userCodeRow?.user_code || IdGenerator.userCode());
+
     db.run(
-      `INSERT INTO tasks (id, title, description, column_id, priority, tags, agent, agent_color, agent_id, due_date, comment_count, file_count, sort_order, created_by, user_id, created_at, updated_at)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      `INSERT INTO tasks (id, task_code, title, description, column_id, priority, tags, agent, agent_color, agent_id, due_date, comment_count, file_count, sort_order, created_by, user_id, created_at, updated_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [
         id,
+        taskCode,
         data.title,
         data.description || "",
         col,
@@ -137,7 +165,7 @@ export const TaskService = {
     );
     saveDb();
     return {
-      id, title: data.title, description: data.description || "",
+      id, taskCode, title: data.title, description: data.description || "",
       columnId: col, priority: data.priority || "mid",
       tags: data.tags || [], agent: data.agent || "",
       agentColor: data.agentColor || "#6366F1",

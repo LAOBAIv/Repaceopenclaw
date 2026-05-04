@@ -1,10 +1,24 @@
-import { useState } from 'react';
-import { Outlet, NavLink, useNavigate } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom';
 import {
   Bot, Layers,
-  ChevronLeft, ChevronRight, Settings, Network, Sparkles, PlusCircle, Wrench, Puzzle, ShieldCheck, Library, LogOut,
+  ChevronLeft, ChevronRight, Settings, Network, Sparkles, PlusCircle, Wrench, Puzzle, ShieldCheck, Library, LogOut, MessageCircle,
 } from 'lucide-react';
 import { useAuthStore } from '../../stores/authStore';
+
+/* ─── 页面标题映射 ─────────────────────────────────────────── */
+const PAGE_TITLE_MAP: Record<string, string> = {
+  '/login': '登录',
+  '/workspace': '工作台',
+  '/agents': '智能体管理',
+  '/agent-library': '智能体库',
+  '/agent-create': '创建智能体',
+  '/console': '项目协作',
+  '/kanban': '会话列表',
+  '/admin': '系统管理',
+  '/skill-settings': '技能设置',
+  '/plugin-settings': '插件设置',
+};
 
 const NAV_ITEMS = [
   { to: '/workspace',      icon: Sparkles,   label: 'RepaceClaw',  exact: false },
@@ -26,8 +40,21 @@ const CURRENT_PROJECT = {
 export function AppShell() {
   const [collapsed, setCollapsed] = useState(false);
   const navigate = useNavigate();
+  const location = useLocation();
   const user = useAuthStore((s) => s.user);
   const isAdmin = user?.role === 'super_admin' || user?.role === 'admin';
+
+  /* ─── 动态设置页面标题 ─────────────────────────────────────── */
+  useEffect(() => {
+    if (location.pathname === '/workspace') {
+      // 工作台：固定标题
+      document.title = 'RepaceClaw智能体平台';
+    } else {
+      // 其他页面：菜单名在前，平台名在后
+      const menuName = PAGE_TITLE_MAP[location.pathname] || '工作台';
+      document.title = `${menuName} - RepaceClaw智能体平台`;
+    }
+  }, [location.pathname]);
 
   return (
     <div style={{ display: 'flex', height: '100vh', background: 'var(--body-bg)', overflow: 'hidden' }}>
@@ -106,6 +133,36 @@ export function AppShell() {
           ))}
         </nav>
 
+        {/* ── 平台助手入口（所有用户可见） ── */}
+        <div style={{ padding: '4px 8px' }}>
+          <button
+            onClick={() => navigate('/platform-assistant')}
+            title={collapsed ? '平台助手' : undefined}
+            style={{
+              display: 'flex', alignItems: 'center',
+              gap: collapsed ? 0 : 10,
+              justifyContent: collapsed ? 'center' : 'flex-start',
+              padding: '10px 12px',
+              borderRadius: 8,
+              background: location.pathname === '/platform-assistant'
+                ? 'linear-gradient(135deg, rgba(59,130,246,0.2), rgba(99,102,241,0.2))'
+                : 'linear-gradient(135deg, rgba(59,130,246,0.12), rgba(99,102,241,0.12))',
+              border: '1px solid rgba(99,102,241,0.2)',
+              color: '#6366f1',
+              fontSize: 13,
+              cursor: 'pointer',
+              fontWeight: location.pathname === '/platform-assistant' ? 600 : 500,
+              width: '100%',
+              transition: 'all 0.15s',
+            }}
+            onMouseEnter={e => { e.currentTarget.style.background = 'linear-gradient(135deg, rgba(59,130,246,0.2), rgba(99,102,241,0.2))'; }}
+            onMouseLeave={e => { e.currentTarget.style.background = 'linear-gradient(135deg, rgba(59,130,246,0.12), rgba(99,102,241,0.12))'; }}
+          >
+            <MessageCircle size={17} style={{ flexShrink: 0 }} />
+            {!collapsed && '平台助手'}
+          </button>
+        </div>
+
         {/* ── Bottom ── */}
         <div style={{ padding: '4px 8px 12px', display: 'flex', flexDirection: 'column', gap: 2 }}>
           {/* 管理后台入口（仅 admin/super_admin 可见） */}
@@ -129,21 +186,6 @@ export function AppShell() {
               )}
             </NavLink>
           )}
-          <NavLink to="/plugin-settings" style={{ textDecoration: 'none' }}>
-            {({ isActive }) => (
-              <div style={{
-                display: 'flex', alignItems: 'center',
-                gap: collapsed ? 0 : 10,
-                justifyContent: collapsed ? 'center' : 'flex-start',
-                padding: '9px 10px', borderRadius: 8,
-                color: isActive ? 'var(--accent)' : 'var(--text-muted)',
-                fontSize: 13, cursor: 'pointer',
-              }}>
-                <Settings size={16} style={{ flexShrink: 0 }} />
-                {!collapsed && '设置'}
-              </div>
-            )}
-          </NavLink>
 
           <button
             onClick={() => setCollapsed(!collapsed)}

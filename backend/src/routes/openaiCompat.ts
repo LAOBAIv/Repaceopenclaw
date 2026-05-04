@@ -9,7 +9,7 @@
  *
  * 认证：
  *   请求头携带 `Authorization: Bearer <agentId>` 即可（agentId 即智能体 ID）。
- *   如果不传 agentId，则走全局 token_channels 自动路由。
+ *   如果不传 agentId，则仍统一进入 OpenClaw Gateway，由 Gateway 处理模型路由。
  *
  * 在 OpenClaw / Claude Code 中的配置示例：
  *   Base URL : http://localhost:3001/v1
@@ -20,7 +20,7 @@
 import { Router, Request, Response } from "express";
 import { logger } from '../utils/logger';
 import { AgentService } from "../services/AgentService";
-import { AutoLLMAdapter } from "../services/llm/AutoLLMAdapter";
+import { OpenClawAdapter } from "../services/llm/OpenClawAdapter";
 
 const router = Router();
 
@@ -97,7 +97,7 @@ router.post("/chat/completions", async (req: Request, res: Response) => {
     const candidateAgentId = rawToken || model || "";
 
     // ── 构建 agentConfig ──────────────────────────────────────────────────
-    let agentConfig: Parameters<InstanceType<typeof AutoLLMAdapter>["generateStream"]>[0];
+    let agentConfig: Parameters<InstanceType<typeof OpenClawAdapter>["generateStream"]>[0];
 
     const agent = candidateAgentId ? AgentService.getById(candidateAgentId) : null;
 
@@ -127,7 +127,7 @@ router.post("/chat/completions", async (req: Request, res: Response) => {
         temperatureOverride: agent.temperatureOverride,
       };
     } else {
-      // 没有指定智能体 / 找不到时：走全局渠道自动路由
+      // 没有指定智能体 / 找不到时：仍统一走 OpenClaw Gateway
       agentConfig = {
         id: "proxy",
         name: "Platform Proxy",
@@ -148,7 +148,7 @@ router.post("/chat/completions", async (req: Request, res: Response) => {
     // 客户端可能在 messages[0] 中传入 system，这里剔除，避免重复
     const chatMessages = messages.filter((m) => m.role !== "system");
 
-    const adapter = new AutoLLMAdapter();
+    const adapter = new OpenClawAdapter();
     const requestId = `chatcmpl-${Date.now()}`;
     const created = Math.floor(Date.now() / 1000);
 

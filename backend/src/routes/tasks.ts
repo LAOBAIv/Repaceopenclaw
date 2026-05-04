@@ -1,5 +1,5 @@
 import { Router, Request, Response } from "express";
-import { TaskService, TaskColumn, TaskPriority } from "../services/TaskService";
+import { TaskService, TaskColumn } from "../services/TaskService";
 import { z } from "zod";
 import { authenticate } from "../middleware/auth";
 import { ensureOwnership } from "../middleware/ownership";
@@ -60,7 +60,8 @@ router.post("/reorder", authenticate, (req: Request, res: Response) => {
 
 /** GET /api/tasks/:id */
 router.get("/:id", authenticate, (req: Request, res: Response) => {
-  const task = TaskService.getById(req.params.id);
+  // Dual-code Phase 2：任务详情接口支持 UUID / task_code 双读。
+  const task = TaskService.getByIdOrCode(req.params.id);
   if (!task) return res.status(404).json({ error: "Task not found" });
   res.json({ data: task });
 });
@@ -78,14 +79,21 @@ router.post("/", authenticate, (req: Request, res: Response) => {
 router.put("/:id", authenticate, ensureOwnership("task"), (req: Request, res: Response) => {
   const parsed = TaskUpdateSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
-  const updated = TaskService.update(req.params.id, parsed.data as any);
+
+  // Dual-code Phase 2：更新前统一解析成真实 UUID，避免 task_code 直接落到 UPDATE WHERE id=? 失败。
+  const resolvedTaskId = TaskService.resolveId(req.params.id);
+  if (!resolvedTaskId) return res.status(404).json({ error: "Task not found" });
+
+  const updated = TaskService.update(resolvedTaskId, parsed.data as any);
   if (!updated) return res.status(404).json({ error: "Task not found" });
   res.json({ data: updated });
 });
 
 /** DELETE /api/tasks/:id */
 router.delete("/:id", authenticate, ensureOwnership("task"), (req: Request, res: Response) => {
-  TaskService.delete(req.params.id);
+  const resolvedTaskId = TaskService.resolveId(req.params.id);
+  if (!resolvedTaskId) return res.status(404).json({ error: "Task not found" });
+  TaskService.delete(resolvedTaskId);
   res.json({ success: true });
 });
 

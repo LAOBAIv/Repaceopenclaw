@@ -47,11 +47,16 @@ interface OpenClawConfig {
  */
 function readConfig(): OpenClawConfig {
   const raw = fs.readFileSync(OPENCLAW_CONFIG_PATH, 'utf-8');
-  // 移除注释（简单处理：移除 // 开头的行和行尾注释）
-  const cleaned = raw
-    .replace(/\/\/[^\n]*/g, '')
-    .replace(/\/\*[\s\S]*?\*\//g, '');
-  return JSON.parse(cleaned);
+  // 优先按标准 JSON 解析；当前环境中的 openclaw.json 是合法 JSON。
+  // 只有解析失败时才退回到去注释兼容逻辑，避免误删 https:// 这类 URL。
+  try {
+    return JSON.parse(raw);
+  } catch {
+    const cleaned = raw
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/^\s*\/\/.*$/gm, '');
+    return JSON.parse(cleaned);
+  }
 }
 
 /**
@@ -67,6 +72,10 @@ function writeConfig(config: OpenClawConfig): void {
 
 /**
  * 向 openclaw.json 注册一个 agent
+ *
+ * 🛡️ 去重优化（2026-05-03 修复）：
+ * 如果 agent 已存在且配置完全一致，跳过写入 openclaw.json，
+ * 避免触发 OpenClaw Gateway 无意义的 reload。
  */
 export async function addAgent(
   ocAgentId: string,
@@ -77,18 +86,32 @@ export async function addAgent(
   if (!config.agents) config.agents = {};
   if (!config.agents.list) config.agents.list = [];
 
+  const workspace = getWorkspacePath(ocAgentId);
+  const agentDir = getAgentDir(ocAgentId);
+
   // 检查是否已存在
   const existing = config.agents.list.find((a) => a.id === ocAgentId);
+
   if (existing) {
-    // 更新 workspace 和 model
-    existing.workspace = getWorkspacePath(ocAgentId);
-    existing.agentDir = getAgentDir(ocAgentId);
+    // 🛡️ 配置完全一致，跳过写入（避免无意义的 gateway reload）
+    if (
+      existing.workspace === workspace &&
+      existing.agentDir === agentDir &&
+      existing.model === modelName
+    ) {
+      return;
+    }
+
+    // 配置有变化，更新字段
+    existing.workspace = workspace;
+    existing.agentDir = agentDir;
     if (modelName) existing.model = modelName;
   } else {
+    // 新 agent，添加到列表
     config.agents.list.push({
       id: ocAgentId,
-      workspace: getWorkspacePath(ocAgentId),
-      agentDir: getAgentDir(ocAgentId),
+      workspace,
+      agentDir,
       ...(modelName ? { model: modelName } : {}),
     });
   }

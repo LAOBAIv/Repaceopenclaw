@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { projectsApi } from '../api/projects';
 
 /* ─── 业务规则（重要）───────────────────────────────────────────
  * 【单项目智能体规则】
@@ -51,77 +52,109 @@ export interface KanbanProject {
 export type ProjectColumn = 'progress' | 'done';
 export type ProjectBoard = Record<ProjectColumn, KanbanProject[]>;
 
-/* ─── Mock 初始数据 ─────────────────────────────────────────── */
-const INIT_PROJECTS: ProjectBoard = {
-  progress: [
-    {
-      id: 'p1', title: 'AI 助手产品迭代',
-      description: '完成 Q2 核心功能开发，包含多智能体协同、任务看板和文档协作模块。',
-      tags: ['产品', 'AI'], priority: 'high',
-      agent: '策划助手', agentColor: '#6366f1',
-      /* 本项目包含 3 个智能体（满足最低要求：>=2）*/
-      agents: [
-        { name: '策划助手', color: '#6366f1' },
-        { name: '研究员',   color: '#3b82f6' },
-        { name: '撰写助手', color: '#22c55e' },
-      ],
-      progress: 65, dueDate: '04/15', updatedAt: '1h前', taskCount: 12, memberCount: 4,
-    },
-    {
-      id: 'p2', title: '市场调研报告',
-      description: '收集竞品数据，完成行业分析报告，为产品决策提供数据支撑。',
-      tags: ['市场', '调研'], priority: 'mid',
-      agent: '研究员', agentColor: '#3b82f6',
-      /* 本项目包含 2 个智能体（满足最低要求：>=2）*/
-      agents: [
-        { name: '研究员',   color: '#3b82f6' },
-        { name: '撰写助手', color: '#22c55e' },
-      ],
-      progress: 40, dueDate: '03/28', updatedAt: '3h前', taskCount: 6, memberCount: 2,
-    },
-    {
-      id: 'p3', title: '官网改版',
-      description: '基于新品牌视觉规范重新设计官网，提升转化率和用户留存。',
-      tags: ['设计', '前端'], priority: 'low',
-      agent: '撰写助手', agentColor: '#22c55e',
-      /* 本项目包含 2 个智能体（满足最低要求：>=2）*/
-      agents: [
-        { name: '撰写助手', color: '#22c55e' },
-        { name: '策划助手', color: '#6366f1' },
-      ],
-      progress: 20, dueDate: '04/30', updatedAt: '2d前', taskCount: 8, memberCount: 3,
-    },
-  ],
-  done: [
-    {
-      id: 'p4', title: '用户访谈计划',
-      description: '完成 20 名目标用户深度访谈，输出需求洞察报告。',
-      tags: ['用户研究'], priority: 'mid',
-      agent: '研究员', agentColor: '#3b82f6',
-      agents: [
-        { name: '研究员',   color: '#3b82f6' },
-        { name: '撰写助手', color: '#22c55e' },
-      ],
-      progress: 100, dueDate: '03/10', updatedAt: '5d前', taskCount: 5, memberCount: 2,
-    },
-    {
-      id: 'p5', title: '技术架构评审',
-      description: '完成新版本系统架构设计文档，通过全员评审。',
-      tags: ['技术'], priority: 'high',
-      agent: '策划助手', agentColor: '#6366f1',
-      agents: [
-        { name: '策划助手', color: '#6366f1' },
-        { name: '研究员',   color: '#3b82f6' },
-        { name: '撰写助手', color: '#22c55e' },
-      ],
-      progress: 100, dueDate: '03/05', updatedAt: '1w前', taskCount: 4, memberCount: 5,
-    },
-  ],
+/* ─── 初始数据（空数组，数据从后端 API 加载）────────────────── */
+/**
+ * 不再使用 MOCK 假数据。
+ * Store 初始化时为空，通过 restoreFromPersist() 从后端 API 拉取真实数据。
+ */
+const EMPTY_PROJECTS: ProjectBoard = {
+  progress: [],
+  done: [],
 };
 
-/* ─── Store ─────────────────────────────────────────────────── */
+/* ─── 数据库 Project → 前端 KanbanProject 映射 ──────────────── */
+/**
+ * 将后端返回的 Project（数据库格式）转换为前端 KanbanProject（Zustand store 格式）
+ * 后端 Project 没有明确的 column/状态字段，按 status 映射：
+ *   active → progress, archived → done
+ */
+function dbProjectToFrontend(dbProject: any): KanbanProject {
+  // tags 后端存的是 JSON 字符串，需要解析
+  let tags: string[] = [];
+  try {
+    tags = typeof dbProject.tags === 'string' ? JSON.parse(dbProject.tags) : (dbProject.tags || []);
+  } catch {
+    tags = [];
+  }
+
+  // workflow_nodes 解析为 taskCount
+  let taskCount = 0;
+  try {
+    const nodes = typeof dbProject.workflow_nodes === 'string'
+      ? JSON.parse(dbProject.workflow_nodes)
+      : (dbProject.workflow_nodes || []);
+    taskCount = Array.isArray(nodes) ? nodes.length : 0;
+  } catch {
+    taskCount = 0;
+  }
+
+  // 日期格式化
+  let dueDate = '';
+  if (dbProject.end_time) {
+    try {
+      const d = new Date(dbProject.end_time);
+      if (!isNaN(d.getTime())) {
+        const mm = String(d.getMonth() + 1).padStart(2, '0');
+        const dd = String(d.getDate()).padStart(2, '0');
+        dueDate = `${mm}/${dd}`;
+      }
+    } catch {
+      dueDate = dbProject.end_time;
+    }
+  }
+
+  // updatedAt 时间转换为相对时间
+  let updatedAt = '未知';
+  const ts = dbProject.updated_at || dbProject.created_at;
+  if (ts) {
+    try {
+      const now = new Date();
+      const updated = new Date(ts);
+      const diffMs = now.getTime() - updated.getTime();
+      const diffMin = Math.floor(diffMs / 60000);
+      const diffHr = Math.floor(diffMin / 60);
+      const diffDay = Math.floor(diffHr / 24);
+      if (diffMin < 1) updatedAt = '刚刚';
+      else if (diffMin < 60) updatedAt = `${diffMin}分钟前`;
+      else if (diffHr < 24) updatedAt = `${diffHr}小时前`;
+      else updatedAt = `${diffDay}天前`;
+    } catch {
+      updatedAt = '未知';
+    }
+  }
+
+  // 从 title 首字母生成默认 agent（后端没有 agent 字段）
+  const agent = '项目';
+  const agentColor = '#6366f1';
+
+  // 状态映射：active → progress, archived → done
+  const status = (dbProject.status || 'active').toLowerCase();
+  const priority = (dbProject.priority as ProjectPriority) || 'mid';
+
+  return {
+    id: dbProject.id,
+    title: dbProject.title,
+    description: dbProject.description || '',
+    tags,
+    priority,
+    agent,
+    agentColor,
+    agents: [{ name: agent, color: agentColor }],
+    progress: status === 'archived' ? 100 : 0,
+    dueDate,
+    updatedAt,
+    taskCount,
+    memberCount: 0,
+  };
+}
+
+/* ─── Store 接口 ─────────────────────────────────────────────── */
 interface ProjectKanbanState {
   projects: ProjectBoard;
+
+  /** 从后端 API 恢复数据（替换 localStorage 缓存） */
+  restoreFromPersist: () => Promise<void>;
+
   /** 新建项目 */
   addProject: (project: KanbanProject, col?: ProjectColumn) => void;
   moveProject: (projectId: string, fromCol: ProjectColumn, toCol: ProjectColumn) => void;
@@ -129,70 +162,103 @@ interface ProjectKanbanState {
   removeProject: (projectId: string) => void;
 }
 
+/* ─── Store 实现 ─────────────────────────────────────────────── */
 export const useProjectKanbanStore = create<ProjectKanbanState>()(
   persist(
     (set) => ({
-  projects: INIT_PROJECTS,
+      projects: EMPTY_PROJECTS,
 
-  addProject: (project, col = 'progress') => {
-    /*
-     * 确保 agents 数组存在且不为空（至少包含主智能体）
-     * 不再强制要求 >= 2，以如实反映用户实际选择的智能体数量
-     */
-    const safeAgents: ProjectAgent[] =
-      project.agents && project.agents.length > 0
-        ? project.agents
-        : [{ name: project.agent, color: project.agentColor }];
-    set(state => ({
-      projects: { ...state.projects, [col]: [{ ...project, agents: safeAgents }, ...state.projects[col]] },
-    }));
-  },
+      /**
+       * 从后端 API 拉取项目列表，转换为前端格式后写入 store。
+       * 后端返回格式：Project[]（平铺列表）
+       * 按 status 映射到 progress/done 列：active → progress, archived → done
+       */
+      restoreFromPersist: async () => {
+        try {
+          const dbProjects = await projectsApi.list();
+          const result: ProjectBoard = { progress: [], done: [] };
 
-  moveProject: (projectId, fromCol, toCol) => {
-    set(state => {
-      const project = state.projects[fromCol].find(p => p.id === projectId);
-      if (!project) return state;
-      return {
-        projects: {
-          ...state.projects,
-          [fromCol]: state.projects[fromCol].filter(p => p.id !== projectId),
-          [toCol]: [{ ...project, updatedAt: '刚刚' }, ...state.projects[toCol]],
-        },
-      };
-    });
-  },
+          for (const dbProject of dbProjects) {
+            const frontend = dbProjectToFrontend(dbProject);
+            // status === 'archived' → done, 其余 → progress
+            if (dbProject.status === 'archived') {
+              result.done.push(frontend);
+            } else {
+              result.progress.push(frontend);
+            }
+          }
 
-  updateProject: (projectId, patch) => {
-    set(state => {
-      const cols: ProjectColumn[] = ['progress', 'done'];
-      const newProjects = { ...state.projects };
-      for (const col of cols) {
-        const idx = newProjects[col].findIndex(p => p.id === projectId);
-        if (idx !== -1) {
-          newProjects[col] = [...newProjects[col]];
-          newProjects[col][idx] = { ...newProjects[col][idx], ...patch, updatedAt: '刚刚' };
-          break;
+          set({ projects: result });
+        } catch (err) {
+          console.error('[ProjectKanbanStore] restoreFromPersist 失败，使用空数据:', err);
+          set({ projects: EMPTY_PROJECTS });
         }
-      }
-      return { projects: newProjects };
-    });
-  },
+      },
 
-  removeProject: (projectId) => {
-    set(state => {
-      const cols: ProjectColumn[] = ['progress', 'done'];
-      const newProjects = { ...state.projects };
-      for (const col of cols) {
-        const idx = newProjects[col].findIndex(p => p.id === projectId);
-        if (idx !== -1) {
-          newProjects[col] = newProjects[col].filter(p => p.id !== projectId);
-          break;
+      addProject: (project, col = 'progress') => {
+        /*
+         * 确保 agents 数组存在且不为空（至少包含主智能体）
+         * 不再强制要求 >= 2，以如实反映用户实际选择的智能体数量
+         */
+        const safeAgents: ProjectAgent[] =
+          project.agents && project.agents.length > 0
+            ? project.agents
+            : [{ name: project.agent, color: project.agentColor }];
+        set(state => ({
+          projects: { ...state.projects, [col]: [{ ...project, agents: safeAgents }, ...state.projects[col]] },
+        }));
+      },
+
+      moveProject: (projectId, fromCol, toCol) => {
+        set(state => {
+          const project = state.projects[fromCol].find(p => p.id === projectId);
+          if (!project) return state;
+          return {
+            projects: {
+              ...state.projects,
+              [fromCol]: state.projects[fromCol].filter(p => p.id !== projectId),
+              [toCol]: [{ ...project, updatedAt: '刚刚' }, ...state.projects[toCol]],
+            },
+          };
+        });
+      },
+
+      updateProject: (projectId, patch) => {
+        set(state => {
+          const cols: ProjectColumn[] = ['progress', 'done'];
+          const newProjects = { ...state.projects };
+          for (const col of cols) {
+            const idx = newProjects[col].findIndex(p => p.id === projectId);
+            if (idx !== -1) {
+              newProjects[col] = [...newProjects[col]];
+              newProjects[col][idx] = { ...newProjects[col][idx], ...patch, updatedAt: '刚刚' };
+              break;
+            }
+          }
+          return { projects: newProjects };
+        });
+      },
+
+      removeProject: async (projectId) => {
+        try {
+          await projectsApi.delete(projectId);
+        } catch (e) {
+          console.error('删除项目失败:', e);
         }
-      }
-      return { projects: newProjects };
-    });
-  },
-}),
+        set(state => {
+          const cols: ProjectColumn[] = ['progress', 'done'];
+          const newProjects = { ...state.projects };
+          for (const col of cols) {
+            const idx = newProjects[col].findIndex(p => p.id === projectId);
+            if (idx !== -1) {
+              newProjects[col] = newProjects[col].filter(p => p.id !== projectId);
+              break;
+            }
+          }
+          return { projects: newProjects };
+        });
+      },
+    }),
     {
       name: 'wb-project-kanban-store',  // localStorage key
     }

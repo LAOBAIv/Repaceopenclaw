@@ -20,6 +20,7 @@ import { registerRoutes } from './routes';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler';
 import { authenticate } from './middleware/auth';
 import { requestIdMiddleware } from './middleware/requestId';
+import { requestLogger } from './middleware/requestLogger';
 import { apiLimiter, authLimiter } from './middleware/rateLimiter';
 import { setupWebSocket } from './ws/wsHandler';
 import * as AgentBridge from './services/AgentBridge';
@@ -56,6 +57,9 @@ async function main(): Promise<void> {
   // 3.5 Phase 1：全链路 Request ID
   app.use(requestIdMiddleware);
 
+  // 3.5.1 HTTP 请求日志
+  app.use(requestLogger);
+
   // 3.6 Phase 1：API 全局限流（非认证接口）
   app.use('/api/v1', authLimiter);  // OpenAI 兼容接口更严格
 
@@ -89,7 +93,39 @@ async function main(): Promise<void> {
   const server = http.createServer(app);
   setupWebSocket(server);
 
-  // 10. 启动服务器
+  // 10. 监听端口错误（EADDRINUSE 等）— 必须绑定在 listen 之前
+  //    ⚠️ 修复：server.listen 的 error 事件是异步 emit 的，不会被 main().catch() 捕获
+  //    不加此 handler 会导致 unhandled exception → process 崩溃 → systemd 无限重启
+  server.on('error', (err: NodeJS.ErrnoException) => {
+    if (err.code === 'EADDRINUSE') {
+      logger.error(`[Server] Port ${PORT} is already in use. Another instance may be running.`);
+      logger.error('[Server] Attempting to kill stale process...');
+      // 尝试找出并杀掉占用端口的进程
+      const { execSync } = require('child_process');
+      try {
+        const output = execSync(`lsof -t -i :${PORT} 2>/dev/null || ss -tlnp "sport = :${PORT}" | grep -oP 'pid=\\K\\d+' | head -1`, { encoding: 'utf-8' }).trim();
+        if (output) {
+          const pid = output.split('\n')[0];
+          logger.warn(`[Server] Found stale process PID=${pid} on port ${PORT}, killing...`);
+          process.kill(parseInt(pid), 'SIGTERM');
+          // 等待端口释放后重试
+          setTimeout(() => {
+            logger.info(`[Server] Retrying to listen on port ${PORT}...`);
+            server.listen(PORT);
+          }, 2000);
+          return;
+        }
+      } catch (e) {
+        logger.error('[Server] Failed to identify stale process', { error: (e as Error).message });
+      }
+      logger.error(`[Server] Cannot bind to port ${PORT}. Manual intervention required.`);
+    } else {
+      logger.error('[Server] Server error', { code: err.code, message: err.message });
+    }
+    process.exit(1);
+  });
+
+  // 11. 启动服务器
   server.listen(PORT, () => {
     logger.info('='.repeat(60));
     logger.info(`[Server] RepaceClaw Backend Server`);
@@ -98,6 +134,30 @@ async function main(): Promise<void> {
     logger.info(`[Server] WebSocket: ws://localhost:${PORT}/ws`);
     logger.info('='.repeat(60));
   });
+
+  // 12. 优雅关闭 — 修复：无 SIGTERM handler 导致 systemd stop 时直接 SIGKILL
+  //     旧进程未正确释放端口 → 新进程 EADDRINUSE → 无限重启循环
+  let isShuttingDown = false;
+  async function gracefulShutdown(signal: string): Promise<void> {
+    if (isShuttingDown) return;
+    isShuttingDown = true;
+    logger.info(`[Server] Received ${signal}, shutting down gracefully...`);
+
+    // 停止接收新连接
+    server.close(async () => {
+      logger.info('[Server] HTTP server closed');
+      process.exit(0);
+    });
+
+    // 超时强制退出（systemd DefaultTimeoutStopSec 默认 90s）
+    setTimeout(() => {
+      logger.error('[Server] Graceful shutdown timed out, forcing exit');
+      process.exit(1);
+    }, 10_000).unref();
+  }
+
+  process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+  process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 }
 
 /**
@@ -204,6 +264,12 @@ function setupStaticFiles(app: express.Application): void {
       res.sendFile(path.join(staticPath, 'index.html'));
     });
 
+    // JS/CSS 等静态资源：设置 1 天缓存但允许 revalidate
+    app.get('/assets/*', (req, res, next) => {
+      res.set('Cache-Control', 'public, max-age=86400, stale-while-revalidate=3600');
+      next();
+    });
+
     logger.info('[Static] Serving frontend from: ' + staticPath);
   } else {
     logger.info('[Static] Frontend dist not found at: ' + staticPath);
@@ -213,5 +279,16 @@ function setupStaticFiles(app: express.Application): void {
 // 启动应用
 main().catch((err) => {
   logger.error('[Fatal] Server startup failed:', err);
+  process.exit(1);
+});
+
+// 全局未捕获异常/拒绝处理 — 防止未预期的 error 导致静默崩溃
+process.on('uncaughtException', (err) => {
+  logger.error('[Process] Uncaught exception', { message: err.message, stack: err.stack });
+  process.exit(1);
+});
+
+process.on('unhandledRejection', (reason) => {
+  logger.error('[Process] Unhandled rejection', { reason: String(reason) });
   process.exit(1);
 });

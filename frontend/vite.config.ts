@@ -15,13 +15,22 @@ export default defineConfig({
         manualChunks: {
           // React 生态单独分包
           'react-vendor': ['react', 'react-dom', 'react-router-dom'],
-          // UI 组件库分包（仅使用已安装的 Radix 包）
+          // UI 组件库分包
           'ui-vendor': ['@radix-ui/react-dialog', '@radix-ui/react-dropdown-menu', '@radix-ui/react-select', '@radix-ui/react-tooltip'],
-          // 工具库单独分包（如果有大体积依赖）
+          // Ant Design 单独分包（大体积）
+          'antd': ['antd', '@ant-design/icons'],
+          // 动画库单独分包
+          'framer-motion': ['framer-motion'],
+          // 图标库单独分包
+          'icons': ['lucide-react', 'react-icons'],
+          // 拖拽库单独分包
+          'dnd': ['react-dnd', 'react-dnd-html5-backend'],
+          // Markdown 渲染单独分包
+          'markdown': ['react-markdown', 'remark-gfm'],
         },
       },
     },
-    chunkSizeWarningLimit: 500, // kB
+    chunkSizeWarningLimit: 600, // kB - 提高限制
   },
   server: {
     host: "0.0.0.0",

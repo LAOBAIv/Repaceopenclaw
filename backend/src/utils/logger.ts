@@ -22,7 +22,7 @@ const minLevel = (process.env.LOG_LEVEL || "info") as LogLevel;
 // 确保日志目录存在
 if (!fs.existsSync(LOG_DIR)) fs.mkdirSync(LOG_DIR, { recursive: true });
 
-// 清理过期日志（启动时执行一次）
+// 清理过期日志（默认关闭，显式启用才执行）
 function cleanupOldLogs() {
   try {
     const files = fs.readdirSync(LOG_DIR);
@@ -37,7 +37,9 @@ function cleanupOldLogs() {
     }
   } catch {}
 }
-cleanupOldLogs();
+if (process.env.ENABLE_LOG_CLEANUP === "true") {
+  cleanupOldLogs();
+}
 
 function getLogFilePath(): string {
   const today = new Date().toISOString().slice(0, 10);

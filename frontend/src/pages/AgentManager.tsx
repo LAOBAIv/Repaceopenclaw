@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Bot, Plus, Trash2, AlertTriangle, Pencil, Cpu, Eye, EyeOff, Settings } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAgentStore } from '@/stores/agentStore';
-import { DEFAULT_AGENTS } from '@/data/defaultAgents';
+import { useAuthStore } from '@/stores/authStore';
 import { Agent } from '@/types';
 import apiClient from '@/api/client';
 import { agentsApi, type AgentRoutingInfo } from '@/api/agents';
@@ -30,11 +30,20 @@ function VisibilityBadge({ visibility }: { visibility?: string }) {
 export const VALID_MODELS = [
   'claude-opus-4-6',
   'glm-5',
+  'glm-5.1',
   'qwen3-max-2026-01-23',
   'kimi-k2.5',
-  'MiniMax-M2.5',
+  'minimax-m2.5',
   'qwen3.6-plus',
+  'geographer',
 ];
+
+/** 模糊匹配模型名（忽略大小写） */
+function isValidModelName(modelName: string): boolean {
+  if (!modelName) return true;
+  const lower = modelName.toLowerCase().trim();
+  return VALID_MODELS.some(v => lower === v || lower.startsWith(v));
+}
 
 /** Skill 配置项 */
 const SKILL_ITEMS: { key: string; label: string; risk: 'high' | 'medium' | 'low' }[] = [
@@ -51,7 +60,7 @@ const SKILL_ITEMS: { key: string; label: string; risk: 'high' | 'medium' | 'low'
 function ModelParamBar({ agent, routing }: { agent: Agent; routing?: AgentRoutingInfo }) {
   const channel = agent.tokenProvider;
   const model   = agent.modelName;
-  const isValidModel = !model || VALID_MODELS.includes(model);
+  const isValidModel = isValidModelName(model);
 
   // 路由来源标识
   const sourceLabel = routing ? {
@@ -129,7 +138,9 @@ function AgentAvatar({ agent }: { agent: Agent }) {
 }
 
 export function AgentManager() {
-  const { agents, fetchAgents, deleteAgent } = useAgentStore();
+  const { agents, loading, fetchAgents, deleteAgent } = useAgentStore();
+  const user = useAuthStore((s) => s.user);
+  const isAdmin = user?.role === 'admin' || user?.role === 'super_admin';
   const navigate = useNavigate();
   const [routings, setRoutings] = useState<AgentRoutingInfo[]>([]);
 
@@ -143,8 +154,13 @@ export function AgentManager() {
     return routings.find(r => r.id === agentId);
   }
 
-  // 优先用后端真实数据，接口失败或为空时 fallback 到默认
-  const agentList: Agent[] = agents.length > 0 ? agents : DEFAULT_AGENTS;
+  // 只展示后端真实返回的当前用户可见智能体，禁止 fallback 到默认数据。
+  // 否则普通用户刷新时会短暂闪现无权限的默认智能体，随后再被真实数据覆盖。
+  const agentList: Agent[] = agents.filter(a =>
+    !(a.id === '24cf6cc5-da0d-48df-814e-11582e398007'
+      || a.id === 'platform-assistant'
+      || a.id === 'repaceclaw-platform-assistant')
+  );
 
   /* ── 删除确认弹窗 ─────────────────────────── */
   const [deleteTarget, setDeleteTarget] = useState<Agent | null>(null);
@@ -172,6 +188,7 @@ export function AgentManager() {
   }
 
   function openSkillModal(agent: Agent) {
+    if (agent.isSystem && !isAdmin) return;
     setSkillAgent(agent);
     setTempSkills(agent.skillsConfig || {
       exec: false, shell: false, file_write: false, browser: false,
@@ -200,6 +217,7 @@ export function AgentManager() {
 
   function handleDeleteClick(e: React.MouseEvent, agent: Agent) {
     e.stopPropagation();
+    if (agent.isSystem) return;
     setDeleteTarget(agent);
   }
 
@@ -222,10 +240,12 @@ export function AgentManager() {
 
   function handleEditClick(e: React.MouseEvent, agent: Agent) {
     e.stopPropagation();
+    if (agent.isSystem && !isAdmin) return;
     navigate(`/agent-create?id=${agent.id}`);
   }
 
   function handleCardClick(agent: Agent) {
+    if (agent.isSystem && !isAdmin) return;
     navigate(`/agent-create?id=${agent.id}`);
   }
 
@@ -477,7 +497,7 @@ export function AgentManager() {
               <div>
                 <span style={{ fontWeight: 700, fontSize: 16, color: '#1a202c' }}>智能体管理</span>
                 <span style={{ fontSize: 12, color: '#9ca3af', marginLeft: 10 }}>
-                  共 {agentList.length} 个智能体
+                  {loading ? '正在加载智能体...' : `共 ${agentList.length} 个智能体`}
                 </span>
               </div>
             </div>
@@ -488,6 +508,11 @@ export function AgentManager() {
 
           {/* 卡片列表 */}
           <div className="am-scroll">
+            {loading ? (
+              <div style={{ padding: 32, textAlign: 'center', color: '#9ca3af', fontSize: 13 }}>正在加载智能体...</div>
+            ) : agentList.length === 0 ? (
+              <div style={{ padding: 32, textAlign: 'center', color: '#9ca3af', fontSize: 13 }}>暂无智能体，点击右上角创建一个吧</div>
+            ) : (
             <div className="am-grid">
               {agentList.map(agent => (
                 <div key={agent.id} className="am-item" onClick={() => handleCardClick(agent)}>
@@ -495,22 +520,25 @@ export function AgentManager() {
                   <div className="am-item-actions">
                     <button
                       className="am-action-btn am-action-btn-edit"
-                      title="Skill 配置"
+                      title={agent.isSystem && !isAdmin ? '仅管理员可查看平台助手设置' : 'Skill 配置'}
                       onClick={(e) => { e.stopPropagation(); openSkillModal(agent); }}
+                      disabled={!!agent.isSystem && !isAdmin}
                     >
                       <Settings size={12} />
                     </button>
                     <button
                       className="am-action-btn am-action-btn-edit"
-                      title="编辑智能体"
+                      title={agent.isSystem && !isAdmin ? '仅管理员可查看平台助手设置' : '编辑智能体'}
                       onClick={(e) => handleEditClick(e, agent)}
+                      disabled={!!agent.isSystem && !isAdmin}
                     >
                       <Pencil size={12} />
                     </button>
                     <button
                       className="am-action-btn am-action-btn-del"
-                      title="删除智能体"
+                      title={agent.isSystem ? '平台助手不允许删除' : '删除智能体'}
                       onClick={(e) => handleDeleteClick(e, agent)}
+                      disabled={!!agent.isSystem}
                     >
                       <Trash2 size={13} />
                     </button>
@@ -522,7 +550,7 @@ export function AgentManager() {
                       <div className="am-name" style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                         {agent.name}
                         <VisibilityBadge visibility={agent.visibility} />
-                        {agent.modelName && !VALID_MODELS.includes(agent.modelName) && (
+                        {agent.modelName && !isValidModelName(agent.modelName) && (
                           <span style={{
                             display: 'inline-flex', alignItems: 'center', gap: 3,
                             padding: '1px 6px', borderRadius: 10,
@@ -558,6 +586,7 @@ export function AgentManager() {
                 新建智能体
               </div>
             </div>
+            )}
           </div>
 
         </div>

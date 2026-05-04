@@ -12,6 +12,7 @@ export function AuthPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
+
   const [form, setForm] = useState({
     username: "",
     email: "",
@@ -188,6 +189,29 @@ export function AuthPage() {
             </p>
           )}
         </div>
+      </div>
+      {/* 备案信息 */}
+      <div style={{
+        position: "fixed",
+        bottom: 0,
+        left: 0,
+        right: 0,
+        textAlign: "center",
+        padding: "12px 0",
+        background: "rgba(15, 17, 23, 0.8)",
+        borderTop: "1px solid #2e3148",
+        fontSize: 12,
+        color: "#6b7280",
+      }}>
+        南京瑞派斯品牌管理有限公司 备案号：
+        <a
+          href="https://beian.miit.gov.cn/"
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{ color: "#6b7280", textDecoration: "none" }}
+        >
+          苏ICP备2026013998号-1
+        </a>
       </div>
     </div>
   );

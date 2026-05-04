@@ -7,7 +7,10 @@ export interface SessionIndexItem {
   id: string;
   title: string;
   agentId: string;
+  currentAgentId?: string;
   agentIds: string[];
+  sessionCode?: string;
+  currentAgentCode?: string;
   ocSessionKey?: string;
   createdAt: string;
   updatedAt: string;
@@ -29,6 +32,7 @@ export interface SessionDetail extends SessionIndexItem {
 export interface SessionPreview extends SessionIndexItem {
   messages: Array<{
     id: string;
+    messageCode?: string;
     role: 'user' | 'agent';
     content: string;
     createdAt: string;

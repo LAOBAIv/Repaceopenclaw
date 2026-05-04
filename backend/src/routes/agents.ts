@@ -89,236 +89,6 @@ router.get(
 );
 
 /**
- * GET /api/agents/:id
- * 获取单个智能体详情
- */
-router.get(
-  '/:id',
-  authenticate,
-  asyncHandler(async (req: Request, res: Response) => {
-    const agent = AgentService.getById(req.params.id);
-    if (!agent) {
-      throw Errors.notFound('智能体');
-    }
-    sendSuccess(res, agent);
-  })
-);
-
-/**
- * GET /api/agents/:id/token-stats
- * 获取智能体 Token 用量统计
- */
-router.get(
-  '/:id/token-stats',
-  authenticate,
-  asyncHandler(async (req: Request, res: Response) => {
-    const agent = AgentService.getById(req.params.id);
-    if (!agent) {
-      throw Errors.notFound('智能体');
-    }
-
-    const db = getDb();
-
-    // 汇总消息统计
-    const msgResult = db.exec(
-      `SELECT COUNT(*) as msg_count, SUM(token_count) as total_tokens
-       FROM messages WHERE agent_id = ? AND role = 'agent'`,
-      [req.params.id]
-    );
-    
-    const msgRow = msgResult.length && msgResult[0].values.length 
-      ? msgResult[0].values[0] 
-      : [0, 0];
-    
-    const messageCount = Number(msgRow[0]) || 0;
-    const totalFromMessages = Number(msgRow[1]) || 0;
-
-    // 按会话汇总
-    const convResult = db.exec(
-      `SELECT conversation_id,
-              COUNT(*) as msg_count,
-              SUM(token_count) as total_tokens
-       FROM messages
-       WHERE agent_id = ? AND role = 'agent'
-       GROUP BY conversation_id
-       ORDER BY total_tokens DESC`,
-      [req.params.id]
-    );
-
-    const perConversation: Array<{
-      conversationId: string;
-      messageCount: number;
-      totalTokens: number;
-    }> = [];
-
-    if (convResult.length && convResult[0].values.length) {
-      const cols = convResult[0].columns;
-      for (const row of convResult[0].values) {
-        const obj: Record<string, unknown> = {};
-        cols.forEach((c, i) => (obj[c] = row[i]));
-        perConversation.push({
-          conversationId: String(obj.conversation_id),
-          messageCount: Number(obj.msg_count),
-          totalTokens: Number(obj.total_tokens),
-        });
-      }
-    }
-
-    const stats: TokenStats = {
-      agentId: req.params.id,
-      agentName: agent.name,
-      tokenUsed: agent.tokenUsed,
-      tokenFromMessages: totalFromMessages,
-      messageCount,
-      avgTokenPerMsg: messageCount > 0 ? Math.round(totalFromMessages / messageCount) : 0,
-      perConversation,
-    };
-
-    sendSuccess(res, stats);
-  })
-);
-
-/**
- * POST /api/agents
- * 创建新智能体
- */
-router.post(
-  '/',
-  authenticate,
-  asyncHandler(async (req: Request, res: Response) => {
-    const parsed = AgentSchema.safeParse(req.body);
-    
-    if (!parsed.success) {
-      throw Errors.validation('参数验证失败', parsed.error.flatten());
-    }
-
-    const userId = (req as any).user?.id;
-    const agent = AgentService.create({ ...parsed.data, name: parsed.data.name, userId });
-    sendCreated(res, agent, '智能体创建成功');
-  })
-);
-
-/**
- * PUT /api/agents/:id
- * 更新智能体
- */
-router.put(
-  '/:id',
-  authenticate,
-  asyncHandler(async (req: Request, res: Response) => {
-    const parsed = AgentUpdateSchema.safeParse(req.body);
-    
-    if (!parsed.success) {
-      throw Errors.validation('参数验证失败', parsed.error.flatten());
-    }
-
-    const agent = AgentService.update(req.params.id, parsed.data);
-    if (!agent) {
-      throw Errors.notFound('智能体');
-    }
-
-    sendSuccess(res, agent, '智能体更新成功');
-  })
-);
-
-/**
- * DELETE /api/agents/:id
- * 删除智能体
- */
-router.delete(
-  '/:id',
-  authenticate,
-  asyncHandler(async (req: Request, res: Response) => {
-    const agent = AgentService.getById(req.params.id);
-    if (!agent) {
-      throw Errors.notFound('智能体');
-    }
-
-    AgentService.delete(req.params.id);
-    sendSuccess(res, { id: req.params.id }, '智能体删除成功');
-  })
-);
-
-/**
- * POST /api/agents/sync
- * 全量同步：确保所有 agent 都已注册到 OpenClaw
- * 管理权限，用于服务启动后补偿
- */
-router.post(
-  '/sync',
-  authenticate,
-  asyncHandler(async (req: Request, res: Response) => {
-    const userRole = (req as any).user?.role;
-    if (userRole !== 'super_admin' && userRole !== 'admin') {
-      throw Errors.forbidden('需要管理员权限');
-    }
-
-    const report = await AgentBridge.syncAllAgents();
-    sendSuccess(res, report, '同步完成');
-  })
-);
-
-/**
- * GET /api/agents/registry-log
- * 查看 Agent 注册/注销日志（管理员）
- */
-router.get(
-  '/registry-log',
-  authenticate,
-  asyncHandler(async (req: Request, res: Response) => {
-    const userRole = (req as any).user?.role;
-    if (userRole !== 'super_admin' && userRole !== 'admin') {
-      throw Errors.forbidden('需要管理员权限');
-    }
-
-    const db = getDb();
-    const result = db.exec(
-      'SELECT * FROM agent_registry_log ORDER BY created_at DESC LIMIT 100'
-    );
-
-    const logs: Array<Record<string, unknown>> = [];
-    if (result.length && result[0].values.length) {
-      const cols = result[0].columns;
-      for (const row of result[0].values) {
-        const obj: Record<string, unknown> = {};
-        cols.forEach((c, i) => { obj[c] = row[i]; });
-        logs.push(obj);
-      }
-    }
-
-    sendSuccess(res, logs);
-  })
-);
-
-/**
- * GET /api/agents/:id/registry-status
- * 查看单个智能体的 OpenClaw 注册状态
- */
-router.get(
-  '/:id/registry-status',
-  authenticate,
-  asyncHandler(async (req: Request, res: Response) => {
-    const agent = AgentService.getById(req.params.id);
-    if (!agent) {
-      throw Errors.notFound('智能体');
-    }
-
-    const registered = AgentBridge.listRegisteredAgents();
-    const isRegistered = registered.some(a => a.id === agent.openclawAgentId);
-
-    sendSuccess(res, {
-      agentId: agent.id,
-      agentName: agent.name,
-      openclawAgentId: agent.openclawAgentId,
-      isRegistered,
-      workspace: isRegistered ? registered.find(a => a.id === agent.openclawAgentId)?.workspace : null,
-    });
-  })
-);
-
-// ============ 智能体 LLM 路由状态概览 ============
-
-/**
  * GET /api/agents/routing-overview
  * 返回所有智能体的实际 LLM 路由状态（用于管理后台 + 前端展示）
  */
@@ -393,6 +163,254 @@ router.get(
     });
 
     sendSuccess(res, overview);
+  })
+);
+
+/**
+ * GET /api/agents/:id
+ * 获取单个智能体详情
+ */
+router.get(
+  '/:id',
+  authenticate,
+  asyncHandler(async (req: Request, res: Response) => {
+    // Dual-code Phase 2：智能体详情接口支持 UUID / agent_code 双读。
+    const agent = AgentService.getByIdOrCode(req.params.id, (req as any).user?.id);
+    if (!agent) {
+      throw Errors.notFound('智能体');
+    }
+    if (agent.isSystem && (req as any).user?.role !== 'admin' && (req as any).user?.role !== 'super_admin') {
+      throw Errors.forbidden('平台助手设置仅管理员可查看');
+    }
+    sendSuccess(res, agent);
+  })
+);
+
+/**
+ * GET /api/agents/:id/token-stats
+ * 获取智能体 Token 用量统计
+ */
+router.get(
+  '/:id/token-stats',
+  authenticate,
+  asyncHandler(async (req: Request, res: Response) => {
+    const agent = AgentService.getByIdOrCode(req.params.id, (req as any).user?.id);
+    if (!agent) {
+      throw Errors.notFound('智能体');
+    }
+
+    const db = getDb();
+
+    // Dual-code Phase 2：统计查询必须落到真实 UUID，不能直接拿路由参数。
+    const msgResult = db.exec(
+      `SELECT COUNT(*) as msg_count, SUM(token_count) as total_tokens
+       FROM messages WHERE agent_id = ? AND role = 'agent'`,
+      [agent.id]
+    );
+    
+    const msgRow = msgResult.length && msgResult[0].values.length 
+      ? msgResult[0].values[0] 
+      : [0, 0];
+    
+    const messageCount = Number(msgRow[0]) || 0;
+    const totalFromMessages = Number(msgRow[1]) || 0;
+
+    // 按会话汇总
+    const convResult = db.exec(
+      `SELECT conversation_id,
+              COUNT(*) as msg_count,
+              SUM(token_count) as total_tokens
+       FROM messages
+       WHERE agent_id = ? AND role = 'agent'
+       GROUP BY conversation_id
+       ORDER BY total_tokens DESC`,
+      [agent.id]
+    );
+
+    const perConversation: Array<{
+      conversationId: string;
+      messageCount: number;
+      totalTokens: number;
+    }> = [];
+
+    if (convResult.length && convResult[0].values.length) {
+      const cols = convResult[0].columns;
+      for (const row of convResult[0].values) {
+        const obj: Record<string, unknown> = {};
+        cols.forEach((c, i) => (obj[c] = row[i]));
+        perConversation.push({
+          conversationId: String(obj.conversation_id),
+          messageCount: Number(obj.msg_count),
+          totalTokens: Number(obj.total_tokens),
+        });
+      }
+    }
+
+    const stats: TokenStats = {
+      agentId: agent.id,
+      agentName: agent.name,
+      tokenUsed: agent.tokenUsed,
+      tokenFromMessages: totalFromMessages,
+      messageCount,
+      avgTokenPerMsg: messageCount > 0 ? Math.round(totalFromMessages / messageCount) : 0,
+      perConversation,
+    };
+
+    sendSuccess(res, stats);
+  })
+);
+
+/**
+ * POST /api/agents
+ * 创建新智能体
+ */
+router.post(
+  '/',
+  authenticate,
+  asyncHandler(async (req: Request, res: Response) => {
+    const parsed = AgentSchema.safeParse(req.body);
+    
+    if (!parsed.success) {
+      throw Errors.validation('参数验证失败', parsed.error.flatten());
+    }
+
+    const userId = (req as any).user?.id;
+    const agent = AgentService.create({ ...parsed.data, name: parsed.data.name, userId });
+    sendCreated(res, agent, '智能体创建成功');
+  })
+);
+
+/**
+ * PUT /api/agents/:id
+ * 更新智能体
+ */
+router.put(
+  '/:id',
+  authenticate,
+  asyncHandler(async (req: Request, res: Response) => {
+    const parsed = AgentUpdateSchema.safeParse(req.body);
+    
+    if (!parsed.success) {
+      throw Errors.validation('参数验证失败', parsed.error.flatten());
+    }
+
+    const current = AgentService.getByIdOrCode(req.params.id, (req as any).user?.id);
+    if (!current) {
+      throw Errors.notFound('智能体');
+    }
+    if (current.isSystem && (req as any).user?.role !== 'admin' && (req as any).user?.role !== 'super_admin') {
+      throw Errors.forbidden('平台助手参数仅管理员可修改');
+    }
+
+    const resolvedAgentId = AgentService.resolveId(req.params.id, (req as any).user?.id);
+    if (!resolvedAgentId) {
+      throw Errors.notFound('智能体');
+    }
+
+    const agent = AgentService.update(resolvedAgentId, parsed.data);
+    if (!agent) {
+      throw Errors.notFound('智能体');
+    }
+
+    sendSuccess(res, agent, '智能体更新成功');
+  })
+);
+
+/**
+ * DELETE /api/agents/:id
+ * 删除智能体
+ */
+router.delete(
+  '/:id',
+  authenticate,
+  asyncHandler(async (req: Request, res: Response) => {
+    const agent = AgentService.getByIdOrCode(req.params.id, (req as any).user?.id);
+    if (!agent) {
+      throw Errors.notFound('智能体');
+    }
+    if (agent.isSystem) {
+      throw Errors.forbidden('平台助手不允许删除');
+    }
+
+    AgentService.delete(agent.id);
+    sendSuccess(res, { id: agent.id }, '智能体删除成功');
+  })
+);
+
+/**
+ * POST /api/agents/sync
+ * 全量同步：确保所有 agent 都已注册到 OpenClaw
+ * 管理权限，用于服务启动后补偿
+ */
+router.post(
+  '/sync',
+  authenticate,
+  asyncHandler(async (req: Request, res: Response) => {
+    const userRole = (req as any).user?.role;
+    if (userRole !== 'super_admin' && userRole !== 'admin') {
+      throw Errors.forbidden('需要管理员权限');
+    }
+
+    const report = await AgentBridge.syncAllAgents();
+    sendSuccess(res, report, '同步完成');
+  })
+);
+
+/**
+ * GET /api/agents/registry-log
+ * 查看 Agent 注册/注销日志（管理员）
+ */
+router.get(
+  '/registry-log',
+  authenticate,
+  asyncHandler(async (req: Request, res: Response) => {
+    const userRole = (req as any).user?.role;
+    if (userRole !== 'super_admin' && userRole !== 'admin') {
+      throw Errors.forbidden('需要管理员权限');
+    }
+
+    const db = getDb();
+    const result = db.exec(
+      'SELECT * FROM agent_registry_log ORDER BY created_at DESC LIMIT 100'
+    );
+
+    const logs: Array<Record<string, unknown>> = [];
+    if (result.length && result[0].values.length) {
+      const cols = result[0].columns;
+      for (const row of result[0].values) {
+        const obj: Record<string, unknown> = {};
+        cols.forEach((c, i) => { obj[c] = row[i]; });
+        logs.push(obj);
+      }
+    }
+
+    sendSuccess(res, logs);
+  })
+);
+
+/**
+ * GET /api/agents/:id/registry-status
+ * 查看单个智能体的 OpenClaw 注册状态
+ */
+router.get(
+  '/:id/registry-status',
+  authenticate,
+  asyncHandler(async (req: Request, res: Response) => {
+    const agent = AgentService.getByIdOrCode(req.params.id, (req as any).user?.id);
+    if (!agent) {
+      throw Errors.notFound('智能体');
+    }
+
+    const registered = AgentBridge.listRegisteredAgents();
+    const isRegistered = registered.some(a => a.id === agent.openclawAgentId);
+
+    sendSuccess(res, {
+      agentId: agent.id,
+      agentName: agent.name,
+      openclawAgentId: agent.openclawAgentId,
+      isRegistered,
+      workspace: isRegistered ? registered.find(a => a.id === agent.openclawAgentId)?.workspace : null,
+    });
   })
 );
 

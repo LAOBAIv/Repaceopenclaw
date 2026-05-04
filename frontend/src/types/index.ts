@@ -2,8 +2,10 @@
 // 架构版本: v2 — taskId/sessionId 1:1 绑定，ID 编码规范化
 
 export interface Agent {
-  /** 8 位字母数字，同一用户下唯一 */
+  /** 底层主键 UUID */
   id: string;
+  /** 业务智能体编码：8 位，同一用户下唯一 */
+  agentCode?: string;
   name: string;
   color: string;
   systemPrompt: string;
@@ -34,6 +36,7 @@ export interface Agent {
     maxTokensPerMessage?: number;
   };
   createdAt: string;
+  isSystem?: boolean;
 }
 
 export interface WorkflowNode {
@@ -65,25 +68,33 @@ export interface Project {
  * taskId 与 sessionId 严格 1:1，两者同值
  */
 export interface Conversation {
-  /** 会话 ID，格式同 taskId（21 位） */
+  /** 底层主键 UUID（当前过渡期也可能与 taskId 同值） */
   id: string;
-  /** 关联任务 ID（= id，1:1 冗余便于查询） */
-  taskId: string;
+  /** 关联任务 UUID */
+  taskId: string | null;
+  /** 业务会话编码（外显 / 排障 / 日志优先使用） */
+  sessionCode?: string;
   projectId: string | null;
-  /** 参与此会话的智能体 id 列表（≥1） */
+  /** 参与此会话的智能体 UUID 列表（≥1） */
   agentIds: string[];
-  /** 当前正在对话的智能体 ID */
+  /** 当前正在对话的智能体 UUID */
   currentAgentId: string;
-  /** @deprecated 兼容字段，新代码使用 agentIds */
+  /** 业务当前智能体编码：sessionCode + agentCode */
+  currentAgentCode?: string;
+  /** @deprecated 兼容字段，新代码优先使用 currentAgentId / agentIds */
   agentId: string;
   title: string;
   createdAt: string;
+  /** 会话状态：'in_progress' | 'completed' | 'archived' | 'deleted' */
+  status?: 'in_progress' | 'completed' | 'archived' | 'deleted';
 }
 
 export interface Message {
-  /** taskId + 6 位序号（27 位），例: u5a9B2xK7m_04281200_a3000001 */
+  /** 底层主键 UUID */
   id: string;
-  /** 所属会话 ID（= taskId） */
+  /** 业务消息编码：sessionCode + 6 位序号 */
+  messageCode?: string;
+  /** 所属会话 UUID */
   conversationId: string;
   role: "user" | "agent";
   content: string;
@@ -136,4 +147,34 @@ export interface AgentTemplate {
   outputFormat: string;
   githubSource: string;
   createdAt: string;
+}
+
+export interface DepartmentNode {
+  id: string;
+  departmentCode: string;
+  name: string;
+  parentId: string | null;
+  ownerUserId: string;
+  description: string;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
+  userCount: number;
+  children: DepartmentNode[];
+}
+
+export interface OrganizationUser {
+  id: string;
+  userCode?: string;
+  username: string;
+  email: string;
+  role: 'super_admin' | 'admin' | 'user';
+  status: string;
+  avatar: string;
+  lastLoginAt: string;
+  createdAt: string;
+  updatedAt: string;
+  primaryDepartmentId: string | null;
+  primaryDepartmentName: string | null;
+  primaryDepartmentCode: string | null;
 }

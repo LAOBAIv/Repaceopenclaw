@@ -6,6 +6,7 @@ export { SkillPanel } from './SkillPanel';
 export { SchedulePanel } from './SchedulePanel';
 export { ShortcutPanel } from './ShortcutPanel';
 export { TagPanel, getTagColor, TAG_COLOR_POOL, PRESET_TAGS } from './TagPanel';
+export { TaskTagPanel } from './TaskTagPanel';
 
 export {
   FUNCTION_TABS,

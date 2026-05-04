@@ -2,6 +2,7 @@ import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { v4 as uuidv4 } from "uuid";
 import { getDb, saveDb } from "../db/client";
+import { IdGenerator } from "../utils/IdGenerator";
 
 const JWT_SECRET = process.env.JWT_SECRET || "repaceclaw_jwt_secret_2026";
 const JWT_EXPIRES_IN = "7d";
@@ -11,6 +12,8 @@ export type UserRole = "super_admin" | "admin" | "user";
 
 export interface User {
   id: string;
+  /** 业务用户编码：u + 9位随机 */
+  user_code?: string;
   username: string;
   email: string;
   role: UserRole;
@@ -19,6 +22,9 @@ export interface User {
   last_login_at: string;
   created_at: string;
   updated_at: string;
+  primary_department_id?: string | null;
+  primary_department_name?: string | null;
+  primary_department_code?: string | null;
 }
 
 export interface RegisterInput {
@@ -41,14 +47,18 @@ export interface AuthResult {
 function rowToUser(row: any[]): User {
   return {
     id: row[0] as string,
-    username: row[1] as string,
-    email: row[2] as string,
-    role: row[3] as UserRole,
-    status: row[4] as string,
-    avatar: row[5] as string,
-    last_login_at: row[6] as string,
-    created_at: row[7] as string,
-    updated_at: row[8] as string,
+    user_code: row[1] as string,
+    username: row[2] as string,
+    email: row[3] as string,
+    role: row[4] as UserRole,
+    status: row[5] as string,
+    avatar: row[6] as string,
+    last_login_at: row[7] as string,
+    created_at: row[8] as string,
+    updated_at: row[9] as string,
+    primary_department_id: (row[10] as string) || null,
+    primary_department_name: (row[11] as string) || null,
+    primary_department_code: (row[12] as string) || null,
   };
 }
 
@@ -74,17 +84,19 @@ export class UserService {
     const role: UserRole = count === 0 ? "super_admin" : (input.role || "user");
 
     const id = uuidv4();
+    const userCode = IdGenerator.userCode();
     const passwordHash = await bcrypt.hash(input.password, SALT_ROUNDS);
 
+    // Dual-code Phase 1：用户注册开始双写 UUID + user_code
     db.run(
-      `INSERT INTO users (id, username, email, password_hash, role, status, avatar, last_login_at, created_at, updated_at)
-       VALUES (?,?,?,?,?,?,?,?,?,?)`,
-      [id, input.username, input.email, passwordHash, role, "active", "", "", now, now]
+      `INSERT INTO users (id, user_code, username, email, password_hash, role, status, avatar, last_login_at, created_at, updated_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+      [id, userCode, input.username, input.email, passwordHash, role, "active", "", "", now, now]
     );
     saveDb();
 
     const user: User = {
-      id, username: input.username, email: input.email,
+      id, user_code: userCode, username: input.username, email: input.email,
       role, status: "active", avatar: "", last_login_at: "", created_at: now, updated_at: now,
     };
 
@@ -98,7 +110,7 @@ export class UserService {
     const now = new Date().toISOString();
 
     const res = db.exec(
-      "SELECT id, username, email, password_hash, role, status, avatar, last_login_at, created_at, updated_at FROM users WHERE email=?",
+      "SELECT id, user_code, username, email, password_hash, role, status, avatar, last_login_at, created_at, updated_at FROM users WHERE email=?",
       [input.email]
     );
     if (!res.length || !res[0].values.length) {
@@ -106,8 +118,8 @@ export class UserService {
     }
 
     const row = res[0].values[0];
-    const passwordHash = row[3] as string;
-    const status = row[5] as string;
+    const passwordHash = row[4] as string;
+    const status = row[6] as string;
 
     if (status !== "active") {
       throw new Error("账号已被禁用，请联系管理员");
@@ -122,7 +134,7 @@ export class UserService {
     db.run("UPDATE users SET last_login_at=?, updated_at=? WHERE id=?", [now, now, row[0]]);
     saveDb();
 
-    const user = rowToUser([row[0], row[1], row[2], row[4], row[5], row[6], now, row[8], row[9]]);
+    const user = rowToUser([row[0], row[1], row[2], row[3], row[5], row[6], row[7], now, row[9], row[10]]);
     const token = UserService.generateToken(user);
     return { user, token };
   }
@@ -131,7 +143,15 @@ export class UserService {
   static listUsers(): User[] {
     const db = getDb();
     const res = db.exec(
-      "SELECT id, username, email, role, status, avatar, last_login_at, created_at, updated_at FROM users ORDER BY created_at DESC"
+      `SELECT
+         u.id, u.user_code, u.username, u.email, u.role, u.status, u.avatar, u.last_login_at, u.created_at, u.updated_at,
+         d.id as primary_department_id,
+         d.name as primary_department_name,
+         d.department_code as primary_department_code
+       FROM users u
+       LEFT JOIN user_org_scope uos ON uos.user_id = u.id AND uos.is_primary = 1 AND uos.status = 'active'
+       LEFT JOIN departments d ON d.id = uos.department_id
+       ORDER BY u.created_at DESC`
     );
     if (!res.length) return [];
     return res[0].values.map(rowToUser);
@@ -141,7 +161,15 @@ export class UserService {
   static getUserById(id: string): User | null {
     const db = getDb();
     const res = db.exec(
-      "SELECT id, username, email, role, status, avatar, last_login_at, created_at, updated_at FROM users WHERE id=?",
+      `SELECT
+         u.id, u.user_code, u.username, u.email, u.role, u.status, u.avatar, u.last_login_at, u.created_at, u.updated_at,
+         d.id as primary_department_id,
+         d.name as primary_department_name,
+         d.department_code as primary_department_code
+       FROM users u
+       LEFT JOIN user_org_scope uos ON uos.user_id = u.id AND uos.is_primary = 1 AND uos.status = 'active'
+       LEFT JOIN departments d ON d.id = uos.department_id
+       WHERE u.id=?`,
       [id]
     );
     if (!res.length || !res[0].values.length) return null;

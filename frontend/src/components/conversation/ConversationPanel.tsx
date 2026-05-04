@@ -24,10 +24,18 @@ export function ConversationPanel({
 }: ConversationPanelProps) {
   const [input, setInput] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const prevMsgCountRef = useRef(0);
 
   // 自动滚动到底部
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    const msgCount = messages?.length || 0;
+    // 只在新增消息时自动滚动，流式更新内容时不触发，防止页面闪烁
+    if (msgCount > prevMsgCountRef.current) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    } else if (msgCount < prevMsgCountRef.current) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'auto' });
+    }
+    prevMsgCountRef.current = msgCount;
   }, [messages]);
 
   const handleSend = () => {

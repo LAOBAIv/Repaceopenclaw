@@ -18,7 +18,13 @@ export function NewTabModal({ open, onClose, onCreated }: NewTabModalProps) {
   const [taskName, setTaskName] = useState('');
   const [selectedAgentIds, setSelectedAgentIds] = useState<string[]>([]);
   const [creating, setCreating] = useState(false);
-  const { agents } = useAgentStore();
+  const { agents: allAgents } = useAgentStore();
+  // ⚠️ 平台助手不在标签栏可选范围内（仅侧边栏入口可用）
+  const agents = allAgents.filter(a =>
+    !(a.id === '24cf6cc5-da0d-48df-814e-11582e398007'
+      || a.id === 'platform-assistant'
+      || a.id === 'repaceclaw-platform-assistant')
+  );
 
   if (!open) return null;
 
@@ -47,29 +53,53 @@ export function NewTabModal({ open, onClose, onCreated }: NewTabModalProps) {
       const selectedAgents = agents.filter(a => selectedAgentIds.includes(a.id));
       const mainAgent = selectedAgents[0];
 
-      // 调用后端创建会话+概述
-      const result = await conversationsApi.createWithOverview({
-        title: taskName.trim(),
-        agentIds: selectedAgentIds,
-        description: '',
-      });
+      // ⚠️ 平台助手不在标签栏可选范围内（仅侧边栏入口可用）
+      const filteredAgents = agents.filter(a =>
+        !(a.id === '24cf6cc5-da0d-48df-814e-11582e398007'
+          || a.id === 'platform-assistant'
+          || a.id === 'repaceclaw-platform-assistant')
+      );
 
-      // 创建前端 Panel（直接 setState）
-      const panel = {
-        id: result.id,
-        conversationId: result.id,
-        agentId: mainAgent.id,
-        agentIds: result.agentIds?.length ? result.agentIds : selectedAgentIds,
-        agentName: mainAgent.name,
-        agentColor: mainAgent.color ?? '#6366f1',
-        messages: result.messages || [],
-        isStreaming: false,
-      };
-      useConversationStore.setState(state => ({ openPanels: [...state.openPanels, panel] }));
+      if (selectedAgentIds.length === 1 && (mainAgent.id === '24cf6cc5-da0d-48df-814e-11582e398007' || mainAgent.id === 'platform-assistant' || mainAgent.id === 'repaceclaw-platform-assistant')) {
+        const panelId = await useConversationStore.getState().openPanel({
+          agentId: mainAgent.id,
+          agentName: mainAgent.name,
+          agentColor: mainAgent.color ?? '#2563eb',
+          initialMessage: taskName.trim(),
+          forceNew: true,
+        });
+        if (panelId) {
+          onCreated(panelId, mainAgent.name, mainAgent.color ?? '#2563eb', taskName.trim());
+          showToast('平台助手会话创建成功', 'success');
+        }
+        resetAndClose();
+      } else {
+        // 调用后端创建会话+概述
+        const result = await conversationsApi.createWithOverview({
+          title: taskName.trim(),
+          agentIds: selectedAgentIds,
+          description: '',
+        });
 
-      onCreated(result.id, mainAgent.name, mainAgent.color ?? '#6366f1', taskName.trim());
-      showToast(`${isProject ? '协作项目' : '会话'}创建成功`, 'success');
-      resetAndClose();
+        // 创建前端 Panel（直接 setState）
+        const panel = {
+          id: result.id,
+          conversationId: result.id,
+          sessionCode: result.sessionCode,
+          agentId: result.currentAgentId || mainAgent.id,
+          currentAgentCode: result.currentAgentCode,
+          agentIds: result.agentIds?.length ? result.agentIds : selectedAgentIds,
+          agentName: mainAgent.name,
+          agentColor: mainAgent.color ?? '#6366f1',
+          messages: result.messages || [],
+          isStreaming: false,
+        };
+        useConversationStore.setState(state => ({ openPanels: [...state.openPanels, panel] }));
+
+        onCreated(result.id, mainAgent.name, mainAgent.color ?? '#6366f1', taskName.trim());
+        showToast(`${isProject ? '协作项目' : '会话'}创建成功`, 'success');
+        resetAndClose();
+      }
     } catch (err: any) {
       console.error('[NewTabModal] 创建失败:', err);
       showToast('创建失败：' + (err?.response?.data?.error || err?.message || '未知错误'), 'error');

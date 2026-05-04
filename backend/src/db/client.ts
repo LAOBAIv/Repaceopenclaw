@@ -3,6 +3,7 @@ import initSqlJs, { Database } from "sql.js";
 import path from "path";
 import fs from "fs";
 import { dbConfig } from "./config";
+import { IdGenerator } from "../utils/IdGenerator";
 
 let db: any;
 const DB_PATH = path.join(__dirname, "../../data/platform.db");
@@ -44,8 +45,22 @@ export async function initDb(): Promise<any> {
   createTables(db);
   // Seed default skills & plugins on first run (idempotent — skips if already present)
   seedDefaultData(db);
+  // Dual-code Phase 1: 回填 *_code 字段，但不动现有 UUID 主键关系。
+  // 目标是让“新数据开始双写、老数据尽快可读”，同时避免一次性大迁移把现网跑挂。
+  backfillBusinessCodes(db);
   saveDb();
   return db;
+}
+
+function execToRows(db: any, sql: string, params?: any[]): any[] {
+  const result = params ? db.exec(sql, params) : db.exec(sql);
+  if (!result.length) return [];
+  const cols = result[0].columns;
+  return result[0].values.map((row: any[]) => {
+    const obj: any = {};
+    cols.forEach((c: string, i: number) => (obj[c] = row[i]));
+    return obj;
+  });
 }
 
 function createTables(db: any) {
@@ -83,6 +98,9 @@ function createTables(db: any) {
   try { db.run("ALTER TABLE agents ADD COLUMN presence_penalty REAL NOT NULL DEFAULT 0"); } catch {}
   // Migrate: add user_id to agents (Phase 1: 多租户隔离)
   try { db.run("ALTER TABLE agents ADD COLUMN user_id TEXT NOT NULL DEFAULT ''"); } catch {}
+  // Dual-code Phase 1: agent_code 作为业务智能体编码，底层主键仍保留 id(UUID)
+  try { db.run("ALTER TABLE agents ADD COLUMN agent_code TEXT NOT NULL DEFAULT ''"); } catch {}
+  try { db.run("CREATE UNIQUE INDEX IF NOT EXISTS idx_agents_user_agent_code ON agents(user_id, agent_code)"); } catch {}
   // Token 接入字段：用户为该智能体配置的私有 API Key
   try { db.run("ALTER TABLE agents ADD COLUMN token_provider TEXT NOT NULL DEFAULT ''"); } catch {}
   try { db.run("ALTER TABLE agents ADD COLUMN token_api_key TEXT NOT NULL DEFAULT ''"); } catch {}
@@ -178,6 +196,9 @@ function createTables(db: any) {
   `);
   // Migrate: add user_id to tasks (Phase 2: 多租户隔离)
   try { db.run("ALTER TABLE tasks ADD COLUMN user_id TEXT NOT NULL DEFAULT ''"); } catch {}
+  // Dual-code Phase 1: task_code 作为业务任务编码（session_code 将与之对齐）
+  try { db.run("ALTER TABLE tasks ADD COLUMN task_code TEXT NOT NULL DEFAULT ''"); } catch {}
+  try { db.run("CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_task_code ON tasks(task_code)"); } catch {}
   // Migrate: add agent_id and created_by to existing tasks table (idempotent)
   try { db.run("ALTER TABLE tasks ADD COLUMN agent_id TEXT NOT NULL DEFAULT ''"); } catch {}
   try { db.run("ALTER TABLE tasks ADD COLUMN created_by TEXT"); } catch {}
@@ -225,6 +246,21 @@ function createTables(db: any) {
   try { db.run("ALTER TABLE conversations ADD COLUMN task_id TEXT UNIQUE"); } catch {}
   try { db.run("ALTER TABLE conversations ADD COLUMN created_by TEXT"); } catch {}
   try { db.run("ALTER TABLE conversations ADD COLUMN current_agent_id TEXT NOT DEFAULT ''"); } catch {}
+  // Dual-code Phase 1: session_code / current_agent_code 作为业务会话编码与业务当前智能体编码
+  try { db.run("ALTER TABLE conversations ADD COLUMN session_code TEXT NOT NULL DEFAULT ''"); } catch {}
+  try { db.run("ALTER TABLE conversations ADD COLUMN current_agent_code TEXT NOT NULL DEFAULT ''"); } catch {}
+  try { db.run("CREATE INDEX IF NOT EXISTS idx_conversations_session_code ON conversations(session_code)"); } catch {}
+  try { db.run("CREATE INDEX IF NOT EXISTS idx_conversations_current_agent_code ON conversations(current_agent_code)"); } catch {}
+  // Status: 会话状态（in_progress | completed | archived）
+  try { db.run("ALTER TABLE conversations ADD COLUMN status TEXT NOT NULL DEFAULT 'in_progress'"); } catch {}
+  try { db.run("CREATE INDEX IF NOT EXISTS idx_conversations_status ON conversations(status)"); } catch {}
+  // V1 Session 基础字段：为后续共享/独享、组织作用域、摘要聚合预留，但当前先只在会话层落结构。
+  try { db.run("ALTER TABLE conversations ADD COLUMN scope_type TEXT NOT NULL DEFAULT 'user'"); } catch {}
+  try { db.run("ALTER TABLE conversations ADD COLUMN scope_id TEXT NOT NULL DEFAULT ''"); } catch {}
+  try { db.run("ALTER TABLE conversations ADD COLUMN memory_policy TEXT NOT NULL DEFAULT 'private'"); } catch {}
+  try { db.run("ALTER TABLE conversations ADD COLUMN summary TEXT NOT NULL DEFAULT ''"); } catch {}
+  try { db.run("ALTER TABLE conversations ADD COLUMN last_message_at TEXT NOT NULL DEFAULT ''"); } catch {}
+  try { db.run("CREATE INDEX IF NOT EXISTS idx_conversations_scope ON conversations(scope_type, scope_id)"); } catch {}
 
   // Migrate: drop old agent_id column (SQLite does not support DROP COLUMN before 3.35;
   // we simply ignore it — the column stays but is no longer used)
@@ -277,6 +313,9 @@ function createTables(db: any) {
   `);
   // Migrate: add user_id to messages (Phase 1: 多租户隔离)
   try { db.run("ALTER TABLE messages ADD COLUMN user_id TEXT NOT NULL DEFAULT ''"); } catch {}
+  // Dual-code Phase 1: message_code 作为业务消息编码，底层主键仍为 id(UUID)
+  try { db.run("ALTER TABLE messages ADD COLUMN message_code TEXT NOT NULL DEFAULT ''"); } catch {}
+  try { db.run("CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_message_code ON messages(message_code)"); } catch {}
   // Migrate: add token_count to existing messages table (idempotent)
   try { db.run("ALTER TABLE messages ADD COLUMN token_count INTEGER NOT NULL DEFAULT 0"); } catch {}
 
@@ -398,6 +437,120 @@ function createTables(db: any) {
       updated_at TEXT NOT NULL
     )
   `);
+  // Dual-code Phase 1: user_code 作为 10 位业务用户编码，底层主键仍为 id(UUID)
+  try { db.run("ALTER TABLE users ADD COLUMN user_code TEXT NOT NULL DEFAULT ''"); } catch {}
+  try { db.run("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_user_code ON users(user_code)"); } catch {}
+
+  // ── V1 Organization / Permission Foundation ────────────────────────────────
+  db.run(`
+    CREATE TABLE IF NOT EXISTS departments (
+      id TEXT PRIMARY KEY,
+      department_code TEXT NOT NULL DEFAULT '',
+      name TEXT NOT NULL,
+      parent_id TEXT,
+      owner_user_id TEXT NOT NULL DEFAULT '',
+      description TEXT NOT NULL DEFAULT '',
+      status TEXT NOT NULL DEFAULT 'active',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (parent_id) REFERENCES departments(id) ON DELETE SET NULL
+    )
+  `);
+  db.run(`CREATE UNIQUE INDEX IF NOT EXISTS idx_departments_code ON departments(department_code)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_departments_parent_id ON departments(parent_id)`);
+
+  db.run(`
+    CREATE TABLE IF NOT EXISTS roles (
+      id TEXT PRIMARY KEY,
+      role_code TEXT NOT NULL DEFAULT '',
+      name TEXT NOT NULL,
+      scope_type TEXT NOT NULL DEFAULT 'department',
+      scope_id TEXT NOT NULL DEFAULT '',
+      description TEXT NOT NULL DEFAULT '',
+      permissions_json TEXT NOT NULL DEFAULT '{}',
+      status TEXT NOT NULL DEFAULT 'active',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    )
+  `);
+  db.run(`CREATE UNIQUE INDEX IF NOT EXISTS idx_roles_code ON roles(role_code)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_roles_scope ON roles(scope_type, scope_id)`);
+
+  db.run(`
+    CREATE TABLE IF NOT EXISTS permission_templates (
+      id TEXT PRIMARY KEY,
+      template_code TEXT NOT NULL DEFAULT '',
+      name TEXT NOT NULL,
+      description TEXT NOT NULL DEFAULT '',
+      template_type TEXT NOT NULL DEFAULT 'base',
+      config_json TEXT NOT NULL DEFAULT '{}',
+      status TEXT NOT NULL DEFAULT 'active',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    )
+  `);
+  db.run(`CREATE UNIQUE INDEX IF NOT EXISTS idx_permission_templates_code ON permission_templates(template_code)`);
+
+  db.run(`
+    CREATE TABLE IF NOT EXISTS user_org_scope (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      department_id TEXT,
+      role_id TEXT,
+      permission_template_id TEXT,
+      title TEXT NOT NULL DEFAULT '',
+      is_primary INTEGER NOT NULL DEFAULT 0,
+      status TEXT NOT NULL DEFAULT 'active',
+      joined_at TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY (department_id) REFERENCES departments(id) ON DELETE SET NULL,
+      FOREIGN KEY (role_id) REFERENCES roles(id) ON DELETE SET NULL,
+      FOREIGN KEY (permission_template_id) REFERENCES permission_templates(id) ON DELETE SET NULL
+    )
+  `);
+  db.run(`CREATE UNIQUE INDEX IF NOT EXISTS idx_user_org_scope_unique ON user_org_scope(user_id, department_id, role_id)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_user_org_scope_user ON user_org_scope(user_id)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_user_org_scope_department ON user_org_scope(department_id)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_user_org_scope_role ON user_org_scope(role_id)`);
+
+  db.run(`
+    CREATE TABLE IF NOT EXISTS user_proxy_grants (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      agent_id TEXT NOT NULL,
+      grant_type TEXT NOT NULL DEFAULT 'use',
+      scope_type TEXT NOT NULL DEFAULT 'direct',
+      scope_id TEXT NOT NULL DEFAULT '',
+      created_by TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY (agent_id) REFERENCES agents(id) ON DELETE CASCADE
+    )
+  `);
+  db.run(`CREATE UNIQUE INDEX IF NOT EXISTS idx_user_proxy_grants_unique ON user_proxy_grants(user_id, agent_id, grant_type, scope_type, scope_id)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_user_proxy_grants_user ON user_proxy_grants(user_id)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_user_proxy_grants_agent ON user_proxy_grants(agent_id)`);
+
+  db.run(`
+    CREATE TABLE IF NOT EXISTS user_data_grants (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      resource_type TEXT NOT NULL,
+      resource_id TEXT NOT NULL DEFAULT '',
+      grant_type TEXT NOT NULL DEFAULT 'read',
+      scope_type TEXT NOT NULL DEFAULT 'direct',
+      scope_id TEXT NOT NULL DEFAULT '',
+      created_by TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    )
+  `);
+  db.run(`CREATE UNIQUE INDEX IF NOT EXISTS idx_user_data_grants_unique ON user_data_grants(user_id, resource_type, resource_id, grant_type, scope_type, scope_id)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_user_data_grants_user ON user_data_grants(user_id)`);
 
   // ── Plugins ─────────────────────────────────────────────────────────────────
   db.run(`
@@ -457,10 +610,12 @@ function createTables(db: any) {
       session_file    TEXT NOT NULL DEFAULT '',
       agent_id        TEXT NOT NULL DEFAULT '',
       agent_ids       TEXT NOT NULL DEFAULT '[]',
+      channel         TEXT NOT NULL DEFAULT 'repaceclaw',
       created_at      TEXT NOT NULL,
       updated_at      TEXT NOT NULL
     )
   `);
+  try { db.run("ALTER TABLE session_mapping ADD COLUMN channel TEXT NOT NULL DEFAULT 'repaceclaw'"); } catch {}
   db.run(`CREATE INDEX IF NOT EXISTS session_mapping_conv_id ON session_mapping(conversation_id)`);
 
   // ── 用量统计（配额限制基础）─────────────────────────────────────────────
@@ -477,6 +632,90 @@ function createTables(db: any) {
     )
   `);
   db.run(`CREATE INDEX IF NOT EXISTS usage_stats_date ON usage_stats(date)`);
+}
+
+// ── Dual-code backfill（idempotent）──────────────────────────────────────────
+function backfillBusinessCodes(db: any) {
+  // 设计原则：
+  // 1) 只补业务码，不改 UUID 主键，不重写外键
+  // 2) 幂等执行：重复启动不会重复生成已存在的业务码
+  // 3) 旧数据优先复用已有 taskId 语义，减少会话链路抖动
+
+  // users.user_code
+  for (const row of execToRows(db, "SELECT id, user_code FROM users")) {
+    if (!row.user_code) {
+      let userCode = '';
+      do {
+        userCode = IdGenerator.userCode();
+      } while (execToRows(db, "SELECT id FROM users WHERE user_code=? AND id<>?", [userCode, row.id]).length);
+      db.run("UPDATE users SET user_code=? WHERE id=?", [userCode, row.id]);
+    }
+  }
+
+  // agents.agent_code（同用户唯一）
+  for (const row of execToRows(db, "SELECT id, user_id, agent_code FROM agents")) {
+    if (!row.agent_code) {
+      let agentCode = '';
+      do {
+        agentCode = IdGenerator.agentCode();
+      } while (execToRows(db, "SELECT id FROM agents WHERE user_id=? AND agent_code=? AND id<>?", [row.user_id || '', agentCode, row.id]).length);
+      db.run("UPDATE agents SET agent_code=? WHERE id=?", [agentCode, row.id]);
+    }
+  }
+
+  // tasks.task_code
+  // task_code 是后续 session_code 的来源，因此先补 task，再补 conversation。
+  for (const row of execToRows(db, "SELECT id, user_id, task_code FROM tasks")) {
+    if (!row.task_code) {
+      const user = execToRows(db, "SELECT user_code FROM users WHERE id=?", [row.user_id || ''])[0];
+      const userCode = user?.user_code || IdGenerator.userCode();
+      let taskCode = '';
+      do {
+        taskCode = IdGenerator.taskCode(userCode);
+      } while (execToRows(db, "SELECT id FROM tasks WHERE task_code=? AND id<>?", [taskCode, row.id]).length);
+      db.run("UPDATE tasks SET task_code=? WHERE id=?", [taskCode, row.id]);
+    }
+  }
+
+  // conversations.session_code / current_agent_code
+  // 优先级：tasks.task_code > 历史业务 taskId > 重新生成。
+  for (const row of execToRows(db, "SELECT id, user_id, task_id, session_code, current_agent_id, current_agent_code FROM conversations")) {
+    let sessionCode = row.session_code || '';
+    if (!sessionCode) {
+      const task = row.task_id ? execToRows(db, "SELECT task_code FROM tasks WHERE id=?", [row.task_id])[0] : null;
+      if (task?.task_code) {
+        sessionCode = task.task_code;
+      } else if (row.task_id && IdGenerator.validate.taskId(String(row.task_id))) {
+        // 兼容历史过渡期：若 task_id 里存的就是旧业务 taskId，则直接复用为 session_code
+        sessionCode = row.task_id;
+      } else {
+        const user = execToRows(db, "SELECT user_code FROM users WHERE id=?", [row.user_id || ''])[0];
+        const userCode = user?.user_code || IdGenerator.userCode();
+        sessionCode = IdGenerator.taskCode(userCode);
+      }
+      db.run("UPDATE conversations SET session_code=? WHERE id=?", [sessionCode, row.id]);
+    }
+
+    if (!row.current_agent_code && row.current_agent_id && sessionCode) {
+      const agent = execToRows(db, "SELECT agent_code FROM agents WHERE id=?", [row.current_agent_id])[0];
+      if (agent?.agent_code) {
+        db.run("UPDATE conversations SET current_agent_code=? WHERE id=?", [IdGenerator.currentAgentCode(sessionCode, agent.agent_code), row.id]);
+      }
+    }
+  }
+
+  // messages.message_code（按 conversation_id + created_at 排序回填）
+  // 只给仍然能找到所属 conversation 的消息回填；孤儿消息保持原状，避免误绑到错误会话。
+  for (const conv of execToRows(db, "SELECT id, session_code FROM conversations WHERE session_code <> ''")) {
+    const msgs = execToRows(db, "SELECT id, message_code FROM messages WHERE conversation_id=? ORDER BY created_at ASC, id ASC", [conv.id]);
+    let seq = 1;
+    for (const msg of msgs) {
+      if (!msg.message_code) {
+        db.run("UPDATE messages SET message_code=? WHERE id=?", [IdGenerator.messageCode(conv.session_code, seq), msg.id]);
+      }
+      seq += 1;
+    }
+  }
 }
 
 // ── Seed default data (idempotent: skip if already present) ─────────────────

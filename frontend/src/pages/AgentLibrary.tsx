@@ -1,23 +1,24 @@
 import { useState, useEffect } from "react";
 import { AgentTemplate } from "../types";
+import { useNavigate } from "react-router-dom";
 import { agentTemplatesApi } from "../api/agentTemplates";
 
 // 分类中文映射
 const CATEGORY_LABELS: Record<string, string> = {
-  all: "全部",
+  all: "全部模板",
   engineering: "💻 工程开发",
-  design: "🎨 设计",
+  design: "🎨 设计创意",
   "paid-media": "💰 付费媒体",
-  sales: "💼 销售",
-  marketing: "📢 营销",
-  product: "📦 产品",
+  sales: "💼 销售推广",
+  marketing: "📢 营销推广",
+  product: "📦 产品管理",
   "project-management": "📋 项目管理",
   specialized: "🔬 专业领域",
-  support: "🛟 支持",
-  testing: "🧪 测试",
-  academic: "🎓 学术",
-  integrations: "🔗 集成",
-  strategy: "♟️ 策略",
+  support: "🛟 支持服务",
+  testing: "🧪 测试验证",
+  academic: "🎓 学术研究",
+  integrations: "🔗 集成开发",
+  strategy: "♟️ 策略规划",
 };
 
 // 模板名称中文映射（常用模板）
@@ -175,21 +176,226 @@ const TEMPLATE_DESC_CN: Record<string, string> = {
 };
 
 function cnName(name: string): string {
-  return TEMPLATE_NAME_CN[name] || name;
+  return name; // 数据库已存储中文名称，直接返回
 }
 
 function cnDesc(name: string, desc: string): string {
   return TEMPLATE_DESC_CN[name] || desc || "";
 }
 
+// expertise 中文翻译
+const EXPERTISE_CN: Record<string, string> = {
+  "devops": "DevOps",
+  "ai-ml": "AI/ML",
+  "backend": "后端",
+  "frontend": "前端",
+  "security": "安全",
+  "design": "设计",
+  "product": "产品",
+  "sales": "销售",
+  "marketing": "营销",
+  "testing": "测试",
+  "data": "数据",
+  "cloud": "云服务",
+  "mobile": "移动端",
+  "integration": "集成",
+  "automation": "自动化",
+  "compliance": "合规",
+  "strategy": "策略",
+  "academic": "学术",
+  "database": "数据库",
+  "engineering": "工程",
+  "paid-media": "付费媒体",
+  "project-management": "项目管理",
+  "specialized": "专业",
+  "support": "支持",
+};
+
+// writingStyle 中文翻译
+const WRITING_STYLE_CN: Record<string, string> = {
+  "professional": "专业",
+  "casual": "轻松",
+  "technical": "技术",
+  "creative": "创意",
+  "concise": "简洁",
+  "detailed": "详细",
+};
+
+// outputFormat 中文翻译
+const OUTPUT_FORMAT_CN: Record<string, string> = {
+  "markdown": "Markdown",
+  "json": "JSON",
+  "text": "文本",
+  "code": "代码",
+  "report": "报告",
+  "bullet-points": "要点列表",
+};
+
+// vibe 中文翻译
+const VIBE_CN: Record<string, string> = {
+  // Engineering
+  "AI Citation Strategist": "分析 AI 推荐竞争对手的原因，重塑内容策略",
+  "AI Data Remediation Engineer": "用 AI 精准修复损坏的数据",
+  "AI Engineer": "将 ML 模型转化为可规模化上线的生产功能",
+  "API Tester": "在用户之前发现 API 问题",
+  "Backend Architect": "设计支撑一切的系统架构",
+  "Code Reviewer": "像导师一样审查代码",
+  "Data Engineer": "构建管道，将原始数据转化为可信的数据资产",
+  "Database Optimizer": "索引、查询计划和 Schema 设计",
+  "DevOps Automator": "自动化基础设施，让团队交付更快",
+  "Embedded Firmware Engineer": "编写生产级固件",
+  "Frontend Developer": "构建响应式、可访问的现代 Web 应用",
+  "Git Workflow Master": "清理历史、原子提交、分支叙事",
+  "Infrastructure Maintainer": "保持服务器运行、告警安静",
+  "LSP/Index Engineer": "通过 LSP 构建统一代码智能",
+  "Mobile App Builder": "快速交付 iOS 和 Android 原生应用",
+  "Rapid Prototyper": "会议结束前将想法转化为原型",
+  "Senior Developer": "高端全栈工匠",
+  "Software Architect": "设计能超越构建团队的系统",
+  "Solidity Smart Contract Engineer": "实战经验丰富的 Solidity 开发者",
+  "Threat Detection Engineer": "构建检测层，捕获攻击者",
+  "WeChat Mini Program Developer": "构建高性能微信小程序",
+  // DevOps & SRE
+  "SRE (Site Reliability Engineer): Reliability": "可靠性是功能，错误预算驱动速度",
+  "Incident Response Commander": "将生产混乱转化为结构化解决方案",
+  "MCP Builder": "构建让 AI 智能体真正有用的工具",
+  "Filament Optimization Specialist": "务实完美主义者，优化复杂管理环境",
+  "Autonomous Optimization Architect": "系统治理者，让一切更快",
+  "Workflow Optimizer": "发现瓶颈、修复流程、自动化",
+  // Design
+  "Brand Guardian": "品牌最坚定的守护者和倡导者",
+  "Image Prompt Engineer": "将视觉概念转化为精准的提示词",
+  "Inclusive Visuals Specialist": "击败系统性 AI 偏见",
+  "UI Designer": "创建美观、一致、可访问的界面",
+  "UX Architect": "为开发者提供坚实基础和清晰指令",
+  "UX Researcher": "用真实用户数据验证设计决策",
+  "Visual Storyteller": "将复杂信息转化为可视化叙事",
+  "Whimsy Injector": "添加意想不到的惊喜时刻",
+  // Marketing
+  "App Store Optimizer": "让应用被发现、下载和喜爱",
+  "Baidu SEO Specialist": "精通百度算法",
+  "Bilibili Content Strategist": "精通弹幕文化，在 B站 建立品牌",
+  "Carousel Growth Engine": "从任何 URL 自动生成病毒式轮播",
+  "China E-Commerce Operator": "运营淘宝、天猫、拼多多、京东店铺",
+  "China Market Localization Strategist": "将中国混乱的趋势转化为精准指南",
+  "Content Creator": "为每个平台创作引人入胜的故事",
+  "Cross-Border E-Commerce Specialist": "从中国工厂到全球畅销",
+  "Douyin Strategist": "精通抖音算法",
+  "Growth Hacker": "找到未被开发的增长渠道",
+  "Instagram Curator": "精通网格美学",
+  "Kuaishou Strategist": "在快手培养草根受众",
+  "LinkedIn Content Creator": "将专业专长转化为引人入胜的内容",
+  "Livestream Commerce Coach": "培训直播主播",
+  "Podcast Strategist": "指导播客从概念到忠实听众",
+  "Private Domain Operator": "构建微信私域流量帝国",
+  "Short-Video Editing Coach": "将原始素材转化为短视频",
+  "Social Media Strategist": "策划跨平台营销活动",
+  "TikTok Strategist": "驾驭算法，建立社区",
+  "Twitter Engager": "通过 280 字符建立思想领导力",
+  "Video Optimization Specialist": "专注于受众增长的视频优化",
+  "WeChat Official Account Manager": "通过一致内容建立微信订阅社区",
+  "Weibo Strategist": "在微博建立品牌话题",
+  "Xiaohongshu Specialist": "精通小红书生活方式内容",
+  "Zhihu Strategist": "通过知乎知识分享建立品牌权威",
+  // Paid Media
+  "Ad Creative Strategist": "将广告创意从猜测转化为可重复的科学",
+  "Paid Media Auditor": "在 CFO 之前发现广告浪费",
+  "Paid Social Strategist": "让 Meta、LinkedIn、TikTok 广告效果最大化",
+  "PPC Campaign Strategist": "构建从 $10K 到 $10M+ 月费的 PPC 广告",
+  "Programmatic & Display Buyer": "精准大规模购买展示和视频广告",
+  "Search Query Analyst": "挖掘搜索查询发现竞争对手遗漏的黄金",
+  "Tracking & Measurement Specialist": "如果追踪不正确，就等于没发生",
+  // Sales
+  "Account Strategist": "映射组织、发现空白",
+  "Deal Strategist": "像外科医生一样评估交易",
+  "Discovery Coach": "比别人多问一个问题",
+  "Outbound Strategist": "在竞争对手之前将购买信号转化为会议",
+  "Pipeline Analyst": "在你意识到之前告诉你预测是错的",
+  "Proposal Strategist": "将 RFP 响应转化为买家无法放下的故事",
+  "Sales Coach": "提出让销售重新思考整个交易的问题",
+  "Sales Engineer": "在采购之前赢得技术决策",
+  // Product
+  "Behavioral Nudge Engine": "通过软件交互最大化用户动力",
+  "Product Manager": "交付正确的东西",
+  "Sprint Prioritizer": "通过数据驱动的优先级最大化迭代价值",
+  "Trend Researcher": "在主流之前发现新兴趋势",
+  "Feedback Synthesizer": "将千个用户声音提炼为五个关键",
+  // Specialized
+  "Agentic Identity & Trust Architect": "确保每个 AI 智能体都能证明身份",
+  "Agents Orchestrator": "运行整个开发流程的指挥家",
+  "Automation Governance Architect": "冷静、质疑、运营导向",
+  "Blockchain Security Auditor": "在攻击者之前发现智能合约漏洞",
+  "Civil Engineer": "设计跨边界的结构",
+  "Cultural Intelligence Strategist": "检测隐形排斥",
+  "Data Consolidation Agent": "整合分散的销售数据",
+  "Developer Advocate": "连接产品团队和开发者社区",
+  "Document Generator": "从代码生成专业文档",
+  "Feishu Integration Developer": "在飞书平台构建企业集成",
+  "French Consulting Market Navigator": "解读法国咨询市场",
+  "Government Digital Presales Consultant": "导航中国政府 IT 采购迷宫",
+  "Healthcare Marketing Compliance Specialist": "在中国严格监管的医疗营销中保持合规",
+  "Identity Graph Operator": "确保多智能体系统中的身份一致性",
+  "Korean Business Navigator": "西方直接性与韩国关系之间的桥梁",
+  "Model QA Specialist": "端到端审计 ML 模型",
+  "Recruitment Specialist": "构建全周期招聘引擎",
+  "Report Distribution Agent": "自动分发销售报告",
+  "Sales Data Extraction Agent": "监控 Excel 文件并提取关键指标",
+  "Salesforce Architect": "将混乱的 Salesforce 组织转化为有序架构",
+  "Studio Operations": "保持工作室运转顺畅",
+  "Studio Producer": "协调创意愿景和业务目标",
+  "Study Abroad Advisor": "指导中国学生留学之旅",
+  "Supply Chain Strategist": "构建采购引擎和供应链韧性",
+  "Workflow Architect": "映射、命名、规范每个系统路径",
+  "ZK Steward": "用 Zettelkasten 构建连接的知识",
+  "CMS Developer": "WordPress/Drupal 开发",
+  // Support & Testing
+  "Accessibility Auditor": "如果没用屏幕阅读器测试，就不算可访问",
+  "Analytics Reporter": "将原始数据转化为洞察",
+  "Evidence Collector": "截图痴迷的 QA",
+  "Executive Summary Generator": "像 McKinsey 顾问思考，为 C-suite 写作",
+  "Experiment Tracker": "设计实验、追踪结果",
+  "Finance Tracker": "保持账目清晰、现金流顺畅",
+  "Legal Compliance Checker": "确保每个司法管辖区的合规",
+  "Performance Benchmarker": "测量一切、优化重要",
+  "Reality Checker": "默认需要工作",
+  "Support Responder": "将沮丧用户转化为忠诚倡导者",
+  "Test Results Analyzer": "像侦探一样阅读测试结果",
+  "Tool Evaluator": "测试并推荐正确的工具",
+  // Academic
+  "Anthropologist": "没有文化是随机的",
+  "Geographer": "地理决定命运",
+  "Historian": "历史不重复，但会押韵",
+  "Narratologist": "每个故事都是论证",
+  "Psychologist": "人们做事总有原因",
+  // Others
+  "Book Co-Author": "将粗略专长转化为可引用的书",
+  "Corporate Training Designer": "设计驱动真实行为改变的培训",
+  "Jira Workflow Steward": "强制可追踪的提交和结构化 PR",
+  "Project Shepherd": "将跨职能混乱转化为按时交付",
+  "Senior Project Manager": "将规格转化为任务",
+  "Accounts Payable Agent": "跨任何轨道移动资金",
+  // 补充遗漏
+  "Email Intelligence Engineer": "将杂乱的 MIME 转化为可推理的上下文",
+  "Security Engineer": "威胁建模、安全审计、漏洞评估",
+  "SRE (Site Reliability Engineer)": "可靠性是功能，错误预算驱动速度",
+  "Technical Writer": "开发者文档、API 参考和技术写作",
+  "Reddit Community Builder": "精通 Reddit，建立社区信任",
+  "SEO Specialist": "技术 SEO 和关键词策略驱动可持续流量",
+  "Compliance Auditor": "从准备评估到证据收集的合规审计",
+};
+
 export default function AgentLibrary() {
   const [templates, setTemplates] = useState<AgentTemplate[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
   const [selectedCategory, setSelectedCategory] = useState("all");
-  const [selectedTemplate, setSelectedTemplate] = useState<AgentTemplate | null>(null);
+  const [sortBy, setSortBy] = useState<"random" | "favorite">("random");
+  const [currentPage, setCurrentPage] = useState(1);
+  const [searchTerm, setSearchTerm] = useState("");
+  const pageSize = 9;
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState("");
+const navigate = useNavigate();
 
   useEffect(() => {
     loadTemplates();
@@ -211,33 +417,59 @@ export default function AgentLibrary() {
     }
   }
 
-  async function handleCreate(template: AgentTemplate) {
-    setCreating(template.id);
-    try {
-      await agentTemplatesApi.createFromTemplate(template.id, {
+  function handleCreate(template: AgentTemplate) {
+    // 直接跳转到创建页面，携带模板参数
+    navigate("/agent-create", {
+      state: {
+        templateId: template.id,
         name: cnName(template.name),
-        modelName: template.name,
-      });
-      setSuccessMsg(`✅ ${cnName(template.name)} 已创建成功！前往智能体管理查看。`);
-      setTimeout(() => setSuccessMsg(""), 3000);
-    } catch (err: any) {
-      alert(`创建失败: ${err.message}`);
-    } finally {
-      setCreating(null);
-    }
+        model: template.name,
+        description: template.description,
+        expertise: template.expertise,
+        systemPrompt: template.systemPrompt,
+        vibe: template.vibe,
+      }
+    });
   }
 
+  // 搜索过滤
+  const searchFiltered = searchTerm
+    ? templates.filter((t) =>
+        t.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        t.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (t.vibe && t.vibe.toLowerCase().includes(searchTerm.toLowerCase())) ||
+        (t.systemPrompt && t.systemPrompt.toLowerCase().includes(searchTerm.toLowerCase()))
+      )
+    : templates;
+
+  // 分类过滤
   const filtered =
     selectedCategory === "all"
-      ? templates
-      : templates.filter((t) => t.category === selectedCategory);
+      ? searchFiltered
+      : searchFiltered.filter((t) => t.category === selectedCategory);
 
-  // 按分类分组
+  // 排序逻辑（仅用于"全部模板"视图）
+  const sortedTemplates = selectedCategory === "all"
+    ? [...filtered].sort((a, b) => {
+        if (sortBy === "random") {
+          return Math.random() - 0.5;
+        }
+        return 0;
+      })
+    : filtered;
+
+  // 分页逻辑（仅用于"全部模板"视图）
+  const totalPages = Math.ceil(sortedTemplates.length / pageSize);
+  const paginatedTemplates = sortedTemplates.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+
+  // 按分类分组（仅用于分类视图）
   const grouped: Record<string, AgentTemplate[]> = {};
-  filtered.forEach((t) => {
-    if (!grouped[t.category]) grouped[t.category] = [];
-    grouped[t.category].push(t);
-  });
+  if (selectedCategory !== "all") {
+    filtered.forEach((t) => {
+      if (!grouped[t.category]) grouped[t.category] = [];
+      grouped[t.category].push(t);
+    });
+  }
 
   if (loading) {
     return (
@@ -248,35 +480,49 @@ export default function AgentLibrary() {
   }
 
   return (
-    <div style={{ height: "100%", overflowY: "auto", padding: "24px 32px", background: "var(--body-bg)" }}>
+    <>
+      <style>{`
+        .al-wrap {
+          font-family: "Microsoft YaHei", "Segoe UI", sans-serif;
+        }
+      `}</style>
+      <div className="al-wrap" style={{ height: "100%", overflowY: "auto", padding: "24px 32px", background: "var(--body-bg)" }}>
       <div className="max-w-7xl mx-auto">
         {/* Header */}
         <div className="mb-6">
-          <h1 className="text-2xl font-bold" style={{ color: "var(--text-primary)" }}>🎭 Agent 模板库</h1>
-          <p className="text-sm" style={{ color: "var(--text-muted)", marginTop: 4 }}>
-            来自 agency-agents 的 136 个专业 AI 角色，一键创建到你的平台
-          </p>
+          <h1 className="text-2xl font-bold" style={{ color: "#333333" }}>🎭 Agent 模板库</h1>
         </div>
 
         {/* Success message */}
         {successMsg && (
-          <div className="mb-4 p-3 rounded-lg text-sm" style={{ background: "#f0fdf4", border: "1px solid #bbf7d0", color: "#16a34a" }}>
+          <div className="mb-4 p-3 rounded-xl text-sm" style={{ background: "#f0fdf4", border: "1px solid #bbf7d0", color: "#16a34a" }}>
             {successMsg}
           </div>
         )}
+
+        {/* Search */}
+        <div className="mb-4">
+          <div className="relative">
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">🔍</span>
+            <input
+              type="text"
+              placeholder="搜索智能体（名称、描述、简介、角色设定）..."
+              value={searchTerm}
+              onChange={(e) => {
+                setSearchTerm(e.target.value);
+                setCurrentPage(1); // 重置到第一页
+              }}
+              className="w-full px-4 py-2 pl-10 rounded-xl text-sm"
+              style={{ border: "1px solid #e5e7eb", background: "#fff", color: "#333333" }}
+            />
+          </div>
+        </div>
 
         {/* Category filter */}
         <div className="flex flex-wrap gap-2 mb-6">
           <button
             onClick={() => setSelectedCategory("all")}
-            className="px-3 py-1.5 text-sm rounded-full transition-colors"
-            style={{
-              background: selectedCategory === "all" ? "var(--accent)" : "var(--muted)",
-              color: selectedCategory === "all" ? "#fff" : "var(--text-secondary)",
-              fontWeight: selectedCategory === "all" ? 600 : 400,
-            }}
-          >
-            全部 ({templates.length})
+            className="px-3 py-1.5 text-sm rounded-full min-w-[120px]" style={{ background: selectedCategory === "all" ? "var(--accent)" : "var(--muted)", color: selectedCategory === "all" ? "#fff" : "var(--text-secondary)", fontWeight: selectedCategory === "all" ? 600 : 400, }} > 全部模板 ({templates.length})
           </button>
           {categories.map((cat) => {
             const count = templates.filter((t) => t.category === cat).length;
@@ -284,12 +530,7 @@ export default function AgentLibrary() {
               <button
                 key={cat}
                 onClick={() => setSelectedCategory(cat)}
-                className="px-3 py-1.5 text-sm rounded-full transition-colors"
-                style={{
-                  background: selectedCategory === cat ? "var(--accent)" : "var(--muted)",
-                  color: selectedCategory === cat ? "#fff" : "var(--text-secondary)",
-                  fontWeight: selectedCategory === cat ? 600 : 400,
-                }}
+                className="px-3 py-1.5 text-sm rounded-full min-w-[120px]" style={{ background: selectedCategory === cat ? "var(--accent)" : "var(--muted)", color: selectedCategory === cat ? "#fff" : "var(--text-secondary)", fontWeight: selectedCategory === cat ? 600 : 400, }}
               >
                 {CATEGORY_LABELS[cat] || cat} ({count})
               </button>
@@ -297,16 +538,172 @@ export default function AgentLibrary() {
           })}
         </div>
 
-        {/* Templates by category */}
-        {Object.keys(grouped).length === 0 ? (
-          <div className="text-center py-12" style={{ color: "var(--text-muted)" }}>
-            暂无模板
-          </div>
+        {/* Templates display */}
+        {selectedCategory === "all" ? (
+          // 全部模板：扁平列表 + 分页
+          <>
+            {paginatedTemplates.length === 0 ? (
+              <div className="text-center py-12" style={{ color: "var(--text-muted)" }}>
+                暂无模板
+              </div>
+            ) : (
+              <>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {paginatedTemplates.map((t) => {
+                    const displayName = cnName(t.name);
+                    const displayDesc = cnDesc(t.name, t.description);
+                    return (
+                      <div
+                        key={t.id}
+                        className="border rounded-xl p-4 hover:shadow-md transition-shadow bg-card"
+                        style={{ border: "1px solid #e5e7eb", background: "#fff", height: "200px", overflow: "hidden", display: "flex", flexDirection: "column" }}
+                      >
+                        <div className="flex items-start justify-between">
+                          <div className="flex items-center gap-2">
+                            <span className="text-2xl">{t.emoji}</span>
+                            <div>
+                              <h3 className="font-semibold" style={{ color: "#333333", fontSize: 14, fontFamily: "inherit" }}>
+                                {displayName}
+                              </h3>
+                              <p className="text-xs" style={{ color: "var(--text-muted)", fontFamily: "inherit" }}>
+                                {VIBE_CN[t.name] || t.vibe}
+                              </p>
+                            </div>
+                          </div>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleCreate(t);
+                            }}
+                            
+                            className="create-btn px-4 py-1.5 text-sm font-semibold min-w-[60px]"
+                          >
+                            创建
+                          </button>
+                        </div>
+                        <p className="text-xs mt-2 line-clamp-2" style={{ color: "var(--text-muted)", fontFamily: "inherit" }}>
+                          {displayDesc}
+                        </p>
+                        <div className="flex flex-wrap gap-1 mt-2">
+                          {t.expertise.slice(0, 3).map((e) => (
+                            <span
+                              key={e}
+                              className="px-2 py-0.5 text-xs rounded-full"
+                              style={{ background: "#f3f4f6", color: "#6b7280", border: "1px solid #e5e7eb", fontSize: 11, fontFamily: "inherit" }}
+                            >
+                              {EXPERTISE_CN[e] || e}
+                            </span>
+                          ))}
+                        </div>
+
+                        {/* 详情展示 */}
+                        <div className="mt-3 pt-3 border-t text-xs space-y-2" style={{ borderTop: "1px solid #e5e7eb", fontFamily: "inherit" }}>
+                          <p style={{ color: "var(--text-muted)", lineHeight: 1.5, fontFamily: "inherit" }}>
+                            <span style={{ fontWeight: 500, color: "var(--text-secondary)", fontFamily: "inherit" }}>系统提示：</span>
+                            {t.description}
+                          </p>
+                          <div className="flex flex-wrap gap-3" style={{ color: "var(--text-muted)", fontFamily: "inherit" }}>
+                            <span>风格: {WRITING_STYLE_CN[t.writingStyle] || t.writingStyle}</span>
+                            <span>输出: {OUTPUT_FORMAT_CN[t.outputFormat] || t.outputFormat}</span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                {/* 分页组件 - 固定在底部 */}
+                <div className="flex justify-center items-center gap-2 mt-6" style={{ position: "sticky", bottom: 0, background: "var(--body-bg)", padding: "12px 0", zIndex: 10 }}>
+                  <button
+                    onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                    disabled={currentPage === 1}
+                    className="px-3 py-1.5 text-sm rounded-lg font-medium"
+                    style={{ 
+                      background: currentPage === 1 ? "#e5e7eb" : "var(--accent)", 
+                      color: currentPage === 1 ? "#9ca3af" : "#fff",
+                      cursor: currentPage === 1 ? "not-allowed" : "pointer"
+                    }}
+                  >
+                    上一页
+                  </button>
+                  {/* 页码按钮 - 最多显示6个 */}
+                  <div className="flex items-center gap-1" style={{ minWidth: "200px", justifyContent: "center" }}>
+                    {(() => {
+                      const pages: (number | string)[] = [];
+                      const total = totalPages || 1;
+                      const maxShow = 6;
+                      
+                      if (total <= maxShow) {
+                        // 总页数 <= 6，显示所有
+                        for (let i = 1; i <= total; i++) pages.push(i);
+                      } else {
+                        // 总页数 > 6，显示当前页附近的页码 + 省略号
+                        pages.push(1);
+                        
+                        if (currentPage <= 3) {
+                          // 当前页在开头
+                          for (let i = 2; i <= 5; i++) pages.push(i);
+                          pages.push("...");
+                          pages.push(total);
+                        } else if (currentPage >= total - 2) {
+                          // 当前页在结尾
+                          pages.push("...");
+                          for (let i = total - 4; i <= total; i++) pages.push(i);
+                        } else {
+                          // 当前页在中间
+                          pages.push("...");
+                          for (let i = currentPage - 1; i <= currentPage + 1; i++) pages.push(i);
+                          pages.push("...");
+                          pages.push(total);
+                        }
+                      }
+                      
+                      return pages.map((p, idx) => {
+                        if (p === "...") {
+                          return <span key={`ellipsis-${idx}`} style={{ color: "#9ca3af", padding: "0 4px" }}>...</span>;
+                        }
+                        return (
+                          <button
+                            key={p}
+                            onClick={() => setCurrentPage(p as number)}
+                            className="px-3 py-1.5 text-sm rounded-lg font-medium min-w-[32px]"
+                            style={{
+                              background: currentPage === p ? "var(--accent)" : "#fff",
+                              color: currentPage === p ? "#fff" : "#374151",
+                              border: "1px solid #d1d5db",
+                              cursor: "pointer"
+                            }}
+                          >
+                            {p}
+                          </button>
+                        );
+                      });
+                    })()}
+                  </div>
+                  <span className="text-sm px-2" style={{ color: "var(--text-secondary)" }}>
+                    共 {sortedTemplates.length} 个
+                  </span>
+                  <button
+                    onClick={() => setCurrentPage(p => Math.min(totalPages || 1, p + 1))}
+                    disabled={currentPage === totalPages || totalPages === 0}
+                    className="px-3 py-1.5 text-sm rounded-lg font-medium"
+                    style={{ 
+                      background: currentPage === totalPages || totalPages === 0 ? "#e5e7eb" : "var(--accent)", 
+                      color: currentPage === totalPages || totalPages === 0 ? "#9ca3af" : "#fff",
+                      cursor: currentPage === totalPages || totalPages === 0 ? "not-allowed" : "pointer"
+                    }}
+                  >
+                    下一页
+                  </button>
+                </div>
+              </>
+            )}
+          </>
         ) : (
+          // 分类视图：按分类分组
           <div className="space-y-8">
             {Object.entries(grouped).map(([cat, items]) => (
               <div key={cat}>
-                <h2 className="text-lg font-semibold mb-3" style={{ color: "var(--text-primary)" }}>
+                <h2 className="text-lg font-semibold mb-3" style={{ color: "#333333" }}>
                   {CATEGORY_LABELS[cat] || cat}
                 </h2>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -316,23 +713,18 @@ export default function AgentLibrary() {
                     return (
                       <div
                         key={t.id}
-                        className="border rounded-lg p-4 hover:shadow-md transition-shadow cursor-pointer bg-card"
-                        style={{ border: "1px solid #e5e7eb", background: "#fff" }}
-                        onClick={() =>
-                          setSelectedTemplate(
-                            selectedTemplate?.id === t.id ? null : t
-                          )
-                        }
+                        className="border rounded-xl p-4 hover:shadow-md transition-shadow bg-card"
+                        style={{ border: "1px solid #e5e7eb", background: "#fff", height: "200px", overflow: "hidden", display: "flex", flexDirection: "column" }}
                       >
                         <div className="flex items-start justify-between">
                           <div className="flex items-center gap-2">
                             <span className="text-2xl">{t.emoji}</span>
                             <div>
-                              <h3 className="font-medium" style={{ color: "var(--text-primary)", fontSize: 14 }}>
+                              <h3 className="font-semibold" style={{ color: "#333333", fontSize: 14, fontFamily: "inherit" }}>
                                 {displayName}
                               </h3>
-                              <p className="text-xs" style={{ color: "var(--text-muted)" }}>
-                                {t.vibe}
+                              <p className="text-xs" style={{ color: "var(--text-muted)", fontFamily: "inherit" }}>
+                                {VIBE_CN[t.name] || t.vibe}
                               </p>
                             </div>
                           </div>
@@ -341,19 +733,12 @@ export default function AgentLibrary() {
                               e.stopPropagation();
                               handleCreate(t);
                             }}
-                            disabled={creating === t.id}
-                            className="px-3 py-1 text-xs rounded transition-opacity"
-                            style={{
-                              background: "var(--accent)",
-                              color: "#fff",
-                              opacity: creating === t.id ? 0.5 : 1,
-                              cursor: creating === t.id ? "not-allowed" : "pointer",
-                            }}
+                            className="create-btn px-4 py-1.5 text-sm font-semibold min-w-[60px]"
                           >
-                            {creating === t.id ? "创建中..." : "创建"}
+                            创建
                           </button>
                         </div>
-                        <p className="text-xs mt-2 line-clamp-2" style={{ color: "var(--text-muted)" }}>
+                        <p className="text-xs mt-2 line-clamp-2" style={{ color: "var(--text-muted)", fontFamily: "inherit" }}>
                           {displayDesc}
                         </p>
                         <div className="flex flex-wrap gap-1 mt-2">
@@ -361,25 +746,12 @@ export default function AgentLibrary() {
                             <span
                               key={e}
                               className="px-2 py-0.5 text-xs rounded-full"
-                              style={{ background: "var(--muted)", fontSize: 11 }}
+                              style={{ background: "#f3f4f6", color: "#6b7280", border: "1px solid #e5e7eb", fontSize: 11, fontFamily: "inherit" }}
                             >
-                              {e}
+                              {EXPERTISE_CN[e] || e}
                             </span>
                           ))}
                         </div>
-
-                        {/* Expanded detail */}
-                        {selectedTemplate?.id === t.id && (
-                          <div className="mt-3 pt-3 border-t text-xs space-y-2" style={{ borderTop: "1px solid #e5e7eb" }}>
-                            <p style={{ color: "var(--text-muted)", lineHeight: 1.5 }}>
-                              {t.systemPrompt.slice(0, 300)}...
-                            </p>
-                            <div className="flex gap-2" style={{ color: "var(--text-muted)" }}>
-                              <span>风格: {t.writingStyle}</span>
-                              <span>输出: {t.outputFormat}</span>
-                            </div>
-                          </div>
-                        )}
                       </div>
                     );
                   })}
@@ -390,5 +762,6 @@ export default function AgentLibrary() {
         )}
       </div>
     </div>
+    </>
   );
 }

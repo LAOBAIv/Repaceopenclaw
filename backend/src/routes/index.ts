@@ -23,6 +23,9 @@ import openaiCompatRoutes from './openaiCompat';
 import modelProviderRoutes from './modelProviders';
 import modelRoutes from './models';
 import agentTemplateRoutes from './agentTemplates';
+import adminTemplateRoutes from './adminTemplates';
+import adminUserAgentsRoutes from './adminUserAgents';
+import adminOrganizationsRoutes from './adminOrganizations';
 import auditLogRoutes from './auditLogs';
 import systemStatsRoutes from './systemStats';
 import sessionTabsRoutes from './sessionTabs';
@@ -53,6 +56,9 @@ const apiRoutes: RouteConfig[] = [
   { path: '/model-providers', router: modelProviderRoutes },
   { path: '/models', router: modelRoutes },
   { path: '/agent-templates', router: agentTemplateRoutes },
+  { path: '/admin/templates', router: adminTemplateRoutes },
+  { path: '/admin/user-agents', router: adminUserAgentsRoutes },
+  { path: '/admin/organizations', router: adminOrganizationsRoutes },
   { path: '/audit-logs', router: auditLogRoutes },
   { path: '/system/stats', router: systemStatsRoutes, prefix: '/api' },
   { path: '/session-tabs', router: sessionTabsRoutes, prefix: '/api' },

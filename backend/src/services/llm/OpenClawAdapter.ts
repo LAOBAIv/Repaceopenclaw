@@ -7,7 +7,7 @@
 
 import { ILLMAdapter } from "./LLMAdapter";
 import { logger } from '../../utils/logger';
-import { MockLLMAdapter } from "./MockLLMAdapter";
+import { REPACECLAW_MESSAGE_CHANNEL, resolveOpenClawGateway } from '../../utils/openclawGateway';
 
 export class OpenClawAdapter implements ILLMAdapter {
   async generateStream(
@@ -74,20 +74,21 @@ export class OpenClawAdapter implements ILLMAdapter {
     ];
 
     // 5. OpenClaw Gateway 配置
-    const gatewayUrl = process.env.OPENCLAW_GATEWAY_URL || 'http://localhost:18789';
-    const gatewayToken = process.env.OPENCLAW_GATEWAY_TOKEN || '';
+    const { url: gatewayUrl, token: gatewayToken } = resolveOpenClawGateway();
 
     try {
-      logger.info(`[OpenClawAdapter] → ${gatewayUrl}/v1/chat/completions (model=openclaw)`);
+      const requestedModel = agentConfig.modelName?.trim() || 'openclaw';
+      logger.info(`[OpenClawAdapter] → ${gatewayUrl}/v1/chat/completions (model=${requestedModel}, channel=${REPACECLAW_MESSAGE_CHANNEL})`);
 
       const response = await fetch(`${gatewayUrl}/v1/chat/completions`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${gatewayToken}`,
+          'x-openclaw-message-channel': REPACECLAW_MESSAGE_CHANNEL,
         },
         body: JSON.stringify({
-          model: 'openclaw',
+          model: requestedModel,
           messages: fullMessages,
           stream: true,
           temperature,
@@ -140,9 +141,7 @@ export class OpenClawAdapter implements ILLMAdapter {
     } catch (err: any) {
       logger.error('[OpenClawAdapter] ✗', err.message);
       onError(err);
-      // Fallback to mock
-      const mock = new MockLLMAdapter();
-      return mock.generateStream(agentConfig, messages, onChunk, onComplete, onError);
+      return;
     }
   }
 }

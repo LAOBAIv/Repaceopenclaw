@@ -87,10 +87,12 @@ export const authLimiter = createRateLimiter({
   message: "登录尝试过于频繁，请稍后再试",
 });
 
-/** 定期清理过期条目 */
-setInterval(() => {
-  const now = Date.now();
-  for (const [key, entry] of store.entries()) {
-    if (now > entry.resetAt) store.delete(key);
-  }
-}, 60_000);
+/** 定期清理过期条目（默认关闭，避免后台自动清理） */
+if (process.env.ENABLE_RATE_LIMIT_CLEANUP === "true") {
+  setInterval(() => {
+    const now = Date.now();
+    for (const [key, entry] of store.entries()) {
+      if (now > entry.resetAt) store.delete(key);
+    }
+  }, 60_000);
+}

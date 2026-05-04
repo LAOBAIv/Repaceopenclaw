@@ -8,6 +8,7 @@ import { AgentConsole } from './pages/AgentConsole';
 import { AgentKanban } from './pages/AgentKanban';
 import { SkillSettings } from './pages/SkillSettings';
 import { PluginSettings } from './pages/PluginSettings';
+import { PlatformAssistant } from './pages/PlatformAssistant';
 import { AuthPage } from './pages/AuthPage';
 import { AdminPanel } from './pages/AdminPanel';
 import { useAuthStore } from './stores/authStore';
@@ -41,6 +42,7 @@ function App() {
           <Route path="/admin" element={<AdminPanel />} />
           <Route path="/skill-settings" element={<SkillSettings />} />
           <Route path="/plugin-settings" element={<PluginSettings />} />
+          <Route path="/platform-assistant" element={<PlatformAssistant />} />
           <Route path="*" element={<Navigate to="/workspace" replace />} />
         </Route>
       </Routes>

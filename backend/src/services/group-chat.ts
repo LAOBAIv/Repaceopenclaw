@@ -2,6 +2,7 @@ import express from 'express';
 import { logger } from '../utils/logger';
 import { WebSocketServer, WebSocket } from 'ws';
 import { v4 as uuidv4 } from 'uuid';
+import { REPACECLAW_MESSAGE_CHANNEL, resolveOpenClawGateway } from '../utils/openclawGateway';
 
 // ==================== 类型定义 ====================
 
@@ -79,17 +80,20 @@ async function callLLM(
   systemPrompt: string,
   messages: { role: string; content: string }[]
 ): Promise<string> {
-  const response = await fetch('https://e.linkh5.cn/v1/chat/completions', {
+  const { url: gatewayUrl, token: gatewayToken } = resolveOpenClawGateway();
+  const response = await fetch(`${gatewayUrl}/v1/chat/completions`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${process.env.LLM_API_KEY || 'your-key'}`,
+      Authorization: `Bearer ${gatewayToken}`,
+      'x-openclaw-message-channel': REPACECLAW_MESSAGE_CHANNEL,
     },
     body: JSON.stringify({
       model,
       messages: [{ role: 'system', content: systemPrompt }, ...messages],
       temperature: 0.8,
       max_tokens: 500,
+      stream: false,
     }),
   });
 

@@ -9,12 +9,12 @@
 
 import https from 'https';
 import { logger } from '../utils/logger';
+import { REPACECLAW_MESSAGE_CHANNEL, resolveOpenClawGateway } from '../utils/openclawGateway';
 import http from 'http';
 import { URL } from 'url';
 
 // ─── 配置 ────────────────────────────────────────────────────────────────
-const GATEWAY_URL = process.env.OPENCLAW_GATEWAY_URL || 'http://localhost:18789';
-const GATEWAY_TOKEN = process.env.OPENCLAW_GATEWAY_TOKEN || '';
+const { url: GATEWAY_URL, token: GATEWAY_TOKEN } = resolveOpenClawGateway();
 
 // ─── 类型 ────────────────────────────────────────────────────────────────
 export interface GatewaySession {
@@ -144,6 +144,7 @@ export const GatewaySessionService = {
           'Content-Type': 'application/json',
           'Content-Length': Buffer.byteLength(payload),
           'Authorization': `Bearer ${GATEWAY_TOKEN}`,
+          'x-openclaw-message-channel': REPACECLAW_MESSAGE_CHANNEL,
         },
       }, (res) => {
         if (res.statusCode && res.statusCode >= 400) {

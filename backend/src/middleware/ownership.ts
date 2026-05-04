@@ -18,6 +18,12 @@ const TABLE_MAP: Record<ResourceType, string> = {
   message: "messages",
 };
 
+const CODE_FIELD_MAP: Partial<Record<ResourceType, string>> = {
+  agent: "agent_code",
+  conversation: "session_code",
+  task: "task_code",
+};
+
 /**
  * 校验资源归属
  * 用法: router.put('/:id', authenticate, ensureOwnership('agent'), handler)
@@ -38,7 +44,11 @@ export function ensureOwnership(resourceType: ResourceType) {
 
     try {
       const db = getDb();
-      const result = db.exec(`SELECT user_id FROM ${table} WHERE id = ?`, [resourceId]);
+      // Dual-code Phase 2：归属校验同时支持 id / 业务码。
+      let result = db.exec(`SELECT user_id FROM ${table} WHERE id = ?`, [resourceId]);
+      if ((!result.length || !result[0].values.length) && CODE_FIELD_MAP[resourceType]) {
+        result = db.exec(`SELECT user_id FROM ${table} WHERE ${CODE_FIELD_MAP[resourceType]} = ?`, [resourceId]);
+      }
       if (!result.length || !result[0].values.length) {
         return next(); // 资源不存在，交给后续逻辑处理
       }
