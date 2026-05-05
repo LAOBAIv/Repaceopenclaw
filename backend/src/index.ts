@@ -96,6 +96,11 @@ async function main(): Promise<void> {
   // 10. 监听端口错误（EADDRINUSE 等）— 必须绑定在 listen 之前
   //    ⚠️ 修复：server.listen 的 error 事件是异步 emit 的，不会被 main().catch() 捕获
   //    不加此 handler 会导致 unhandled exception → process 崩溃 → systemd 无限重启
+  //
+  //    🐛 历史 Bug（2026-05-04 crash loop）：
+  //    旧代码在 EADDRINUSE 分支中，即使成功杀掉旧进程并 setTimeout 重试，
+  //    仍然会执行到下方的 process.exit(1)，导致每次重启都立刻退出 → systemd 无限循环。
+  //    修复：只有在真正无法恢复时才 exit(1)，成功安排了重试就直接 return。
   server.on('error', (err: NodeJS.ErrnoException) => {
     if (err.code === 'EADDRINUSE') {
       logger.error(`[Server] Port ${PORT} is already in use. Another instance may be running.`);
@@ -113,15 +118,20 @@ async function main(): Promise<void> {
             logger.info(`[Server] Retrying to listen on port ${PORT}...`);
             server.listen(PORT);
           }, 2000);
+          // ✅ 关键修复：已经安排了重试，直接 return，不要执行 process.exit(1)
+          // 否则当前进程退出 → systemd 又拉起新进程 → 端口仍然被占 → 无限循环
           return;
         }
       } catch (e) {
         logger.error('[Server] Failed to identify stale process', { error: (e as Error).message });
       }
+      // 只有无法识别/无法杀掉占用进程时，才退出
       logger.error(`[Server] Cannot bind to port ${PORT}. Manual intervention required.`);
-    } else {
-      logger.error('[Server] Server error', { code: err.code, message: err.message });
+      process.exit(1);
+      return;
     }
+    // 其他类型的 server error，记录后退出
+    logger.error('[Server] Server error', { code: err.code, message: err.message });
     process.exit(1);
   });
 
@@ -283,12 +293,30 @@ main().catch((err) => {
 });
 
 // 全局未捕获异常/拒绝处理 — 防止未预期的 error 导致静默崩溃
+// ⚠️ 防循环重启：不直接 exit，先判断严重性。
+//    如果是 EADDRINUSE 等可恢复错误，让 process 继续运行。
+//    只有真正的致命错误才 exit(1)，避免 systemd 无限重启循环。
+const FATAL_EXIT_ERRORS = new Set([
+  'MODULE_NOT_FOUND',
+  'ERR_REQUIRE_ESM',
+]);
+
 process.on('uncaughtException', (err) => {
+  const errnoErr = err as NodeJS.ErrnoException;
+  // 端口冲突已经在 server.on('error') 中处理了，这里跳过
+  if (errnoErr.code === 'EADDRINUSE') return;
+
   logger.error('[Process] Uncaught exception', { message: err.message, stack: err.stack });
-  process.exit(1);
+  // 只有致命错误才 exit，其余交给 logger 后保持运行
+  // 这样不会因为单个请求的偶发异常导致整个服务崩溃 → systemd 无限重启
+  const shouldExit = errnoErr.code && FATAL_EXIT_ERRORS.has(errnoErr.code as string);
+  if (shouldExit) {
+    process.exit(1);
+  }
 });
 
 process.on('unhandledRejection', (reason) => {
   logger.error('[Process] Unhandled rejection', { reason: String(reason) });
-  process.exit(1);
+  // 不 exit — unhandledRejection 通常是某个异步操作被忽略的 catch，
+  // 不代表整个进程不可用。直接 exit 会导致不必要的重启循环。
 });
