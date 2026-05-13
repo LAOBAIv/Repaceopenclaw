@@ -1,0 +1,33 @@
+﻿# ========== 依赖和构建产物 ==========
+node_modules/
+dist/
+build/
+.next/
+coverage/
+
+# ========== 日志 ==========
+*.log
+logs/
+
+# ========== 敏感配置 ========== 敏感配置（真实密钥）==========
+# ⚠️ 模板文件（含占位符）保留在 Git 中，真实密钥通过 .local 文件或系统环境变量注入
+.env.local
+.env.production
+.env.development
+*.pem
+.claude-code.local.json
+.claude-code-*.local.json
+
+# ========== 数据库 ==========
+*.db
+*.sqlite
+*.sqlite3
+backend/data/
+
+# ========== IDE ==========
+.vscode/
+.idea/
+
+# ========== OS ==========
+.DS_Store
+Thumbs.db
