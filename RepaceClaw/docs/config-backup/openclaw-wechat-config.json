@@ -1,0 +1,837 @@
+{
+  "meta": {
+    "lastTouchedVersion": "2026.4.1",
+    "lastTouchedAt": "2026-05-13T12:46:14.936Z"
+  },
+  "wizard": {
+    "lastRunAt": "2026-05-13T12:46:14.831Z",
+    "lastRunVersion": "2026.4.1",
+    "lastRunCommand": "doctor",
+    "lastRunMode": "local"
+  },
+  "auth": {
+    "profiles": {
+      "linkApi:default": {
+        "provider": "linkApi",
+        "mode": "api_key"
+      },
+      "minimax:cn": {
+        "provider": "minimax",
+        "mode": "api_key"
+      }
+    }
+  },
+  "models": {
+    "mode": "merge",
+    "providers": {
+      "dashscope": {
+        "baseUrl": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+        "apiKey": "sk-f11a8466ffe2446198b8972c01c5943a",
+        "api": "openai-completions",
+        "models": [
+          {
+            "id": "qwen3.6-max-preview",
+            "name": "Qwen3.6-Max-Preview",
+            "api": "openai-completions",
+            "reasoning": true,
+            "input": [
+              "text",
+              "image"
+            ],
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0
+            },
+            "contextWindow": 1000000,
+            "maxTokens": 16384
+          },
+          {
+            "id": "qwen3.5-plus",
+            "name": "Qwen3.5-Plus",
+            "api": "openai-completions",
+            "reasoning": false,
+            "input": [
+              "text",
+              "image"
+            ],
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0
+            },
+            "contextWindow": 131072,
+            "maxTokens": 16384
+          },
+          {
+            "id": "qwen3.6-plus",
+            "name": "Qwen3.6-Plus",
+            "api": "openai-completions",
+            "reasoning": true,
+            "input": [
+              "text",
+              "image"
+            ],
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0
+            },
+            "contextWindow": 1000000,
+            "maxTokens": 16384
+          },
+          {
+            "id": "qwen3-coder-plus",
+            "name": "Qwen3-Coder-Plus",
+            "api": "openai-completions",
+            "reasoning": false,
+            "input": [
+              "text",
+              "image"
+            ],
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0
+            },
+            "contextWindow": 256000,
+            "maxTokens": 65536
+          },
+          {
+            "id": "qwen2.5-coder",
+            "name": "Qwen2.5-Coder",
+            "api": "openai-completions",
+            "reasoning": false,
+            "input": [
+              "text",
+              "image"
+            ],
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0
+            },
+            "contextWindow": 128000,
+            "maxTokens": 32768
+          },
+          {
+            "id": "Qwen3-Coder",
+            "name": "Qwen3-Coder",
+            "api": "openai-completions",
+            "reasoning": false,
+            "input": [
+              "text",
+              "image"
+            ],
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0
+            },
+            "contextWindow": 256000,
+            "maxTokens": 65536
+          }
+        ]
+      },
+      "linkApi": {
+        "baseUrl": "https://e.linkh5.cn/v1/",
+        "apiKey": "cp_a8422184a7d8e665a3509a5edbd27e0b",
+        "api": "anthropic-messages",
+        "models": [
+          {
+            "id": "glm-5",
+            "name": "glm-5",
+            "api": "anthropic-messages",
+            "reasoning": true,
+            "input": [
+              "text",
+              "image"
+            ],
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0
+            },
+            "contextWindow": 128000,
+            "maxTokens": 8192
+          },
+          {
+            "id": "claude-opus-4-6",
+            "name": "claude-opus-4-6",
+            "api": "anthropic-messages",
+            "reasoning": false,
+            "input": [
+              "text",
+              "image"
+            ],
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0
+            },
+            "contextWindow": 298000,
+            "maxTokens": 198000
+          },
+          {
+            "id": "qwen3-max-2026-01-23",
+            "name": "qwen3-max-2026-01-23",
+            "api": "anthropic-messages",
+            "reasoning": false,
+            "input": [
+              "text",
+              "image"
+            ],
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0
+            },
+            "contextWindow": 1000000,
+            "maxTokens": 65536
+          },
+          {
+            "id": "qwen3.6-plus",
+            "name": "qwen3.6-plus",
+            "api": "anthropic-messages",
+            "reasoning": true,
+            "input": [
+              "text",
+              "image"
+            ],
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0
+            },
+            "contextWindow": 1000000,
+            "maxTokens": 131072
+          },
+          {
+            "id": "kimi-k2.5",
+            "name": "kimi-k2.5",
+            "api": "anthropic-messages",
+            "reasoning": true,
+            "input": [
+              "text",
+              "image"
+            ],
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0
+            },
+            "contextWindow": 200000,
+            "maxTokens": 8192
+          },
+          {
+            "id": "glm-5.1",
+            "name": "glm-5.1",
+            "api": "anthropic-messages",
+            "reasoning": true,
+            "input": [
+              "text",
+              "image"
+            ],
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0
+            },
+            "contextWindow": 128000,
+            "maxTokens": 8192
+          },
+          {
+            "id": "qwen-max",
+            "name": "qwen-max",
+            "api": "anthropic-messages",
+            "reasoning": false,
+            "input": [
+              "text",
+              "image"
+            ],
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0
+            },
+            "contextWindow": 1000000,
+            "maxTokens": 65536
+          },
+          {
+            "id": "gpt-5.4-pro",
+            "name": "gpt-5.4-pro",
+            "api": "anthropic-messages",
+            "reasoning": false,
+            "input": [
+              "text"
+            ],
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0
+            },
+            "contextWindow": 128000,
+            "maxTokens": 8192
+          },
+          {
+            "id": "deepseek-v3.1",
+            "name": "deepseek-v3.1",
+            "api": "anthropic-messages",
+            "reasoning": false,
+            "input": [
+              "text"
+            ],
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0
+            },
+            "contextWindow": 128000,
+            "maxTokens": 8192
+          },
+          {
+            "id": "qwen3-coder-plus",
+            "name": "Qwen3-Coder-Plus",
+            "api": "anthropic-messages",
+            "reasoning": false,
+            "input": [
+              "text",
+              "image"
+            ],
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0
+            },
+            "contextWindow": 256000,
+            "maxTokens": 65536
+          },
+          {
+            "id": "qwen2.5-coder",
+            "name": "Qwen2.5-Coder",
+            "api": "anthropic-messages",
+            "reasoning": false,
+            "input": [
+              "text",
+              "image"
+            ],
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0
+            },
+            "contextWindow": 128000,
+            "maxTokens": 32768
+          },
+          {
+            "id": "Qwen3-Coder",
+            "name": "Qwen3-Coder",
+            "api": "anthropic-messages",
+            "reasoning": false,
+            "input": [
+              "text",
+              "image"
+            ],
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0
+            },
+            "contextWindow": 256000,
+            "maxTokens": 65536
+          }
+        ]
+      }
+    }
+  },
+  "agents": {
+    "defaults": {
+      "contextTokens": 298000,
+      "model": {
+        "primary": "linkApi/qwen3.6-plus"
+      },
+      "models": {
+        "linkApi/claude-opus-4-6": {
+          "alias": "claude-opus-4-6"
+        },
+        "linkApi/glm-5": {
+          "alias": "glm-5"
+        },
+        "linkApi/qwen3-max-2026-01-23": {
+          "alias": "qwen3-max-2026-01-23"
+        },
+        "linkApi/qwen3.6-plus": {
+          "alias": "qwen3.6-plus"
+        },
+        "linkApi/kimi-k2.5": {
+          "alias": "kimi-k2.5"
+        },
+        "linkApi/glm-5.1": {
+          "alias": "glm-5.1"
+        },
+        "linkApi/qwen-max": {
+          "alias": "qwen-max"
+        },
+        "linkApi/gpt-5.4-pro": {
+          "alias": "gpt-5.4-pro"
+        },
+        "linkApi/deepseek-v3.1": {
+          "alias": "deepseek-v3.1"
+        },
+        "linkApi/qwen3-coder-plus": {
+          "alias": "qwen3-coder-plus"
+        },
+        "linkApi/qwen2.5-coder": {
+          "alias": "qwen2.5-coder"
+        },
+        "linkApi/Qwen3-Coder": {
+          "alias": "Qwen3-Coder"
+        },
+        "dashscope/qwen3.6-max-preview": {
+          "alias": "qwen3.6-max-preview"
+        },
+        "dashscope/qwen3.5-plus": {
+          "alias": "qwen3.5-plus"
+        },
+        "dashscope/qwen3.6-plus": {
+          "alias": "qwen3.6-plus"
+        },
+        "dashscope/qwen3-coder-plus": {
+          "alias": "qwen3-coder-plus"
+        },
+        "dashscope/qwen2.5-coder": {
+          "alias": "qwen2.5-coder"
+        },
+        "dashscope/Qwen3-Coder": {
+          "alias": "Qwen3-Coder"
+        }
+      },
+      "workspace": "/root/.openclaw/workspace",
+      "compaction": {
+        "mode": "safeguard",
+        "reserveTokens": 40000,
+        "keepRecentTokens": 60000,
+        "recentTurnsPreserve": 6,
+        "reserveTokensFloor": 40000
+      },
+      "maxConcurrent": 4,
+      "subagents": {
+        "maxConcurrent": 8
+      },
+      "memorySearch": {
+        "experimental": {
+          "sessionMemory": true
+        },
+        "sources": [
+          "memory",
+          "sessions"
+        ]
+      },
+      "sandbox": {
+        "workspaceAccess": "rw"
+      },
+      "contextPruning": {
+        "mode": "cache-ttl",
+        "ttl": "2h",
+        "keepLastAssistants": 12
+      },
+      "timeoutSeconds": 180
+    },
+    "list": [
+      {
+        "id": "admin",
+        "name": "RepaceClaw管理员老白",
+        "model": "dashscope/qwen3.6-max-preview",
+        "skills": [
+          "file_read",
+          "file_write",
+          "shell",
+          "web_search"
+        ],
+        "subagents": {
+          "allowAgents": [
+            "plan-c-session-a",
+            "plan-c-session-b",
+            "plan-c-session-c"
+          ],
+          "requireAgentId": false
+        },
+        "thinkingDefault": "high"
+      },
+      {
+        "id": "repaceclaw-platform-assistant",
+        "name": "RepaceClaw 平台助手",
+        "workspace": "/root/repaceclaw/platform-assistant/workspace",
+        "agentDir": "/root/.openclaw/agents/repaceclaw-platform-assistant/agent",
+        "model": "linkApi/qwen3.6-plus",
+        "skills": []
+      },
+      {
+        "id": "rc-dev-agent",
+        "name": "开发类智能体",
+        "workspace": "/root/.openclaw/workspace-rc-dev-agent",
+        "agentDir": "/root/.openclaw/agents/rc-dev-agent/agent",
+        "model": "linkApi/qwen3.6-plus",
+        "skills": [
+          "file_read",
+          "file_write",
+          "shell",
+          "web_search"
+        ]
+      },
+      {
+        "id": "rc-data-agent",
+        "name": "分析类智能体",
+        "workspace": "/root/.openclaw/workspace-rc-data-agent",
+        "agentDir": "/root/.openclaw/agents/rc-data-agent/agent",
+        "model": "linkApi/qwen3.6-plus",
+        "skills": [
+          "file_read",
+          "file_write",
+          "shell"
+        ]
+      },
+      {
+        "id": "rc-creative-agent",
+        "name": "创作类智能体",
+        "workspace": "/root/.openclaw/workspace-rc-creative-agent",
+        "agentDir": "/root/.openclaw/agents/rc-creative-agent/agent",
+        "model": "linkApi/qwen3.6-plus",
+        "skills": [
+          "file_read",
+          "file_write",
+          "image_generation"
+        ]
+      },
+      {
+        "id": "rc-pm-agent",
+        "name": "管理类智能体",
+        "workspace": "/root/.openclaw/workspace-rc-pm-agent",
+        "agentDir": "/root/.openclaw/agents/rc-pm-agent/agent",
+        "model": "linkApi/qwen3.6-plus",
+        "skills": [
+          "file_read",
+          "file_write"
+        ]
+      },
+      {
+        "id": "rc-research-agent",
+        "name": "搜索类智能体",
+        "workspace": "/root/.openclaw/workspace-rc-research-agent",
+        "agentDir": "/root/.openclaw/agents/rc-research-agent/agent",
+        "model": "linkApi/qwen3.6-plus",
+        "skills": [
+          "file_read",
+          "file_write",
+          "web_search"
+        ]
+      },
+      {
+        "id": "rc-ops-agent",
+        "name": "运营类智能体",
+        "workspace": "/root/.openclaw/workspace-rc-ops-agent",
+        "agentDir": "/root/.openclaw/agents/rc-ops-agent/agent",
+        "model": "linkApi/qwen3.6-plus",
+        "skills": [
+          "file_read",
+          "file_write",
+          "web_search"
+        ]
+      },
+      {
+        "id": "rc-decision-agent",
+        "name": "决策类智能体",
+        "workspace": "/root/.openclaw/workspace-rc-decision-agent",
+        "agentDir": "/root/.openclaw/agents/rc-decision-agent/agent",
+        "model": "linkApi/qwen3.6-plus",
+        "skills": [
+          "file_read",
+          "file_write"
+        ]
+      },
+      {
+        "id": "rc-general-agent",
+        "name": "通用类智能体",
+        "workspace": "/root/.openclaw/workspace-rc-general-agent",
+        "agentDir": "/root/.openclaw/agents/rc-general-agent/agent",
+        "model": "linkApi/qwen3.6-plus",
+        "skills": [
+          "file_read",
+          "file_write"
+        ]
+      },
+      {
+        "id": "rc-wechat-agent",
+        "name": "微信助手",
+        "workspace": "/root/.openclaw/workspace-rc-wechat-agent",
+        "agentDir": "/root/.openclaw/agents/rc-wechat-agent/agent",
+        "model": "linkApi/qwen3.6-plus",
+        "skills": [
+          "web_search"
+        ],
+        "subagents": {
+          "allowAgents": [
+            "rc-dev-agent",
+            "rc-data-agent",
+            "rc-creative-agent",
+            "rc-pm-agent",
+            "rc-research-agent",
+            "rc-ops-agent",
+            "rc-decision-agent",
+            "rc-general-agent"
+          ],
+          "requireAgentId": true
+        }
+      },
+      {
+        "id": "opus-agent",
+        "name": "RepaceClaw智能管理",
+        "workspace": "/root/.openclaw/workspace-opus-agent",
+        "agentDir": "/root/.openclaw/agents/opus-agent/agent",
+        "model": "linkApi/qwen3.6-plus",
+        "skills": [
+          "file_read",
+          "file_write",
+          "shell",
+          "web_search"
+        ]
+      },
+      {
+        "id": "qwen-dev-agent",
+        "name": "RepaceClaw 系统设置",
+        "model": "dashscope/qwen3.6-max-preview",
+        "workspace": "/root/.openclaw/workspace-qwen-dev",
+        "agentDir": "/root/.openclaw/agents/qwen-dev-agent/agent",
+        "skills": [
+          "file_read",
+          "file_write",
+          "shell",
+          "web_search"
+        ],
+        "thinkingDefault": "low",
+        "params": {
+          "temperature": 0.1,
+          "top_p": 0.95
+        },
+        "sandbox": {
+          "mode": "non-main"
+        },
+        "subagents": {
+          "allowAgents": [
+            "rc-dev-agent",
+            "rc-data-agent",
+            "rc-research-agent"
+          ],
+          "requireAgentId": true
+        },
+        "tools": {
+          "exec": {
+            "timeoutSec": 180
+          }
+        }
+      },
+      {
+        "id": "opus-only-agent",
+        "name": "OPUS专用智能体",
+        "workspace": "/root/.openclaw/workspace-opus-only-agent",
+        "agentDir": "/root/.openclaw/agents/opus-only-agent/agent",
+        "model": "defapi/claude-opus-4-6",
+        "skills": [
+          "file_read",
+          "file_write",
+          "shell",
+          "web_search"
+        ],
+        "thinkingDefault": "high"
+      }
+    ]
+  },
+  "tools": {
+    "exec": {
+      "security": "full",
+      "ask": "off",
+      "host": "gateway"
+    },
+    "sessions_spawn": {},
+    "profile": "coding"
+  },
+  "messages": {
+    "ackReactionScope": "group-mentions"
+  },
+  "commands": {
+    "native": "auto",
+    "nativeSkills": "auto",
+    "restart": true,
+    "ownerDisplay": "raw"
+  },
+  "session": {
+    "dmScope": "per-channel-peer"
+  },
+  "channels": {
+    "slack": {
+      "mode": "socket",
+      "webhookPath": "/slack/events",
+      "enabled": true,
+      "userTokenReadOnly": true,
+      "groupPolicy": "allowlist",
+      "streaming": "partial",
+      "nativeStreaming": true
+    },
+    "feishu": {
+      "enabled": true,
+      "connectionMode": "websocket",
+      "domain": "feishu",
+      "accounts": {
+        "default": {
+          "appId": "cli_a9334d17f1b89cd4",
+          "appSecret": "UDnKXLyF92CQxyciGRVJSfW3PK2vnDH6",
+          "botName": "AI Assistant",
+          "groupPolicy": "open",
+          "dmPolicy": "open",
+          "allowFrom": [
+            "*"
+          ],
+          "tools": {
+            "chat": true
+          }
+        }
+      }
+    },
+    "openclaw-weixin": {
+      "channelConfigUpdatedAt": "2026-05-14T00:25:00.000Z",
+      "agentId": "rc-wechat-agent",
+      "disabled": false
+    }
+  },
+  "bindings": [
+    {
+      "agentId": "rc-wechat-agent",
+      "match": {
+        "channel": "openclaw-weixin",
+        "accountId": "*"
+      }
+    }
+  ],
+  "gateway": {
+    "port": 18789,
+    "mode": "local",
+    "reload": {
+      "mode": "hybrid",
+      "debounceMs": 300
+    },
+    "bind": "lan",
+    "http": {
+      "endpoints": {
+        "chatCompletions": {
+          "enabled": true
+        }
+      }
+    },
+    "controlUi": {
+      "basePath": "luckabcd",
+      "allowedOrigins": [
+        "https://121.41.96.200",
+        "http://118.196.72.0:18789",
+        "https://repaceclaw.com",
+        "http://repaceclaw.com",
+        "http://localhost:18789",
+        "http://localhost:3001"
+      ],
+      "allowInsecureAuth": true,
+      "dangerouslyDisableDeviceAuth": true
+    },
+    "auth": {
+      "mode": "token",
+      "token": "021a420c0665ef2813ffe22e10725a629c58565ced1345d3"
+    },
+    "tailscale": {
+      "mode": "off",
+      "resetOnExit": false
+    }
+  },
+  "plugins": {
+    "load": {
+      "paths": []
+    },
+    "entries": {
+      "feishu": {
+        "enabled": true
+      },
+      "slack": {
+        "enabled": true
+      },
+      "minimax": {
+        "enabled": true
+      },
+      "openclaw-weixin": {
+        "enabled": true
+      }
+    },
+    "installs": {
+      "openclaw-weixin": {
+        "source": "npm",
+        "spec": "@tencent-weixin/openclaw-weixin",
+        "installPath": "/root/.openclaw/extensions/openclaw-weixin",
+        "version": "2.3.1",
+        "resolvedName": "@tencent-weixin/openclaw-weixin",
+        "resolvedVersion": "2.3.1",
+        "resolvedSpec": "@tencent-weixin/openclaw-weixin@2.3.1",
+        "integrity": "sha512-plOrZq5Oj4YkmP2/yclVnlPuPruUfXxk7BmHfnJFcFPmaXpt9X3gMF1WyQ6ebnEqtCvIpAIsntufgKShZemxCA==",
+        "shasum": "a8d6e34b832954d485d7f9a64ede5892735b7891",
+        "resolvedAt": "2026-04-30T14:19:00.820Z",
+        "installedAt": "2026-04-30T14:19:07.813Z"
+      }
+    },
+    "allow": [
+      "openclaw-weixin",
+      "feishu",
+      "minimax"
+    ]
+  },
+  "skills": {
+    "entries": {
+      "browser-tool": {
+        "enabled": true
+      },
+      "coding-agent": {
+        "enabled": true
+      },
+      "browserInspect": {
+        "enabled": true
+      },
+      "playwright-inspector": {
+        "enabled": true
+      },
+      "frontend-performance": {
+        "enabled": true
+      },
+      "self-improving": {
+        "enabled": true
+      },
+      "find-skills": {
+        "enabled": true
+      },
+      "memory-setup": {
+        "enabled": true
+      }
+    }
+  }
+}
