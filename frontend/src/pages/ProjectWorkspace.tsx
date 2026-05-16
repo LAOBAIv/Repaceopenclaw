@@ -1999,6 +1999,8 @@ export function ProjectWorkspace() {
   const [showPriorityModal, setShowPriorityModal] = useState(false);
   const [showChannelModal, setShowChannelModal] = useState(false);
   const [inputValue, setInputValue] = useState('');
+  // [2026-05-16] 粘贴图片上传状态
+  const [pastedImages, setPastedImages] = useState<{ file: File; preview: string; uploading: boolean; url?: string }[]>([]);
   /** 当前激活的对话 panel id（用于智能体面板高亮显示） */
   const [activePanelId, setActivePanelId] = useState<string | null>(null);
   /** 协作流程节点（提升到顶层，防止 TabPanel 关闭时丢失） */
@@ -2398,9 +2400,6 @@ export function ProjectWorkspace() {
     const tab = allTabs.find(t => t.id === storeActiveId);
     if (tab?.panelId) {
       setActivePanelId(tab.panelId);
-    } else if (tab && !tab.panelId) {
-      // 当前激活的 Tab 没有面板(如微信助手未被点击), 清空 activePanelId
-      setActivePanelId(null);
     }
     // 如果 storeActiveId 为 null/空 且 allTabs 为空, 不做任何操作
   }, [allTabs, storeActiveId]);
@@ -2583,7 +2582,19 @@ export function ProjectWorkspace() {
   /* ── 发送消息 ─────────────────────────────────────────────── */
   async function handleSend() {
     const text = inputValue.trim();
-    if (!text) return;
+    // [2026-05-16] 支持纯图片发送（无文字）
+    const uploadedImages = pastedImages.filter(img => img.url && !img.uploading);
+    if (!text && uploadedImages.length === 0) return;
+
+    // 拼接图片 URL 到消息内容
+    let content = text;
+    if (uploadedImages.length > 0) {
+      const imageMarkdown = uploadedImages.map(img => `![image](${img.url})`).join('\n');
+      content = content ? `${content}\n${imageMarkdown}` : imageMarkdown;
+    }
+    // 清理粘贴图片状态
+    pastedImages.forEach(img => URL.revokeObjectURL(img.preview));
+    setPastedImages([]);
 
     let panelId: string | undefined;
     let agentName = '';
@@ -2591,7 +2602,7 @@ export function ProjectWorkspace() {
 
     if (activePanel && !activePanel.id.startsWith('local-')) {
       // 已有有效会话 panel，直接发消息
-      sendMessage(activePanel.id, text);
+      sendMessage(activePanel.id, content);
       panelId = activePanel.id;
       agentName = activePanel.agentName;
       agentColor = activePanel.agentColor ?? '#9ca3af';
@@ -2617,7 +2628,7 @@ export function ProjectWorkspace() {
           : state.openPanels[0];
         if (freshPanel) {
           setActivePanelId(freshPanel.id);
-          sendMessage(freshPanel.id, text);
+          sendMessage(freshPanel.id, content);
           panelId = freshPanel.id;
         }
         agentName = defaultAgent.name;
@@ -2642,6 +2653,57 @@ export function ProjectWorkspace() {
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
     if (e.key === 'Enter' && !e.ctrlKey) { e.preventDefault(); handleSend(); }
+  }
+
+  // [2026-05-16] 粘贴图片处理：从剪贴板读取图片并上传
+  async function handlePaste(e: React.ClipboardEvent<HTMLTextAreaElement>) {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    const imageFiles: File[] = [];
+    for (let i = 0; i < items.length; i++) {
+      if (items[i].type.startsWith('image/')) {
+        const file = items[i].getAsFile();
+        if (file) imageFiles.push(file);
+      }
+    }
+    if (imageFiles.length === 0) return;
+    e.preventDefault();
+
+    // 添加预览并上传
+    for (const file of imageFiles) {
+      const preview = URL.createObjectURL(file);
+      const idx = pastedImages.length;
+      setPastedImages(prev => [...prev, { file, preview, uploading: true }]);
+
+      try {
+        const reader = new FileReader();
+        const base64 = await new Promise<string>((resolve) => {
+          reader.onload = () => resolve((reader.result as string).split(',')[1]);
+          reader.readAsDataURL(file);
+        });
+        const token = localStorage.getItem('token');
+        const res = await fetch('/api/files/upload', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({
+            fileName: file.name || `paste-${Date.now()}.png`,
+            mimeType: file.type,
+            base64,
+            conversationId: activePanel?.conversationId || '',
+          }),
+        });
+        const json = await res.json();
+        const url = json.data?.url || json.data?.storagePath;
+        setPastedImages(prev => prev.map((img, i) => i === idx ? { ...img, uploading: false, url } : img));
+      } catch {
+        setPastedImages(prev => prev.map((img, i) => i === idx ? { ...img, uploading: false } : img));
+      }
+    }
+  }
+
+  // [2026-05-16] 移除已粘贴的图片
+  function removePastedImage(idx: number) {
+    setPastedImages(prev => { URL.revokeObjectURL(prev[idx]?.preview); return prev.filter((_, i) => i !== idx); });
   }
 
   function handleTabClick(tab: string) {
@@ -3171,7 +3233,8 @@ export function ProjectWorkspace() {
           {activePanel && (
             <SessionAgentBar
               conversationId={activePanel.conversationId}
-              participants={(agents ?? []).filter(a => activePanel.agentIds.includes(a.id)).map(a => ({ id: a.id, name: a.name, color: a.color }))}
+              participants={(agents ?? []).filter(a => activePanel.agentIds.includes(a.id) || activePanel.agentIds.includes(a.agentCode || '') || activePanel.agentIds.includes(a.openclawAgentId || '')).map(a => ({ id: a.id, name: a.name, color: a.color }))}
+              isWechatAssistant={activePanel.agentId === 'rc-wechat-agent' || activePanel.agentName === '微信助手'}
               onParticipantsChange={async (updatedConversation) => {
                 // 这里只同步参与者列表/agent 元数据，绝不能新开 tab。
                 // “切换 agent”应始终留在当前会话、当前 panel、当前 tab 内完成。
@@ -3336,7 +3399,13 @@ export function ProjectWorkspace() {
 
           {/* 3. 功能标签栏 */}
           <div className="function-tabs">
-            {FUNCTION_TABS.map(tab => (
+            {FUNCTION_TABS
+              .filter(tab => {
+                // [2026-05-16] 微信助手面板隐藏"多智能体"Tab，智能体固定不可切换
+                if (tab === '多智能体' && (activePanel?.agentId === 'rc-wechat-agent' || activePanel?.agentName === '微信助手')) return false;
+                return true;
+              })
+              .map(tab => (
               <button
                 key={tab}
                 className={`function-tab${activeSideTab === tab ? ' active' : ''}`}
@@ -3372,13 +3441,26 @@ export function ProjectWorkspace() {
                 document.addEventListener('mouseup', onUp);
               }}
             />
+            {/* [2026-05-16] 粘贴图片预览区 */}
+            {pastedImages.length > 0 && (
+              <div style={{ display: 'flex', gap: 6, padding: '6px 8px', flexWrap: 'wrap' }}>
+                {pastedImages.map((img, idx) => (
+                  <div key={idx} style={{ position: 'relative', width: 56, height: 56 }}>
+                    <img src={img.preview} alt="" style={{ width: 56, height: 56, objectFit: 'cover', borderRadius: 6, border: '1px solid #e5e7eb' }} />
+                    {img.uploading && <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.4)', borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 10 }}>上传中</div>}
+                    <button onClick={() => removePastedImage(idx)} style={{ position: 'absolute', top: -4, right: -4, width: 16, height: 16, borderRadius: '50%', background: '#ef4444', color: '#fff', border: 'none', fontSize: 10, cursor: 'pointer', lineHeight: '16px', padding: 0 }}>×</button>
+                  </div>
+                ))}
+              </div>
+            )}
             <textarea
               ref={textareaRef}
               className="main-input"
               value={inputValue}
               onChange={e => setInputValue(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder="输入消息，Enter 发送，Ctrl+Enter 换行"
+              onPaste={handlePaste}
+              placeholder="输入消息，Enter 发送，Ctrl+Enter 换行，可粘贴图片"
             />
             <button className="send-btn" onClick={handleSend} title="发送">
               <svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">

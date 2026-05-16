@@ -47,18 +47,91 @@ function loadSessionTags(conversationId: string): string[] {
  * 多智能体会话 Agent 栏组件
  * 显示当前会话的所有参与智能体和该会话的任务标签
  * ⚡ 标签按 conversationId 隔离
+ * isWechatAssistant: 微信助手会话模式，智能体标签只读，显示绑定状态
  */
 export function SessionAgentBar({
   conversationId,
   participants,
   onParticipantsChange,
+  isWechatAssistant = false,
 }: {
   conversationId: string;
   participants: { id: string; name: string; color: string }[];
   onParticipantsChange?: (conversation?: { id: string; agentIds: string[]; currentAgentId: string; agentId: string }) => void;
+  isWechatAssistant?: boolean;
 }) {
   const [loading, setLoading] = useState<string | null>(null);
   const [taskTags, setTaskTags] = useState<string[]>([]);
+
+  /** 微信用户绑定状态 [2026-05-16] 改用 user_wechat_bindings 表 */
+  const [wechatBinding, setWechatBinding] = useState<{
+    bound: boolean;
+    wechatOpenid?: string;
+    boundAt?: string;
+  } | null>(null);
+  const [bindingLoading, setBindingLoading] = useState(false);
+  const [bindingCode, setBindingCode] = useState<string | null>(null);
+  /** 微信助手当前模型（visibility=system 被 agentStore 过滤，单独存储） */
+  const [wechatAgentModel, setWechatAgentModel] = useState<string | null>(null);
+
+  // [2026-05-16] 微信助手模式下加载绑定状态
+  useEffect(() => {
+    if (!isWechatAssistant) return;
+    apiClient.get('/wechat/user-binding').then((res: any) => {
+      const d = res.data?.data;
+      setWechatBinding(d || { bound: false });
+    }).catch(() => {
+      setWechatBinding({ bound: false });
+    });
+    apiClient.get('/agents/rc-wechat-agent').then((res: any) => {
+      setWechatAgentModel(res.data?.data?.modelName || res.data?.modelName || null);
+    }).catch(() => {});
+  }, [isWechatAssistant]);
+
+  // [2026-05-16] 解绑微信
+  async function handleUnbind() {
+    setBindingLoading(true);
+    try {
+      await apiClient.delete('/wechat/user-binding');
+      setWechatBinding({ bound: false });
+    } catch { alert('解绑失败'); }
+    finally { setBindingLoading(false); }
+  }
+
+  // [2026-05-16] 扫码绑定微信：调用 iLink 生成二维码，用户扫码后自动绑定
+  async function handleBindQrcode() {
+    setBindingLoading(true);
+    try {
+      const res: any = await apiClient.post('/wechat-clawbot/qrcode');
+      const d = res.data?.data;
+      if (!d?.qrcode_url) { alert('获取二维码失败'); return; }
+      setBindingCode(d.qrcode_url); // 复用 bindingCode 存二维码 URL
+      const qrToken = d.qrcode;
+      // 轮询扫码状态
+      const pollInterval = setInterval(async () => {
+        try {
+          const r: any = await apiClient.post('/wechat-clawbot/qrcode/status', { qrcode: qrToken });
+          const status = r.data?.data?.status;
+          if (status === 'confirmed') {
+            const userId = r.data?.data?.credentials?.ilink_user_id;
+            if (userId) {
+              // 自动写入绑定
+              await apiClient.post('/wechat/user-binding', { wechatOpenid: userId });
+              setWechatBinding({ bound: true, wechatOpenid: userId, boundAt: new Date().toISOString() });
+            }
+            setBindingCode(null);
+            clearInterval(pollInterval);
+          } else if (status === 'expired') {
+            setBindingCode(null);
+            clearInterval(pollInterval);
+          }
+        } catch {}
+      }, 3000);
+      // 3分钟后停止轮询
+      setTimeout(() => { clearInterval(pollInterval); setBindingCode(null); }, 180000);
+    } catch (e: any) { alert('获取二维码失败: ' + (e.message || '')); }
+    finally { setBindingLoading(false); }
+  }
 
   /** 模型切换下拉状态 */
   const [showModelDropdown, setShowModelDropdown] = useState(false);
@@ -143,7 +216,9 @@ export function SessionAgentBar({
           {/* 模型标签 */}
           {(() => {
             const agentData = agents.find(a => a.id === agent.id);
-            if (!agentData?.modelName) return null;
+            // 微信助手被 agentStore 过滤掉（visibility=system），单独从后端查询模型
+            const modelName = agentData?.modelName || (isWechatAssistant ? wechatAgentModel : null);
+            if (!modelName) return null;
             return (
               <span
                 onClick={(e) => { e.stopPropagation(); setModelDropdownAgentId(agent.id); setShowModelDropdown(true); }}
@@ -159,11 +234,12 @@ export function SessionAgentBar({
                 onMouseLeave={(e) => { e.currentTarget.style.background = '#f3f4f6'; e.currentTarget.style.borderColor = '#e5e7eb'; e.currentTarget.style.color = '#6b7280'; }}
                 title="点击切换模型"
               >
-                {agentData.modelName}
+                {modelName}
               </span>
             );
           })()}
-          {participants.length > 1 && (
+          {/* 移除按鈕：微信助手会话不允许移除 agent */}
+          {!isWechatAssistant && participants.length > 1 && (
             <button
               onClick={() => handleRemoveAgent(agent.id)}
               disabled={loading === agent.id}
@@ -205,6 +281,88 @@ export function SessionAgentBar({
             );
           })}
         </>
+      )}
+
+      {/* 微信助手：绑定状态区域 [2026-05-16] 放在最右侧，弹窗展示二维码 */}
+      {isWechatAssistant && (
+        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
+          {wechatBinding === null ? (
+            <span style={{ fontSize: 12, color: '#9ca3af' }}>加载中…</span>
+          ) : wechatBinding.bound ? (
+            <>
+              <span style={{
+                display: 'inline-flex', alignItems: 'center', gap: 4,
+                fontSize: 12, padding: '3px 10px', borderRadius: 20,
+                background: '#f0fdf4', border: '1px solid #bbf7d0', color: '#15803d',
+              }}>
+                <span style={{ fontSize: 10 }}>🔗</span>
+                已绑定: {wechatBinding.wechatOpenid ? `${wechatBinding.wechatOpenid.substring(0, 10)}...` : '微信用户'}
+              </span>
+              <button
+                onClick={handleUnbind}
+                disabled={bindingLoading}
+                style={{
+                  fontSize: 11, padding: '2px 8px', borderRadius: 8,
+                  border: '1px solid #e5e7eb', background: '#fff',
+                  color: '#6b7280', cursor: 'pointer',
+                }}
+              >
+                {bindingLoading ? '解绑中…' : '解绑'}
+              </button>
+            </>
+          ) : (
+            <button
+              onClick={handleBindQrcode}
+              disabled={bindingLoading}
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 4,
+                fontSize: 12, padding: '3px 12px', borderRadius: 20,
+                background: '#fff7ed', border: '1px solid #fed7aa', color: '#c2410c',
+                cursor: 'pointer',
+              }}
+            >
+              <span style={{ fontSize: 10 }}>⚠️</span>
+              {bindingLoading ? '生成中…' : '绑定微信'}
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* 二维码弹窗 [2026-05-16] */}
+      {bindingCode && (
+        <div
+          onClick={() => setBindingCode(null)}
+          style={{
+            position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+            background: 'rgba(0,0,0,0.5)', display: 'flex',
+            alignItems: 'center', justifyContent: 'center', zIndex: 9999,
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: '#fff', borderRadius: 16, padding: 32,
+              display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16,
+              boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
+            }}
+          >
+            <h3 style={{ margin: 0, fontSize: 18, color: '#1f2937' }}>微信扫码绑定</h3>
+            <img
+              src={bindingCode}
+              alt="扫码绑定"
+              style={{ width: 200, height: 200, borderRadius: 8, border: '1px solid #e5e7eb' }}
+            />
+            <p style={{ margin: 0, fontSize: 14, color: '#6b7280' }}>请使用微信扫描二维码完成绑定</p>
+            <button
+              onClick={() => setBindingCode(null)}
+              style={{
+                padding: '8px 24px', fontSize: 14, borderRadius: 8,
+                background: '#f3f4f6', border: '1px solid #e5e7eb',
+                color: '#374151', cursor: 'pointer',
+              }}
+            >关闭</button>
+          </div>
+        </div>
       )}
 
       {/* 多智能体标识 */}

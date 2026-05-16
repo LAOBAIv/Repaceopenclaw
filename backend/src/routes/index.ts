@@ -32,6 +32,8 @@ import systemStatsRoutes from './systemStats';
 import sessionTabsRoutes from './sessionTabs';
 import sessionsRoutes from './sessions';
 import wechatClawBotRoutes from './wechatClawBot';
+import wechatRoutes from './wechat';
+import wechatIncomingRoutes from './wechatIncoming'; // [2026-05-16] OC 微信插件 RC-proxy 入口
 
 // 路由配置项
 interface RouteConfig {
@@ -67,6 +69,10 @@ const apiRoutes: RouteConfig[] = [
   { path: '/session-tabs', router: sessionTabsRoutes, prefix: '/api' },
   { path: '/sessions', router: sessionsRoutes, prefix: '/api' },
 { path: '/wechat-clawbot', router: wechatClawBotRoutes },
+  // 微信助手 binding 接口
+  { path: '/wechat', router: wechatRoutes },
+  // [2026-05-16] OC 微信插件 incoming 端点（无需用户认证，用 API Key）
+  { path: '/wechat-incoming', router: wechatIncomingRoutes },
 ];
 
 // 外部兼容路由列表（不使用 /api 前缀）

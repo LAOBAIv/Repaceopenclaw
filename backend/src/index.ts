@@ -91,7 +91,7 @@ async function main(): Promise<void> {
   app.use('/api/auth', authLimiter);
 
   // 3.8 Phase 1：全局 JWT 鉴权（排除登录注册和 OpenAI 兼容接口）
-  const publicPaths = ['/auth', '/v1', '/health', '/wechat-clawbot', '/wechat/bindbot'];
+  const publicPaths = ['/auth', '/v1', '/health', '/wechat-clawbot', '/wechat/bindbot', '/wechat-incoming']; // [2026-05-16] 添加 wechat-incoming 到公开路径（OC插件用 API Key 验证）
   app.use('/api', (req, res, next) => {
     if (publicPaths.some(p => req.path.startsWith(p))) return next();
     authenticate(req, res, next);
