@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
-import { Users, Shield, Building, RefreshCw, Search, Edit3, Trash2, Eye, MessageCircle } from 'lucide-react';
+import { Users, Shield, Building, RefreshCw, Search, Edit3, Trash2, Eye, MessageCircle, Plus, FolderTree, Lock } from 'lucide-react';
 import { adminOrganizationsApi, OrganizationUser, DepartmentNode } from '../api/adminOrganizations';
+import { authApi } from '../api/auth';
 import { useAuthStore } from '../stores/authStore';
 
 const ROLE_MAP: Record<string, { label: string; color: string; bg: string }> = {
@@ -24,6 +25,14 @@ export function UserManagement() {
   const [editingUser, setEditingUser] = useState<OrganizationUser | null>(null);
   const [editDepartmentId, setEditDepartmentId] = useState<string | null>(null);
   const [showUserDetail, setShowUserDetail] = useState(false);
+  // [2026-05-17] Tab 切换 + 组织管理状态
+  const [activeTab, setActiveTab] = useState<'users' | 'org'>('users');
+  const [newDeptName, setNewDeptName] = useState('');
+  const [newDeptCode, setNewDeptCode] = useState('');
+  const [newDeptParentId, setNewDeptParentId] = useState<string | null>(null);
+  const [editingDept, setEditingDept] = useState<DepartmentNode | null>(null);
+  const [editDeptName, setEditDeptName] = useState('');
+  const [editDeptCode, setEditDeptCode] = useState('');
 
   useEffect(() => {
     loadUsers();
@@ -106,6 +115,71 @@ export function UserManagement() {
     }
   }
 
+  // [2026-05-17] 组织架构管理方法
+  async function handleCreateDept() {
+    if (!newDeptName.trim()) { alert('请输入部门名称'); return; }
+    try {
+      await adminOrganizationsApi.createDepartment({
+        name: newDeptName.trim(),
+        departmentCode: newDeptCode.trim() || undefined,
+        parentId: newDeptParentId || undefined,
+      });
+      setNewDeptName('');
+      setNewDeptCode('');
+      setNewDeptParentId(null);
+      loadDepartments();
+    } catch (e: any) {
+      alert(`创建失败: ${e.message}`);
+    }
+  }
+
+  async function handleUpdateDept() {
+    if (!editingDept) return;
+    try {
+      await adminOrganizationsApi.updateDepartment(editingDept.id, {
+        name: editDeptName.trim() || undefined,
+        departmentCode: editDeptCode.trim() || undefined,
+      });
+      setEditingDept(null);
+      loadDepartments();
+    } catch (e: any) {
+      alert(`更新失败: ${e.message}`);
+    }
+  }
+
+  async function handleDeleteDept(id: string, name: string) {
+    if (!confirm(`确定删除部门「${name}」？`)) return;
+    try {
+      await adminOrganizationsApi.deleteDepartment(id);
+      loadDepartments();
+    } catch (e: any) {
+      alert(`删除失败: ${e.message}`);
+    }
+  }
+
+  // [2026-05-17] 管理员重置用户密码
+  async function handleResetPassword(userId: string, username: string) {
+    const newPwd = prompt(`重置用户「${username}」的密码\n请输入新密码（至少6位）:`);
+    if (!newPwd) return;
+    if (newPwd.length < 6) { alert('密码不能少于6位'); return; }
+    try {
+      await authApi.resetPassword(userId, newPwd);
+      alert(`用户「${username}」密码已重置`);
+    } catch (e: any) {
+      alert(`重置失败: ${e?.response?.data?.error || e.message}`);
+    }
+  }
+
+  // 展平部门树（用于显示）
+  function flattenDepts(nodes: DepartmentNode[], level = 0): Array<DepartmentNode & { level: number }> {
+    const result: Array<DepartmentNode & { level: number }> = [];
+    for (const n of nodes) {
+      result.push({ ...n, level });
+      if (n.children?.length) result.push(...flattenDepts(n.children, level + 1));
+    }
+    return result;
+  }
+
   // 筛选用户
   const filteredUsers = users.filter(user => {
     const matchSearch = !search ||
@@ -131,17 +205,33 @@ export function UserManagement() {
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
         <h2 style={{ fontSize: 18, fontWeight: 600, color: '#1a202c', display: 'flex', alignItems: 'center', gap: 8 }}>
-          <Users size={20} color="#d97706" /> 用户管理
+          <Users size={20} color="#d97706" /> 用户与组织管理
         </h2>
         <button
-          onClick={loadUsers}
+          onClick={() => { loadUsers(); loadDepartments(); }}
           style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 16px', borderRadius: 8, background: '#f3f4f6', color: '#374151', border: '1px solid #e5e7eb', cursor: 'pointer', fontSize: 13 }}
         >
           <RefreshCw size={14} /> 刷新
         </button>
       </div>
 
-      {/* 统计 + 搜索 */}
+      {/* [2026-05-17] Tab 切换 */}
+      <div style={{ display: 'flex', gap: 0, marginBottom: 20, borderBottom: '2px solid #e5e7eb' }}>
+        <button
+          onClick={() => setActiveTab('users')}
+          style={{ padding: '10px 20px', fontSize: 14, fontWeight: activeTab === 'users' ? 600 : 400, color: activeTab === 'users' ? '#d97706' : '#6b7280', background: 'none', border: 'none', borderBottom: activeTab === 'users' ? '2px solid #d97706' : '2px solid transparent', marginBottom: -2, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}
+        >
+          <Users size={15} /> 用户管理
+        </button>
+        <button
+          onClick={() => setActiveTab('org')}
+          style={{ padding: '10px 20px', fontSize: 14, fontWeight: activeTab === 'org' ? 600 : 400, color: activeTab === 'org' ? '#d97706' : '#6b7280', background: 'none', border: 'none', borderBottom: activeTab === 'org' ? '2px solid #d97706' : '2px solid transparent', marginBottom: -2, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}
+        >
+          <FolderTree size={15} /> 组织架构
+        </button>
+      </div>
+
+      {activeTab === 'users' && (<>
       <div style={{ display: 'flex', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', background: '#fff', borderRadius: 8, border: '1px solid #e5e7eb' }}>
           <Users size={14} color="#6b7280" />
@@ -388,7 +478,19 @@ export function UserManagement() {
                 )}
                 <div>
                   <div style={{ fontSize: 16, fontWeight: 600, color: '#1a202c' }}>{editingUser.username}</div>
-                  <div style={{ fontSize: 13, color: '#6b7280' }}>{editingUser.email}</div>
+                  <div style={{ fontSize: 12, color: '#6b7280' }}>{editingUser.email}</div>
+                </div>
+              </div>
+
+              {/* [2026-05-17] 完整账户信息 */}
+              <div style={{ background: '#f9fafb', borderRadius: 8, padding: 12, marginBottom: 20, fontSize: 12, color: '#6b7280' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                  <div><span style={{ color: '#9ca3af' }}>ID：</span>{editingUser.id.slice(0, 8)}...</div>
+                  <div><span style={{ color: '#9ca3af' }}>用户编码：</span>{editingUser.userCode || '-'}</div>
+                  <div><span style={{ color: '#9ca3af' }}>注册时间：</span>{editingUser.createdAt?.slice(0, 10) || '-'}</div>
+                  <div><span style={{ color: '#9ca3af' }}>最后登录：</span>{editingUser.lastLoginAt?.slice(0, 10) || '-'}</div>
+                  <div><span style={{ color: '#9ca3af' }}>微信绑定：</span>{editingUser.wechatBound ? '✅ 已绑定' : '❌ 未绑定'}</div>
+                  <div><span style={{ color: '#9ca3af' }}>所属组织：</span>{editingUser.primaryDepartmentName || '未分配'}</div>
                 </div>
               </div>
               
@@ -431,6 +533,36 @@ export function UserManagement() {
                   ))}
                 </select>
               </div>
+
+              {/* [2026-05-17] 重置密码 */}
+              <div style={{ marginBottom: 20, padding: 12, background: '#fefce8', borderRadius: 8, border: '1px solid #fde68a' }}>
+                <label style={{ display: 'block', fontSize: 12, color: '#92400e', marginBottom: 6, fontWeight: 500 }}>重置密码</label>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <input
+                    type="text"
+                    id="reset-pwd-input"
+                    placeholder="输入新密码（至少6位）"
+                    style={{ flex: 1, padding: '8px 12px', borderRadius: 8, border: '1px solid #e5e7eb', fontSize: 13 }}
+                  />
+                  <button
+                    onClick={async () => {
+                      const input = document.getElementById('reset-pwd-input') as HTMLInputElement;
+                      const pwd = input?.value;
+                      if (!pwd || pwd.length < 6) { alert('密码不能少于6位'); return; }
+                      try {
+                        await authApi.resetPassword(editingUser.id, pwd);
+                        alert('密码重置成功');
+                        input.value = '';
+                      } catch (e: any) {
+                        alert(`重置失败: ${e?.response?.data?.error || e.message}`);
+                      }
+                    }}
+                    style={{ padding: '8px 14px', borderRadius: 8, background: '#a16207', color: '#fff', border: 'none', fontSize: 13, cursor: 'pointer', whiteSpace: 'nowrap' }}
+                  >
+                    重置
+                  </button>
+                </div>
+              </div>
               
               <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end' }}>
                 <button
@@ -448,6 +580,96 @@ export function UserManagement() {
               </div>
             </div>
           </div>
+        </div>
+      )}
+      </>)}
+
+      {/* [2026-05-17] 组织架构 Tab */}
+      {activeTab === 'org' && (
+        <div>
+          {/* 新建部门 */}
+          <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #e5e7eb', padding: 20, marginBottom: 20 }}>
+            <h4 style={{ fontSize: 14, fontWeight: 600, color: '#1a202c', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
+              <Plus size={14} /> 新建部门
+            </h4>
+            <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: 11, color: '#6b7280', marginBottom: 4 }}>部门名称 *</label>
+                <input value={newDeptName} onChange={e => setNewDeptName(e.target.value)} placeholder="如：技术部" style={{ padding: '6px 12px', borderRadius: 6, border: '1px solid #e5e7eb', fontSize: 13, width: 160 }} />
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: 11, color: '#6b7280', marginBottom: 4 }}>部门编码</label>
+                <input value={newDeptCode} onChange={e => setNewDeptCode(e.target.value)} placeholder="如：TECH" style={{ padding: '6px 12px', borderRadius: 6, border: '1px solid #e5e7eb', fontSize: 13, width: 120 }} />
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: 11, color: '#6b7280', marginBottom: 4 }}>上级部门</label>
+                <select value={newDeptParentId || ''} onChange={e => setNewDeptParentId(e.target.value || null)} style={{ padding: '6px 12px', borderRadius: 6, border: '1px solid #e5e7eb', fontSize: 13, width: 160 }}>
+                  <option value="">无（顶级部门）</option>
+                  {flattenDepts(departments).map(d => (
+                    <option key={d.id} value={d.id}>{'\u00A0'.repeat(d.level * 2)}{d.name}</option>
+                  ))}
+                </select>
+              </div>
+              <button onClick={handleCreateDept} style={{ padding: '6px 16px', borderRadius: 6, background: '#d97706', color: '#fff', border: 'none', fontSize: 13, cursor: 'pointer', fontWeight: 500 }}>创建</button>
+            </div>
+          </div>
+
+          {/* 部门列表 */}
+          <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #e5e7eb', overflow: 'hidden' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead>
+                <tr style={{ background: '#f9fafb' }}>
+                  <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: 12, color: '#6b7280', borderBottom: '1px solid #e5e7eb' }}>部门名称</th>
+                  <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: 12, color: '#6b7280', borderBottom: '1px solid #e5e7eb' }}>编码</th>
+                  <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: 12, color: '#6b7280', borderBottom: '1px solid #e5e7eb' }}>成员数</th>
+                  <th style={{ padding: '12px 16px', textAlign: 'right', fontSize: 12, color: '#6b7280', borderBottom: '1px solid #e5e7eb' }}>操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                {flattenDepts(departments).map(dept => (
+                  <tr key={dept.id} style={{ borderBottom: '1px solid #f5f5f5' }}>
+                    <td style={{ padding: '12px 16px', fontSize: 13 }}>
+                      <span style={{ marginLeft: dept.level * 20 }}>{dept.level > 0 ? '└ ' : ''}{dept.name}</span>
+                    </td>
+                    <td style={{ padding: '12px 16px', fontSize: 12, color: '#6b7280' }}>{dept.departmentCode || '-'}</td>
+                    <td style={{ padding: '12px 16px', fontSize: 12, color: '#6b7280' }}>
+                      {users.filter(u => u.primaryDepartmentId === dept.id).length} 人
+                    </td>
+                    <td style={{ padding: '12px 16px', textAlign: 'right' }}>
+                      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                        <button onClick={() => { setEditingDept(dept); setEditDeptName(dept.name); setEditDeptCode(dept.departmentCode || ''); }} style={{ padding: '4px 8px', borderRadius: 6, background: '#eff6ff', color: '#2563eb', border: 'none', cursor: 'pointer', fontSize: 12 }} title="编辑"><Edit3 size={14} /></button>
+                        <button onClick={() => handleDeleteDept(dept.id, dept.name)} style={{ padding: '4px 8px', borderRadius: 6, background: '#fef2f2', color: '#dc2626', border: 'none', cursor: 'pointer', fontSize: 12 }} title="删除"><Trash2 size={14} /></button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+                {departments.length === 0 && (
+                  <tr><td colSpan={4} style={{ padding: 40, textAlign: 'center', color: '#9ca3af' }}>暂无部门，请在上方创建</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          {/* 编辑部门模态框 */}
+          {editingDept && (
+            <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+              <div style={{ background: '#fff', borderRadius: 12, width: 400, maxWidth: '90%', padding: 24 }}>
+                <h3 style={{ fontSize: 16, fontWeight: 600, marginBottom: 16 }}>编辑部门</h3>
+                <div style={{ marginBottom: 12 }}>
+                  <label style={{ display: 'block', fontSize: 12, color: '#6b7280', marginBottom: 4 }}>部门名称</label>
+                  <input value={editDeptName} onChange={e => setEditDeptName(e.target.value)} style={{ width: '100%', padding: '8px 12px', borderRadius: 8, border: '1px solid #e5e7eb', fontSize: 14 }} />
+                </div>
+                <div style={{ marginBottom: 16 }}>
+                  <label style={{ display: 'block', fontSize: 12, color: '#6b7280', marginBottom: 4 }}>部门编码</label>
+                  <input value={editDeptCode} onChange={e => setEditDeptCode(e.target.value)} style={{ width: '100%', padding: '8px 12px', borderRadius: 8, border: '1px solid #e5e7eb', fontSize: 14 }} />
+                </div>
+                <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end' }}>
+                  <button onClick={() => setEditingDept(null)} style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid #e5e7eb', background: '#fff', color: '#374151', fontSize: 14, cursor: 'pointer' }}>取消</button>
+                  <button onClick={handleUpdateDept} style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: '#d97706', color: '#fff', fontSize: 14, cursor: 'pointer', fontWeight: 500 }}>保存</button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>

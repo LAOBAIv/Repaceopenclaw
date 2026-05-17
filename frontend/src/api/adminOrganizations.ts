@@ -117,6 +117,7 @@ export const adminOrganizationsApi = {
     name: string;
     parentId?: string | null;
     ownerUserId?: string;
+    departmentCode?: string;
     description?: string;
     status?: "active" | "disabled";
   }): Promise<DepartmentNode> {
@@ -128,6 +129,7 @@ export const adminOrganizationsApi = {
     id: string,
     data: {
       name?: string;
+      departmentCode?: string;
       parentId?: string | null;
       ownerUserId?: string;
       description?: string;

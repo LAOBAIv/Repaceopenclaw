@@ -163,7 +163,8 @@ export const FileContextService = {
 
     return [
       '## 当前会话已上传文件',
-      '以下文件已与当前会话绑定。回答时请优先结合这些文件的名称、结构摘要与内容摘要理解用户问题；若用户明确要求分析某个文件，请以该文件为主。',
+      `文件已同步到工作区目录 sessions/${conversationId}/ 下，可直接用 read 工具读取。`,
+      '回答时请优先结合这些文件的内容理解用户问题；若用户明确要求分析某个文件，请用 read 工具读取完整内容后再分析。',
       ...summaries,
     ].join('\n');
   },
@@ -185,15 +186,58 @@ export const FileContextService = {
     const summary = await buildSingleFileSummary(latest);
     return [
       `请基于刚上传的文件《${latest.original_name}》做初步分析。`,
+      `文件已同步到工作区 sessions/${conversationId}/${latest.original_name}，可直接用 read 工具读取。`,
       '要求：',
-      '1. 先确认你已识别到该文件；',
-      '2. 基于文件名、类型、结构摘要或内容摘要，给出初步判断；',
-      '3. 输出该文件可能的用途、你已经识别出的关键信息、以及下一步建议；',
-      '4. 如果当前只能拿到结构摘要，也要明确说明，不要假装已完整读取全部内容。',
+      '1. 用 read 工具读取文件内容；',
+      '2. 基于实际数据给出初步分析和关键信息；',
+      '3. 输出该文件可能的用途、关键数据、以及下一步建议。',
       '',
       '文件摘要如下：',
       summary,
     ].join('\n');
+  },
+
+  // [2026-05-17] 同步会话文件到 OC 智能体工作区（按会话隔离）
+  async syncFilesToOcWorkspace(userId: string, conversationId: string, ocAgentId: string): Promise<void> {
+    if (!userId || !conversationId || !ocAgentId) return;
+    const db = getDb();
+    const rows = execToRows(
+      db,
+      `SELECT original_name, storage_path
+       FROM file_assets
+       WHERE user_id=? AND conversation_id=?
+       ORDER BY created_at DESC
+       LIMIT 10`,
+      [userId, conversationId]
+    );
+    if (!rows.length) return;
+
+    // OC 智能体工作区路径，按会话 ID 隔离
+    const ocWorkspace = path.join('/root/.openclaw', `workspace-${ocAgentId}`, 'sessions', conversationId);
+    if (!fs.existsSync(ocWorkspace)) {
+      fs.mkdirSync(ocWorkspace, { recursive: true });
+    }
+
+    for (const row of rows) {
+      const srcPath = absStoragePath(String(row.storage_path || ''));
+      const destPath = path.join(ocWorkspace, String(row.original_name || ''));
+      // 已存在且大小相同则跳过
+      if (fs.existsSync(destPath)) {
+        try {
+          const srcStat = fs.statSync(srcPath);
+          const destStat = fs.statSync(destPath);
+          if (srcStat.size === destStat.size) continue;
+        } catch { continue; }
+      }
+      // 复制文件
+      try {
+        if (fs.existsSync(srcPath)) {
+          fs.copyFileSync(srcPath, destPath);
+        }
+      } catch (e) {
+        // 复制失败不阻断流程
+      }
+    }
   },
 };
 

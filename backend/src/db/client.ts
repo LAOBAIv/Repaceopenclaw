@@ -498,6 +498,9 @@ function createTables(db: any) {
   // Dual-code Phase 1: user_code 作为 10 位业务用户编码，底层主键仍为 id(UUID)
   try { db.run("ALTER TABLE users ADD COLUMN user_code TEXT NOT NULL DEFAULT ''"); } catch {}
   try { db.run("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_user_code ON users(user_code)"); } catch {}
+  // [2026-05-17] 添加 nickname 字段（账号昵称，不可重复）
+  try { db.run("ALTER TABLE users ADD COLUMN nickname TEXT NOT NULL DEFAULT ''"); } catch {}
+  try { db.run("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_nickname ON users(nickname) WHERE nickname != ''"); } catch {}
 
   // ── V1 Organization / Permission Foundation ────────────────────────────────
   db.run(`

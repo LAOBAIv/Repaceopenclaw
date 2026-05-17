@@ -15,6 +15,7 @@ export interface LoginInput {
 export interface UpdateMeInput {
   username?: string;
   avatar?: string;
+  nickname?: string;  // [2026-05-17] 账号昵称
 }
 
 export const authApi = {
@@ -32,6 +33,10 @@ export const authApi = {
 
   changePassword: (oldPassword: string, newPassword: string) =>
     apiClient.put("/auth/password", { oldPassword, newPassword }).then((r) => r.data),
+
+  // [2026-05-17] 管理员重置用户密码
+  resetPassword: (userId: string, newPassword: string) =>
+    apiClient.put(`/auth/users/${userId}/reset-password`, { newPassword }).then((r) => r.data),
 
   listUsers: () =>
     apiClient.get("/auth/users").then((r) => r.data),

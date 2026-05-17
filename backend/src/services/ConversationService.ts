@@ -156,6 +156,8 @@ export const ConversationService = {
       conditions.push("project_id = ?");
       params.push(projectId);
     }
+    // [2026-05-18] 过滤已关闭和已删除的会话，前端只显示有效会话
+    conditions.push("status NOT IN ('closed', 'deleted')");
     if (conditions.length) {
       sql += " WHERE " + conditions.join(" AND ");
     }

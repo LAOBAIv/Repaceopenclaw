@@ -1,7 +1,7 @@
-// wsHandler.ts — WebSocket 处理器
+// wsHandler.ts - WebSocket 处理器
 //
-// RepaceClaw 负责：智能体配置管理、会话管理、消息存储
-// OpenClaw Gateway 负责：模型路由、LLM API 调用、流式输出
+// RepaceClaw 负责:智能体配置管理、会话管理、消息存储
+// OpenClaw Gateway 负责:模型路由、LLM API 调用、流式输出
 
 import WebSocket, { WebSocketServer } from "ws";
 import { logger } from '../utils/logger';
@@ -17,7 +17,7 @@ import { REPACECLAW_MESSAGE_CHANNEL, resolveOpenClawGateway } from '../utils/ope
 
 const { url: GATEWAY_URL, token: GATEWAY_TOKEN } = resolveOpenClawGateway();
 
-// [2026-05-16] 防重复发送：记录当前正在调用 Gateway 的会话ID 及其 request 对象（用于 abort）
+// [2026-05-16] 防重复发送:记录当前正在调用 Gateway 的会话ID 及其 request 对象(用于 abort)
 const activeGatewayRequests = new Map<string, { req: http.ClientRequest; startTime: number }>();
 
 function buildRcOcSessionKey(ocAgentId: string, conversationId: string): string {
@@ -49,7 +49,7 @@ export function setupWebSocket(server: http.Server) {
 
   /**
    * 向指定会话的所有已认证连接广播消息
-   * 用于异步任务（如概述生成）完成后推送给前端
+   * 用于异步任务(如概述生成)完成后推送给前端
    */
   (wss as any).broadcastToConversation = (conversationId: string, data: Record<string, any>) => {
     const payload = JSON.stringify(data);
@@ -66,14 +66,14 @@ export function setupWebSocket(server: http.Server) {
   wss.on("connection", (ws: WebSocket, req: http.IncomingMessage) => {
     logger.info("[WS] Client connected");
 
-    // 从 URL query 提取 token（支持 ?token=xxx）
+    // 从 URL query 提取 token(支持 ?token=xxx)
     const url = new URL(req.url || "/", `http://${req.headers.host}`);
     const queryToken = url.searchParams.get("token");
 
     const client: WSClient = { ws, userId: null, userRole: null };
     clients.set(ws, client);
 
-    // 如果 URL 中有 token，直接认证
+    // 如果 URL 中有 token,直接认证
     if (queryToken) {
       try {
         const payload = UserService.verifyToken(queryToken);
@@ -130,23 +130,23 @@ export function setupWebSocket(server: http.Server) {
           return;
         }
 
-        // Dual-code Phase 2：WS 入站也允许传 UUID / session_code。
+        // Dual-code Phase 2:WS 入站也允许传 UUID / session_code。
         const conv = ConversationService.getByIdOrCode(conversationId, client.userId);
         if (!conv) {
           ws.send(JSON.stringify({ type: "error", message: "Conversation not found" }));
           return;
         }
 
-        // 关键修复：tab 标题修改后，用户往往会立即继续发消息。
-        // 如果这里只读数据库里的 conv.title，会有一个“标题更新接口尚未完成、但消息已经发出”的时序窗口，
-        // 导致模型第一条回复仍引用旧标题。为避免这个问题，chat 消息允许前端携带当前激活 tab 的最新标题，
-        // 后端收到后优先采用它，并顺手回写 conversations.title，消除前后端状态漂移。
+        // 关键修复:tab 标题修改后,用户往往会立即继续发消息。
+        // 如果这里只读数据库里的 conv.title,会有一个"标题更新接口尚未完成、但消息已经发出"的时序窗口,
+        // 导致模型第一条回复仍引用旧标题。为避免这个问题,chat 消息允许前端携带当前激活 tab 的最新标题,
+        // 后端收到后优先采用它,并顺手回写 conversations.title,消除前后端状态漂移。
         if (conversationTitle?.trim() && conv && conversationTitle.trim() !== (conv.title || '').trim()) {
           ConversationService.update(conv.id, { title: conversationTitle.trim() });
           conv.title = conversationTitle.trim();
         }
 
-        // Phase 3: 会话归属校验（非管理员必须是自己创建的会话）
+        // Phase 3: 会话归属校验(非管理员必须是自己创建的会话)
         const db = require("../db/client").getDb();
         const ownerCheck = db.exec("SELECT user_id FROM conversations WHERE id = ?", [conv.id]);
         if (ownerCheck.length && ownerCheck[0].values.length) {
@@ -169,7 +169,7 @@ export function setupWebSocket(server: http.Server) {
           return;
         }
 
-        // currentAgentId / agentIds 统一视为 RepaceClaw agent UUID，调用 Gateway 前再映射到 OpenClaw agentId
+        // currentAgentId / agentIds 统一视为 RepaceClaw agent UUID,调用 Gateway 前再映射到 OpenClaw agentId
         const agent = AgentService.getByIdOrCode(targetAgentId, client.userId);
         if (!agent) {
           ws.send(JSON.stringify({ type: "error", message: `Agent config not found for ${targetAgentId}` }));
@@ -177,7 +177,7 @@ export function setupWebSocket(server: http.Server) {
         }
         const ocAgentId = agent.openclawAgentId || 'main';
 
-        // 保存用户消息到 DB（消息层保存业务 agentId）
+        // 保存用户消息到 DB(消息层保存业务 agentId)
         const userMsg = ConversationService.addMessage({
           conversationId: conv.id,
           role: "user",
@@ -188,46 +188,48 @@ export function setupWebSocket(server: http.Server) {
 
         // 构建 system prompt
         let systemPrompt = agent.systemPrompt || '';
-        if (agent.writingStyle) systemPrompt += `\n\n写作风格：${agent.writingStyle}`;
-        if (agent.expertise?.length) systemPrompt += `\n\n专业领域：${agent.expertise.join('、')}`;
+        if (agent.writingStyle) systemPrompt += `\n\n写作风格:${agent.writingStyle}`;
+        if (agent.expertise?.length) systemPrompt += `\n\n专业领域:${agent.expertise.join('、')}`;
         if (agent.outputFormat && agent.outputFormat !== '纯文本') {
           systemPrompt += `\n\n## 输出格式要求\n${agent.outputFormat}`;
         }
         if (agent.boundary?.trim()) {
           systemPrompt += `\n\n## 能力边界\n${agent.boundary.trim()}`;
         }
-        systemPrompt += `\n\n你的名字是 ${agent.name}，请始终以第一人称回复。`;
-        // 关键修复：会话标题不是纯前端装饰，它是当前对话的重要业务语义。
-        // 如果不把 conversation.title 注入上下文，模型只会看到历史消息，看不到用户给这个会话起的标题，
-        // 就会出现“tab 明明有标题，但回复完全不体现标题”的现象。
+        systemPrompt += `\n\n你的名字是 ${agent.name},请始终以第一人称回复。`;
+        // 关键修复:会话标题不是纯前端装饰,它是当前对话的重要业务语义。
+        // 如果不把 conversation.title 注入上下文,模型只会看到历史消息,看不到用户给这个会话起的标题,
+        // 就会出现"tab 明明有标题,但回复完全不体现标题"的现象。
         const effectiveTitle = conversationTitle?.trim() || conv.title?.trim();
         const previousTitle = previousConversationTitle?.trim();
         if (effectiveTitle) {
-          systemPrompt += `\n\n当前会话标题：${effectiveTitle}`;
+          systemPrompt += `\n\n当前会话标题:${effectiveTitle}`;
         }
-        // 关键修复：如果标题刚被修改，除了告诉模型“现在叫什么”，
-        // 还要告诉它“之前叫什么”，避免它沿着旧标题继续回复或把两次标题变化当成无关信息。
+        // 关键修复:如果标题刚被修改,除了告诉模型"现在叫什么",
+        // 还要告诉它"之前叫什么",避免它沿着旧标题继续回复或把两次标题变化当成无关信息。
         if (previousTitle && effectiveTitle && previousTitle !== effectiveTitle) {
-          systemPrompt += `\n\n本会话标题已从“${previousTitle}”更新为“${effectiveTitle}”，后续请以新标题为准。`;
+          systemPrompt += `\n\n本会话标题已从"${previousTitle}"更新为"${effectiveTitle}",后续请以新标题为准。`;
         }
 
-        // 会话文件上下文：优先按 user_id + conversation_id 注入已上传文件摘要。
-        // 当前先做轻量识别，让智能体明确知道“会话里有哪些文件”；
-        // 后续再把 Excel/CSV 深度解析结果接进来。
+        // 会话文件上下文:优先按 user_id + conversation_id 注入已上传文件摘要。
+        // 当前先做轻量识别,让智能体明确知道"会话里有哪些文件";
         const fileContext = await FileContextService.buildConversationFileContext(client.userId || '', conv.id);
         if (fileContext) {
           systemPrompt += `\n\n${fileContext}`;
         }
 
+        // [2026-05-17] 同步上传文件到 OC 智能体工作区，确保 OC 能用 read 工具直接读取
+        await FileContextService.syncFilesToOcWorkspace(client.userId || '', conv.id, ocAgentId);
+
         // 获取历史消息
-        // [2026-05-16] RC 不需要发历史消息，OC Gateway 自己维护 session 上下文
+        // [2026-05-16] RC 不需要发历史消息,OC Gateway 自己维护 session 上下文
         // 只发当前用户最新消息
         const history: Array<{ role: string; content: string }> = [];
 
-        // 调用 OpenClaw Gateway 生成回复（消息存业务 agentId，路由用 ocAgentId）
+        // 调用 OpenClaw Gateway 生成回复(消息存业务 agentId,路由用 ocAgentId)
         logger.info(`[WS] chat conversation=${conv.id} agent=${targetAgentId} ocAgent=${ocAgentId} user=${client.userId?.slice(0, 8) || 'unknown'}`);
 
-        // [2026-05-16] 防重复：同一会话如果已有进行中的请求，abort 旧请求再发新的
+        // [2026-05-16] 防重复:同一会话如果已有进行中的请求,abort 旧请求再发新的
         const existing = activeGatewayRequests.get(conv.id);
         if (existing) {
           logger.info(`[Gateway] Aborting previous request for conv=${conv.id} (running ${Date.now() - existing.startTime}ms)`);
@@ -235,7 +237,7 @@ export function setupWebSocket(server: http.Server) {
           activeGatewayRequests.delete(conv.id);
         }
 
-        // [2026-05-16] 带重试的 Gateway 调用：超时后自动重试一次
+        // [2026-05-16] 带重试的 Gateway 调用:超时后自动重试一次
         let retried = false;
         const doCall = async () => {
           try {
@@ -244,14 +246,18 @@ export function setupWebSocket(server: http.Server) {
             if (err?.message === 'GATEWAY_TIMEOUT' && !retried) {
               retried = true;
               logger.info(`[Gateway] Timeout for conv=${conv.id}, retrying...`);
+              // [2026-05-17] 重试前先结束前端上一次的"正在生成"状态
+              if (ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: "agent_done", messageId: `retry-${Date.now()}`, agentId: targetAgentId, conversationId: conv.id, message: null }));
+              }
               // 重试一次
               try {
                 await callGateway(ws, conv.id, targetAgentId, ocAgentId, systemPrompt, history, content, client.userId);
               } catch (retryErr: any) {
                 logger.error(`[Gateway] Retry also failed for conv=${conv.id}: ${retryErr?.message}`);
-                // 重试也失败，发 agent_done 结束前端“思考中”
+                // 重试也失败，发 agent_done 结束前端"思考中"
                 if (ws.readyState === WebSocket.OPEN) {
-                  ws.send(JSON.stringify({ type: "agent_done", messageId: `timeout-${Date.now()}`, agentId: targetAgentId, conversationId: conv.id, message: { id: `timeout-${Date.now()}`, conversationId: conv.id, role: 'agent', content: 'ℹ️ 响应超时，请稍后重试', createdAt: new Date().toISOString() } }));
+                  ws.send(JSON.stringify({ type: "agent_done", messageId: `timeout-${Date.now()}`, agentId: targetAgentId, conversationId: conv.id, message: { id: `timeout-${Date.now()}`, conversationId: conv.id, role: 'agent', content: '⚠️ 响应超时，请稍后重试', createdAt: new Date().toISOString() } }));
                 }
               }
             }
@@ -277,7 +283,7 @@ export function setupWebSocket(server: http.Server) {
           return;
         }
 
-        // Phase 4: 会话归属校验（与 chat 保持一致）
+        // Phase 4: 会话归属校验(与 chat 保持一致)
         const db = require("../db/client").getDb();
         const ownerCheck = db.exec("SELECT user_id FROM conversations WHERE id = ?", [conv.id]);
         if (ownerCheck.length && ownerCheck[0].values.length) {
@@ -330,17 +336,17 @@ export function setupWebSocket(server: http.Server) {
             const ocAgentId = agent.openclawAgentId || 'main';
 
             let systemPrompt = agent.systemPrompt || '';
-            if (agent.writingStyle) systemPrompt += `\n\n写作风格：${agent.writingStyle}`;
-            if (agent.expertise?.length) systemPrompt += `\n\n专业领域：${agent.expertise.join('、')}`;
-            systemPrompt += `\n\n你的名字是 ${agent.name}，请始终以第一人称回复。`;
+            if (agent.writingStyle) systemPrompt += `\n\n写作风格:${agent.writingStyle}`;
+            if (agent.expertise?.length) systemPrompt += `\n\n专业领域:${agent.expertise.join('、')}`;
+            systemPrompt += `\n\n你的名字是 ${agent.name},请始终以第一人称回复。`;
             if (conv.title?.trim()) {
-              systemPrompt += `\n\n当前会话标题：${conv.title.trim()}`;
+              systemPrompt += `\n\n当前会话标题:${conv.title.trim()}`;
             }
 
-            // [2026-05-16] 同上，不发历史
+            // [2026-05-16] 同上,不发历史
             const history: Array<{ role: string; content: string }> = [];
 
-            // 关键修复：多智能体协作场景同样必须使用已解析的真实会话主键 conv.id。
+            // 关键修复:多智能体协作场景同样必须使用已解析的真实会话主键 conv.id。
             await callGateway(ws, conv.id, agent.id, ocAgentId, systemPrompt, history, content, client.userId);
           }
 
@@ -359,9 +365,9 @@ export function setupWebSocket(server: http.Server) {
     });
 
     ws.on("close", (code, reason) => {
-      // 关键排障注释：之前这里只打印“Client disconnected”，信息量不足，
+      // 关键排障注释:之前这里只打印"Client disconnected",信息量不足,
       // 很难区分是浏览器路由切换(1001)、未正常完成握手/页面刷新(1005)还是异常断链(1006)。
-      // 本次智能体“有响应但前端没显示”的根因，就是前端连接在 Gateway 慢回复期间提前断开。
+      // 本次智能体"有响应但前端没显示"的根因,就是前端连接在 Gateway 慢回复期间提前断开。
       logger.info(`[WS] Client disconnected code=${code} reason=${reason?.toString() || 'n/a'}`);
     });
     ws.on("error", (err) => logger.error("[WS] Error: " + err.message));
@@ -370,7 +376,7 @@ export function setupWebSocket(server: http.Server) {
   return wss;
 }
 
-/** 供路由调用的广播函数（setupWebSocket 后初始化） */
+/** 供路由调用的广播函数(setupWebSocket 后初始化) */
 export function broadcastToConversation(conversationId: string, data: Record<string, any>): void {
   const fn = (globalThis as any).__broadcastToConversation;
   if (fn) {
@@ -381,7 +387,7 @@ export function broadcastToConversation(conversationId: string, data: Record<str
 /**
  * 调用 OpenClaw Gateway 生成智能体回复
  * @param agentId RepaceClaw 业务 agentId
- * @param ocAgentId OpenClaw 路由 agentId（model=openclaw/{ocAgentId}）
+ * @param ocAgentId OpenClaw 路由 agentId(model=openclaw/{ocAgentId})
  */
 async function callGateway(
   ws: WebSocket,
@@ -411,8 +417,8 @@ async function callGateway(
 
     if (ws.readyState !== WebSocket.OPEN) { resolve(); return; }
 
-    // 关键修复：必须把 conversationId 带回前端。
-    // 仅按 agentId 路由会在“同一 agent 出现在多个会话”时把流式回复挂错 panel，表现为当前会话不刷新就看不到回复。
+    // 关键修复:必须把 conversationId 带回前端。
+    // 仅按 agentId 路由会在"同一 agent 出现在多个会话"时把流式回复挂错 panel,表现为当前会话不刷新就看不到回复。
     ws.send(JSON.stringify({ type: "agent_start", messageId: msgId, agentId, conversationId }));
 
     const messages = [
@@ -424,14 +430,33 @@ async function callGateway(
     logger.info(`[Gateway] Calling model=openclaw/${ocAgentId}, sessionKey=${ocSessionKey}, messages=${messages.length}`);
 
     const url = new URL(`${GATEWAY_URL}/v1/chat/completions`);
-    // 流式输出：用户 1~2 秒内看到第一个字，无需等待完整响应
+    // 流式输出:用户 1~2 秒内看到第一个字,无需等待完整响应
     const payload = JSON.stringify({
       model: `openclaw/${ocAgentId}`,
       messages,
       stream: true,
+      // [2026-05-17] 必须带 session_key，否则 OC 每次创建新会话，丢失上下文和文件
+      session_key: ocSessionKey,
     });
 
     const lib = url.protocol === "https:" ? https : http;
+
+    // [2026-05-17] 双重超时保护变量声明（必须在 req 创建前）
+    let gotFirstChunk = false;
+    let chunkTimer: ReturnType<typeof setTimeout> | null = null;
+    const clearChunkTimer = () => { if (chunkTimer) { clearTimeout(chunkTimer); chunkTimer = null; } };
+    const resetChunkTimer = () => {
+      clearChunkTimer();
+      chunkTimer = setTimeout(() => {
+        logger.error(`[Gateway] Chunk timeout (60s no data) for conv=${conversationId}`);
+        req.destroy();
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: "error", message: "智能体响应中断，请重试", agentId, conversationId }));
+        }
+        reject(new Error('GATEWAY_TIMEOUT'));
+      }, 60000);
+    };
+
     const req = lib.request(url.toString(), {
       method: "POST",
       headers: {
@@ -439,15 +464,18 @@ async function callGateway(
         "Content-Length": Buffer.byteLength(payload),
         "Authorization": `Bearer ${GATEWAY_TOKEN}`,
         "x-openclaw-message-channel": REPACECLAW_MESSAGE_CHANNEL,
-        // 关键修复：Gateway 不能只收到裸 conversationId。
-        // OpenClaw 要靠 agent 形状的 session key 才会把会话落到对应 agent 目录，
-        // 否则即使 model=openclaw/rc-ops-agent，也可能把会话建到 main。
+        // 关键修复:Gateway 不能只收到裸 conversationId。
+        // OpenClaw 要靠 agent 形状的 session key 才会把会话落到对应 agent 目录,
+        // 否则即使 model=openclaw/rc-ops-agent,也可能把会话建到 main。
         "x-openclaw-session-key": ocSessionKey,
       },
     }, (res) => {
-      // 流式输出：累积完整内容用于入库
+      // 流式输出:累积完整内容用于入库
       let fullContent = "";
       let chunkCount = 0;
+
+      // [2026-05-17] 记录响应状态码
+      logger.info(`[Gateway] Response status=${res.statusCode} for conv=${conversationId}`);
 
       // 错误状态码处理
       if (res.statusCode && res.statusCode >= 400) {
@@ -463,10 +491,10 @@ async function callGateway(
         return;
       }
 
-      // SSE 流式处理：每收到一个 chunk 立即推给前端
+      // SSE 流式处理:每收到一个 chunk 立即推给前端
       res.on("data", (d: Buffer) => {
         const text = d.toString();
-        // SSE 格式："data: {...}\n" 或 "data: [DONE]\n"
+        // SSE 格式:"data: {...}\n" 或 "data: [DONE]\n"
         for (const line of text.split("\n")) {
           if (!line.startsWith("data: ")) continue;
           const jsonStr = line.slice(6);
@@ -477,6 +505,9 @@ async function callGateway(
             if (delta) {
               fullContent += delta;
               chunkCount++;
+              // [2026-05-17] 首字节标记 + chunk 间超时重置
+              if (!gotFirstChunk) { gotFirstChunk = true; }
+              resetChunkTimer();
               // 实时推送给前端
               if (ws.readyState === WebSocket.OPEN) {
                 ws.send(JSON.stringify({
@@ -493,7 +524,9 @@ async function callGateway(
       });
 
       res.on("end", () => {
-        // 流式结束：保存完整消息到 DB
+        // [2026-05-17] 清理 chunk timer
+        clearChunkTimer();
+        // 流式结束:保存完整消息到 DB
         const maxTokensPerMsg = AgentService.getMaxTokensPerMessage(agentId);
         const finalContent = maxTokensPerMsg && fullContent.length > maxTokensPerMsg
           ? fullContent.substring(0, maxTokensPerMsg)
@@ -504,12 +537,12 @@ async function callGateway(
           role: "agent",
           content: finalContent,
           agentId,
-          tokenCount: 0, // 流式模式下 usage 信息在 SSE 末尾，暂不统计
+          tokenCount: 0, // 流式模式下 usage 信息在 SSE 末尾,暂不统计
         });
 
         logger.info(`[Gateway] Streaming done: ${finalContent.length} chars, ${chunkCount} chunks`);
 
-        // ── 记录用量（流式模式下估算） ────────────────────────────
+        // ── 记录用量(流式模式下估算) ────────────────────────────
         if (userId) {
           const estTokens = Math.ceil(finalContent.length / 4); // 粗略估算
           AgentService.recordUsage(userId, agentId, estTokens);
@@ -531,19 +564,23 @@ async function callGateway(
 
     req.on("error", (err) => {
       logger.error(`[Gateway] Request error: ${err.message}`);
+      clearChunkTimer();
       if (ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ type: "error", message: err.message, agentId, conversationId }));
       }
       resolve();
     });
 
-    // [2026-05-16] 超时从 120s 降为 45s，避免 OC lane queue 堆积导致前端长时间“思考中”
-    req.setTimeout(45000, () => {
-      req.destroy();
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ type: "error", message: "响应超时，正在重试...", agentId, conversationId }));
+    // [2026-05-17] 首字节超时：120s 内必须收到第一个 chunk
+    req.setTimeout(120000, () => {
+      if (!gotFirstChunk) {
+        req.destroy();
+        clearChunkTimer();
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: "error", message: "响应超时，正在重试...", agentId, conversationId }));
+        }
+        reject(new Error('GATEWAY_TIMEOUT'));
       }
-      reject(new Error('GATEWAY_TIMEOUT'));
     });
 
     // [2026-05-16] 注册到 activeGatewayRequests，便于后续 abort

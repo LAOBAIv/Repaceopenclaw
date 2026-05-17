@@ -87,7 +87,7 @@ export const conversationsApi = {
   },
 
   /** 更新会话状态 */
-  updateStatus: async (conversationId: string, status: 'in_progress' | 'completed' | 'archived' | 'deleted') => {
+  updateStatus: async (conversationId: string, status: 'in_progress' | 'completed' | 'archived' | 'deleted' | 'closed') => {
     const res = await apiClient.patch(`/conversations/${conversationId}/status`, { status });
     return res.data?.data;
   },

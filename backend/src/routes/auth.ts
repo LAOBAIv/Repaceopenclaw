@@ -115,8 +115,8 @@ router.get("/me", authenticate, (req: Request, res: Response) => {
 // PUT /api/auth/me — 当前用户修改个人资料
 router.put("/me", authenticate, (req: Request, res: Response) => {
   try {
-    const { username, avatar } = req.body;
-    const user = UserService.updateProfile((req as any).user.id, { username, avatar });
+    const { username, avatar, nickname } = req.body;
+    const user = UserService.updateProfile((req as any).user.id, { username, avatar, nickname });
     if (!user) return res.status(404).json({ error: "用户不存在" });
     res.json(user);
   } catch (err: any) {
@@ -152,6 +152,18 @@ router.put("/users/:id", authenticate, requireRole(["super_admin", "admin"]), (r
   const user = UserService.updateUser(req.params.id, { role, status, avatar });
   if (!user) return res.status(404).json({ error: "用户不存在" });
   res.json(user);
+});
+
+// [2026-05-17] PUT /api/auth/users/:id/reset-password — 管理员重置用户密码
+router.put("/users/:id/reset-password", authenticate, requireRole(["super_admin", "admin"]), async (req: Request, res: Response) => {
+  try {
+    const { newPassword } = req.body;
+    if (!newPassword) return res.status(400).json({ error: "新密码不能为空" });
+    await UserService.resetPassword(req.params.id, newPassword);
+    res.json({ message: "密码重置成功" });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
 });
 
 export default router;

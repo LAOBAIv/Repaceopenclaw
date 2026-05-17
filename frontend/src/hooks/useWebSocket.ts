@@ -12,6 +12,7 @@ interface WSIncoming {
   message?: any;
   chunk?: string;
   agentId?: string;
+  conversationId?: string;  // [2026-05-17] 用于精确匹配面板
 }
 
 /**
@@ -47,7 +48,11 @@ export function useWebSocket() {
       const panels = useConversationStore.getState().openPanels;
 
       if (data.type === "agent_start" && data.messageId && data.agentId) {
-        const activePanel = panels.find((p) => p.agentId === data.agentId && !p.isStreaming);
+        // [2026-05-17] 优先用 conversationId 匹配面板，避免 agentId 不一致导致匹配失败
+        const activePanel = panels.find((p) => 
+          (data.conversationId && p.conversationId === data.conversationId && !p.isStreaming) ||
+          (p.agentId === data.agentId && !p.isStreaming)
+        );
         if (activePanel) {
           startStreaming(activePanel.id, data.messageId);
         }
@@ -55,7 +60,9 @@ export function useWebSocket() {
 
       if (data.type === "agent_chunk" && data.messageId && data.chunk) {
         const activePanel = panels.find(
-          (p) => p.streamingMessageId === data.messageId || p.agentId === data.agentId
+          (p) => p.streamingMessageId === data.messageId || 
+                 (data.conversationId && p.conversationId === data.conversationId) ||
+                 p.agentId === data.agentId
         );
         if (activePanel) {
           appendStreamChunk(activePanel.id, data.messageId!, data.chunk);
@@ -64,7 +71,9 @@ export function useWebSocket() {
 
       if (data.type === "agent_done" && data.messageId && data.message) {
         const activePanel = panels.find(
-          (p) => p.streamingMessageId === data.messageId || p.agentId === data.agentId
+          (p) => p.streamingMessageId === data.messageId || 
+                 (data.conversationId && p.conversationId === data.conversationId) ||
+                 p.agentId === data.agentId
         );
         if (activePanel) {
           finishStreaming(activePanel.id, data.messageId!, data.message);

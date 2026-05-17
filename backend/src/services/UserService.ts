@@ -16,6 +16,8 @@ export interface User {
   /** 业务用户编码：u + 9位随机 */
   user_code?: string;
   username: string;
+  /** [2026-05-17] 账号昵称（不可重复） */
+  nickname?: string;
   email: string;
   role: UserRole;
   status: string;
@@ -64,6 +66,7 @@ function rowToUser(row: any[]): User {
     primary_department_id: (row[10] as string) || null,
     primary_department_name: (row[11] as string) || null,
     primary_department_code: (row[12] as string) || null,
+    nickname: (row[13] as string) || '',
   };
 }
 
@@ -223,7 +226,8 @@ export class UserService {
          u.id, u.user_code, u.username, u.email, u.role, u.status, u.avatar, u.last_login_at, u.created_at, u.updated_at,
          d.id as primary_department_id,
          d.name as primary_department_name,
-         d.department_code as primary_department_code
+         d.department_code as primary_department_code,
+         u.nickname
        FROM users u
        LEFT JOIN user_org_scope uos ON uos.user_id = u.id AND uos.is_primary = 1 AND uos.status = 'active'
        LEFT JOIN departments d ON d.id = uos.department_id
@@ -235,7 +239,7 @@ export class UserService {
   }
 
   // 当前用户更新自己的资料
-  static updateProfile(id: string, data: { username?: string; avatar?: string }): User | null {
+  static updateProfile(id: string, data: { username?: string; avatar?: string; nickname?: string }): User | null {
     const db = getDb();
     const now = new Date().toISOString();
     const current = UserService.getUserById(id);
@@ -253,6 +257,18 @@ export class UserService {
 
     if (data.avatar !== undefined) {
       db.run("UPDATE users SET avatar=?, updated_at=? WHERE id=?", [data.avatar.trim(), now, id]);
+    }
+
+    // [2026-05-17] 昵称更新（不可重复）
+    if (data.nickname !== undefined) {
+      const nickname = data.nickname.trim();
+      if (nickname) {
+        const existNick = db.exec("SELECT id FROM users WHERE nickname=? AND id<>?", [nickname, id]);
+        if (existNick.length && existNick[0].values.length) {
+          throw new Error("该昵称已被使用");
+        }
+      }
+      db.run("UPDATE users SET nickname=?, updated_at=? WHERE id=?", [nickname, now, id]);
     }
 
     saveDb();
@@ -286,6 +302,18 @@ export class UserService {
     const valid = await bcrypt.compare(oldPassword, hash);
     if (!valid) throw new Error("原密码错误");
 
+    const newHash = await bcrypt.hash(newPassword, SALT_ROUNDS);
+    const now = new Date().toISOString();
+    db.run("UPDATE users SET password_hash=?, updated_at=? WHERE id=?", [newHash, now, id]);
+    saveDb();
+  }
+
+  // [2026-05-17] 管理员重置用户密码
+  static async resetPassword(id: string, newPassword: string): Promise<void> {
+    const db = getDb();
+    const res = db.exec("SELECT id FROM users WHERE id=?", [id]);
+    if (!res.length || !res[0].values.length) throw new Error("用户不存在");
+    if (!newPassword || newPassword.length < 6) throw new Error("新密码不能少于6位");
     const newHash = await bcrypt.hash(newPassword, SALT_ROUNDS);
     const now = new Date().toISOString();
     db.run("UPDATE users SET password_hash=?, updated_at=? WHERE id=?", [newHash, now, id]);

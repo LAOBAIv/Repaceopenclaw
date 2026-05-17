@@ -344,8 +344,8 @@ router.patch("/:id/status", (req: Request, res: Response) => {
   const userId = (req as any).user?.id;
   const userRole = (req as any).user?.role;
   const { status } = req.body;
-  if (!status || !['in_progress', 'completed', 'archived', 'deleted'].includes(status)) {
-    return res.status(400).json({ error: "status must be one of: in_progress, completed, archived, deleted" });
+  if (!status || !['in_progress', 'completed', 'archived', 'deleted', 'closed'].includes(status)) {
+    return res.status(400).json({ error: "status must be one of: in_progress, completed, archived, deleted, closed" });
   }
   const conv = resolveConversationOr404(req.params.id, userId);
   if (!conv) return res.status(404).json({ error: "Conversation not found" });

@@ -1024,6 +1024,11 @@ export const useConversationStore = create<ConversationStore>()(
       ? [...closedSessionIds, convId]
       : closedSessionIds;
 
+    // [2026-05-18] 调后端 API 标记会话为 closed，重新登录后不再出现
+    if (convId && convId !== 'home') {
+      conversationsApi.updateStatus(convId, 'closed').catch(() => {});
+    }
+
     const remaining = sessionTabs.filter(t => t.id !== tabId);
 
     // 仅当没有其他 tab 继续引用该 panel 时,才真正关闭 panel
@@ -1262,6 +1267,11 @@ export const useConversationStore = create<ConversationStore>()(
       sessionTabs: [...s.sessionTabs, newTab],
       activeTabId: tabId,
     }));
+
+    // [2026-05-18] 重新打开会话时恢复后端状态为 in_progress
+    if (convId) {
+      conversationsApi.updateStatus(convId, 'in_progress').catch(() => {});
+    }
 
     // 方案 C: 广播会话打开事件
     import("../lib/sync").then(({ getBroadcastSync }) => {

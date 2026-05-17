@@ -27,6 +27,7 @@ const PAGE_TITLE_MAP: Record<string, string> = {
   '/admin': '系统管理',
   '/skill-settings': '技能设置',
   '/plugin-settings': '插件设置',
+  '/account': '账号设置',
 };
 
 const NAV_ITEMS = [
@@ -37,6 +38,7 @@ const NAV_ITEMS = [
   { to: '/console',        icon: Network,    label: '项目协作',     exact: false },
   { to: '/skill-settings', icon: Wrench,     label: '技能设置',     exact: false },
   { to: '/plugin-settings',icon: Puzzle,     label: '插件设置',     exact: false },
+  { to: '/account',        icon: Settings,   label: '账号设置',     exact: false },
   { to: '/kanban',         icon: Layers,     label: '会话列表',     exact: false },
 ];
 
@@ -211,6 +213,26 @@ function UserHeader() {
 
               {/* 操作菜单 */}
               <div style={{ padding: '4px 0' }}>
+                {/* [2026-05-17] 修改昵称和密码入口 */}
+                <button
+                  onClick={() => {
+                    setShowMenu(false);
+                    navigate('/account');
+                  }}
+                  style={{
+                    width: '100%', padding: '10px 14px',
+                    display: 'flex', alignItems: 'center', gap: 8,
+                    background: 'transparent', border: 'none',
+                    fontSize: 13, color: '#374151', cursor: 'pointer',
+                    textAlign: 'left',
+                  }}
+                  onMouseEnter={(e) => { (e.target as HTMLElement).style.background = '#f3f4f6'; }}
+                  onMouseLeave={(e) => { (e.target as HTMLElement).style.background = 'transparent'; }}
+                >
+                  <Settings size={14} color="#6b7280" />
+                  账号设置
+                </button>
+                <div style={{ height: 1, background: '#f3f4f6', margin: '2px 0' }} />
                 <button
                   onClick={() => {
                     setShowMenu(false);

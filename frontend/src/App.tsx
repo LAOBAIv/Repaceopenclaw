@@ -8,6 +8,7 @@ import { AgentConsole } from './pages/AgentConsole';
 import { AgentKanban } from './pages/AgentKanban';
 import { SkillSettings } from './pages/SkillSettings';
 import { PluginSettings } from './pages/PluginSettings';
+import AccountSettings from './pages/AccountSettings';
 import { PlatformAssistant } from './pages/PlatformAssistant';
 import { WechatClawBot } from './pages/WechatClawBot';
 import { AuthPage } from './pages/AuthPage';
@@ -81,6 +82,7 @@ function App() {
           <Route path="/admin" element={<AdminPanel />} />
           <Route path="/skill-settings" element={<SkillSettings />} />
           <Route path="/plugin-settings" element={<PluginSettings />} />
+          <Route path="/account" element={<AccountSettings />} />
           <Route path="/platform-assistant" element={<PlatformAssistant />} />
           <Route path="/wechat-clawbot" element={<WechatClawBot />} />
           <Route path="*" element={<Navigate to="/workspace" replace />} />
