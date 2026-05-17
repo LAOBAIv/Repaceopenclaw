@@ -2001,6 +2001,8 @@ export function ProjectWorkspace() {
   const [inputValue, setInputValue] = useState('');
   // [2026-05-16] 粘贴图片上传状态
   const [pastedImages, setPastedImages] = useState<{ file: File; preview: string; uploading: boolean; url?: string }[]>([]);
+  // [2026-05-16] 消息折叠：记录已展开的 panel ID
+  const [expandedPanels, setExpandedPanels] = useState<Set<string>>(new Set());
   /** 当前激活的对话 panel id（用于智能体面板高亮显示） */
   const [activePanelId, setActivePanelId] = useState<string | null>(null);
   /** 协作流程节点（提升到顶层，防止 TabPanel 关闭时丢失） */
@@ -2437,6 +2439,18 @@ export function ProjectWorkspace() {
 
     prevMsgCountRef.current = msgCount;
   }, [activePanel?.messages, activePanel?.isStreaming]);
+
+  // [2026-05-16] 切换 tab 时立即滚到底部（无动画），避免闪现
+  useEffect(() => {
+    if (activePanel?.id) {
+      // 用 requestAnimationFrame 确保 DOM 已渲染
+      requestAnimationFrame(() => {
+        messagesEndRef.current?.scrollIntoView({ behavior: 'auto' });
+        const scrollContainer = welcomeAreaRef.current;
+        if (scrollContainer) lastScrollHeightRef.current = scrollContainer.scrollHeight;
+      });
+    }
+  }, [activePanel?.id]);
 
   /* ── 微信助手 Tab 点击：使用专用 API 获取/创建会话 ──
    * 
@@ -3299,7 +3313,28 @@ export function ProjectWorkspace() {
                       <span style={{ fontSize: 13 }}>输入消息与智能体开始对话</span>
                     </div>
                   )}
-                  {panelMessages.map((msg) => {
+                  {(() => {
+                    // [2026-05-16] 消息折叠：默认只显示最近 20 条
+                    const VISIBLE_COUNT = 20;
+                    const isExpanded = expandedPanels.has(panel.id);
+                    const hiddenCount = isExpanded ? 0 : Math.max(0, panelMessages.length - VISIBLE_COUNT);
+                    const visibleMessages = isExpanded ? panelMessages : panelMessages.slice(-VISIBLE_COUNT);
+                    return (<>
+                      {hiddenCount > 0 && (
+                        <div style={{ textAlign: 'center', padding: '12px 0 8px' }}>
+                          <button
+                            onClick={() => setExpandedPanels(prev => { const s = new Set(prev); s.add(panel.id); return s; })}
+                            style={{
+                              fontSize: 12, color: '#6b7280', background: '#f3f4f6',
+                              border: '1px solid #e5e7eb', borderRadius: 16,
+                              padding: '4px 16px', cursor: 'pointer',
+                            }}
+                          >
+                            ↑ 查看更早的 {hiddenCount} 条消息
+                          </button>
+                        </div>
+                      )}
+                      {visibleMessages.map((msg) => {
                     const isStreamingMessage = Boolean(msg.streaming || panel.streamingMessageId === msg.id);
                     const msgAgent = msg.role === 'user'
                       ? null
@@ -3385,6 +3420,7 @@ export function ProjectWorkspace() {
                       </div>
                     );
                   })}
+                  </>); })()}
                   {isActivePanel && (
                     <>
                       {/* 真实底部留白：保留一点呼吸感即可，避免最后一条消息贴输入区 */}

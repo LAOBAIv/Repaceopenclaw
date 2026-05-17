@@ -45,7 +45,7 @@ export interface Agent {
   // Token 用量统计：累计消耗 token 总数
   tokenUsed: number;
   // Phase 3: 可见性 / Skill 管控 / 配额
-  visibility: 'private' | 'public' | 'template';
+  visibility: 'private' | 'public' | 'template' | 'system';
   skillsConfig: Record<string, boolean>;
   quotaConfig: { maxDailyTokens?: number; maxDailyConversations?: number; maxTokensPerMessage?: number };
   // Route C: OpenClaw agentId 映射
@@ -179,7 +179,7 @@ function buildWechatAssistantAgent(): Agent {
   // 执行端：OpenClaw rc-wechat-agent（独立 workspace）
   // 会话 Key：agent:rc-wechat-agent:rc:{conversationId}
   const db = getDb();
-  const result = db.exec(`SELECT * FROM agents WHERE agent_code = 'rc-wechat-agent' LIMIT 1`);
+  const result = db.exec(`SELECT * FROM agents WHERE openclaw_agent_id = 'rc-wechat-agent' LIMIT 1`);
   if (!result.length || !result[0].values.length) {
     return null;
   }
@@ -251,7 +251,8 @@ export const AgentService = {
     let sql = "SELECT * FROM agents";
     const params: any[] = [];
     if (userId) {
-      sql += " WHERE user_id = ? OR visibility = 'public'";
+      // 返回用户自己的 agent + public agent + system agent（如微信助手）
+      sql += " WHERE user_id = ? OR visibility = 'public' OR visibility = 'system'";
       params.push(userId);
     }
     sql += " ORDER BY created_at DESC";
@@ -278,9 +279,12 @@ export const AgentService = {
       agents.unshift(platformAssistant);
     }
     const wechatAssistant = buildWechatAssistantAgent();
-    const wechatExists = agents.some((a) => a.id === wechatAssistant.id || a.openclawAgentId === wechatAssistant.openclawAgentId);
-    if (!wechatExists) {
-      agents.unshift(wechatAssistant);
+    // [2026-05-16] 防止 buildWechatAssistantAgent 返回 null 导致空指针
+    if (wechatAssistant) {
+      const wechatExists = agents.some((a) => a.id === wechatAssistant.id || a.openclawAgentId === wechatAssistant.openclawAgentId);
+      if (!wechatExists) {
+        agents.unshift(wechatAssistant);
+      }
     }
     // 标记为系统级
     agents = agents.map((a) =>

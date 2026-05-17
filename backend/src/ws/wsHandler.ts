@@ -17,6 +17,9 @@ import { REPACECLAW_MESSAGE_CHANNEL, resolveOpenClawGateway } from '../utils/ope
 
 const { url: GATEWAY_URL, token: GATEWAY_TOKEN } = resolveOpenClawGateway();
 
+// [2026-05-16] 防重复发送：记录当前正在调用 Gateway 的会话ID 及其 request 对象（用于 abort）
+const activeGatewayRequests = new Map<string, { req: http.ClientRequest; startTime: number }>();
+
 function buildRcOcSessionKey(ocAgentId: string, conversationId: string): string {
   return `agent:${ocAgentId}:rc:${conversationId}`;
 }
@@ -217,18 +220,46 @@ export function setupWebSocket(server: http.Server) {
         }
 
         // 获取历史消息
-        const historyMessages = ConversationService.getMessages(conv.id);
-        const history = historyMessages.map((m) => ({
-          role: m.role === "agent" ? "assistant" : "user",
-          content: m.content,
-        }));
+        // [2026-05-16] RC 不需要发历史消息，OC Gateway 自己维护 session 上下文
+        // 只发当前用户最新消息
+        const history: Array<{ role: string; content: string }> = [];
 
         // 调用 OpenClaw Gateway 生成回复（消息存业务 agentId，路由用 ocAgentId）
         logger.info(`[WS] chat conversation=${conv.id} agent=${targetAgentId} ocAgent=${ocAgentId} user=${client.userId?.slice(0, 8) || 'unknown'}`);
-        // 关键修复：这里必须传真实会话主键 conv.id，不能继续传前端原始 conversationId。
-        // 前端允许传 UUID / session_code，前面已经通过 getByIdOrCode() 解析过一次。
-        // 如果这里继续把原始值传进 callGateway，会导致流式回复和 agent 消息可能写到错误会话，表现为“用户发出去了，但智能体不响应/看不到响应”。
-        await callGateway(ws, conv.id, targetAgentId, ocAgentId, systemPrompt, history, content, client.userId);
+
+        // [2026-05-16] 防重复：同一会话如果已有进行中的请求，abort 旧请求再发新的
+        const existing = activeGatewayRequests.get(conv.id);
+        if (existing) {
+          logger.info(`[Gateway] Aborting previous request for conv=${conv.id} (running ${Date.now() - existing.startTime}ms)`);
+          existing.req.destroy();
+          activeGatewayRequests.delete(conv.id);
+        }
+
+        // [2026-05-16] 带重试的 Gateway 调用：超时后自动重试一次
+        let retried = false;
+        const doCall = async () => {
+          try {
+            await callGateway(ws, conv.id, targetAgentId, ocAgentId, systemPrompt, history, content, client.userId);
+          } catch (err: any) {
+            if (err?.message === 'GATEWAY_TIMEOUT' && !retried) {
+              retried = true;
+              logger.info(`[Gateway] Timeout for conv=${conv.id}, retrying...`);
+              // 重试一次
+              try {
+                await callGateway(ws, conv.id, targetAgentId, ocAgentId, systemPrompt, history, content, client.userId);
+              } catch (retryErr: any) {
+                logger.error(`[Gateway] Retry also failed for conv=${conv.id}: ${retryErr?.message}`);
+                // 重试也失败，发 agent_done 结束前端“思考中”
+                if (ws.readyState === WebSocket.OPEN) {
+                  ws.send(JSON.stringify({ type: "agent_done", messageId: `timeout-${Date.now()}`, agentId: targetAgentId, conversationId: conv.id, message: { id: `timeout-${Date.now()}`, conversationId: conv.id, role: 'agent', content: 'ℹ️ 响应超时，请稍后重试', createdAt: new Date().toISOString() } }));
+                }
+              }
+            }
+          } finally {
+            activeGatewayRequests.delete(conv.id);
+          }
+        };
+        doCall();
         return;
       }
 
@@ -306,11 +337,8 @@ export function setupWebSocket(server: http.Server) {
               systemPrompt += `\n\n当前会话标题：${conv.title.trim()}`;
             }
 
-            const historyMessages = ConversationService.getMessages(conv.id);
-            const history = historyMessages.map((m) => ({
-              role: m.role === "agent" ? "assistant" : "user",
-              content: m.content,
-            }));
+            // [2026-05-16] 同上，不发历史
+            const history: Array<{ role: string; content: string }> = [];
 
             // 关键修复：多智能体协作场景同样必须使用已解析的真实会话主键 conv.id。
             await callGateway(ws, conv.id, agent.id, ocAgentId, systemPrompt, history, content, client.userId);
@@ -378,7 +406,7 @@ async function callGateway(
     }
   }
 
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     const msgId = uuidv4();
 
     if (ws.readyState !== WebSocket.OPEN) { resolve(); return; }
@@ -509,13 +537,17 @@ async function callGateway(
       resolve();
     });
 
-    req.setTimeout(120000, () => {
+    // [2026-05-16] 超时从 120s 降为 45s，避免 OC lane queue 堆积导致前端长时间“思考中”
+    req.setTimeout(45000, () => {
       req.destroy();
       if (ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ type: "error", message: "Gateway timeout", agentId, conversationId }));
+        ws.send(JSON.stringify({ type: "error", message: "响应超时，正在重试...", agentId, conversationId }));
       }
-      resolve();
+      reject(new Error('GATEWAY_TIMEOUT'));
     });
+
+    // [2026-05-16] 注册到 activeGatewayRequests，便于后续 abort
+    activeGatewayRequests.set(conversationId, { req, startTime: Date.now() });
 
     req.write(payload);
     req.end();

@@ -305,4 +305,52 @@ export class UserService {
   static verifyToken(token: string): { id: string; email: string; role: UserRole } {
     return jwt.verify(token, JWT_SECRET) as { id: string; email: string; role: UserRole };
   }
+
+  // [2026-05-17] 删除用户（管理员用）- 级联清理关联数据
+  static deleteUser(id: string): boolean {
+    const db = getDb();
+    const now = new Date().toISOString();
+    
+    // 检查用户是否存在
+    const res = db.exec("SELECT id, role FROM users WHERE id=?", [id]);
+    if (!res.length || !res[0].values.length) {
+      throw new Error("用户不存在");
+    }
+    
+    const userRole = res[0].values[0][1] as string;
+    
+    // 防止删除最后一个超级管理员
+    if (userRole === 'super_admin') {
+      const superAdminCount = db.exec("SELECT COUNT(*) FROM users WHERE role='super_admin'");
+      const count = superAdminCount.length ? (superAdminCount[0].values[0][0] as number) : 0;
+      if (count <= 1) {
+        throw new Error("不能删除最后一个超级管理员");
+      }
+    }
+    
+    // 1. 清理微信绑定
+    db.run("DELETE FROM user_wechat_bindings WHERE user_id=?", [id]);
+    
+    // 2. 清理组织权限范围
+    db.run("DELETE FROM user_org_scope WHERE user_id=?", [id]);
+    
+    // 3. 清理数据授权
+    db.run("DELETE FROM user_data_grants WHERE user_id=?", [id]);
+    
+    // 4. 清理代理授权
+    db.run("DELETE FROM user_proxy_grants WHERE user_id=?", [id]);
+    
+    // 5. 清理用户创建的会话（messages 会级联删除）
+    db.run("DELETE FROM conversations WHERE user_id=?", [id]);
+    
+    // 6. 清理用户创建的智能体
+    db.run("DELETE FROM agents WHERE user_id=?", [id]);
+    
+    // 7. 删除用户
+    db.run("DELETE FROM users WHERE id=?", [id]);
+    
+    saveDb();
+    logger.info(`[UserService] Deleted user ${id} and all related data`);
+    return true;
+  }
 }

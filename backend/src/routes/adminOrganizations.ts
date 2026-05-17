@@ -132,9 +132,16 @@ router.put("/users/:id", ...adminOnly, (req: Request, res: Response) => {
   }
 });
 
+// [2026-05-17] 实现删除用户功能 - 级联清理关联数据
 router.delete("/users/:id", ...adminOnly, (req: Request, res: Response) => {
-  // TODO: 实现删除用户功能（需要处理关联数据）
-  res.status(501).json({ error: "删除用户功能暂未实现" });
+  try {
+    UserService.deleteUser(req.params.id);
+    res.json({ data: { success: true } });
+  } catch (err: any) {
+    const msg = err.message || "删除用户失败";
+    const status = msg.includes("不存在") ? 404 : 400;
+    res.status(status).json({ error: msg });
+  }
 });
 
 export default router;

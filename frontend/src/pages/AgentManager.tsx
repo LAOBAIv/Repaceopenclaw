@@ -166,7 +166,9 @@ export function AgentManager() {
 
   // 只展示后端真实返回的当前用户可见智能体，禁止 fallback 到默认数据。
   // 否则普通用户刷新时会短暂闪现无权限的默认智能体，随后再被真实数据覆盖。
+  // agents 管理页面过滤掉 system agent（微信助手等）和平台助手
   const agentList: Agent[] = agents.filter(a =>
+    a.visibility !== 'system' &&
     !(a.id === '24cf6cc5-da0d-48df-814e-11582e398007'
       || a.id === 'platform-assistant'
       || a.id === 'repaceclaw-platform-assistant'

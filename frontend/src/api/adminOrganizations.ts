@@ -16,6 +16,7 @@ export interface DepartmentNode {
   children: DepartmentNode[];
 }
 
+// [2026-05-17] 添加微信绑定状态字段
 export interface OrganizationUser {
   id: string;
   userCode?: string;
@@ -30,6 +31,8 @@ export interface OrganizationUser {
   primaryDepartmentId: string | null;
   primaryDepartmentName: string | null;
   primaryDepartmentCode: string | null;
+  wechatBound?: boolean;  // 微信绑定状态
+  wechatOpenid?: string;  // 微信 openid（部分显示）
 }
 
 export interface UserPermissionSummary {
@@ -152,6 +155,11 @@ export const adminOrganizationsApi = {
   async updateUser(userId: string, data: { role?: UserRole; status?: string; avatar?: string }): Promise<OrganizationUser> {
     const res = await apiClient.put(`/admin/organizations/users/${userId}`, data);
     return res.data.data;
+  },
+
+  // [2026-05-17] 删除用户 API
+  async deleteUser(userId: string): Promise<void> {
+    await apiClient.delete(`/admin/organizations/users/${userId}`);
   },
 
   async userPermissions(userId: string): Promise<UserPermissionSummary> {

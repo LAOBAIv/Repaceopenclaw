@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { Users, Shield, Building, RefreshCw, Search, Edit3, Trash2, Eye } from 'lucide-react';
-import { adminOrganizationsApi, OrganizationUser } from '../api/adminOrganizations';
+import { Users, Shield, Building, RefreshCw, Search, Edit3, Trash2, Eye, MessageCircle } from 'lucide-react';
+import { adminOrganizationsApi, OrganizationUser, DepartmentNode } from '../api/adminOrganizations';
 import { useAuthStore } from '../stores/authStore';
 
 const ROLE_MAP: Record<string, { label: string; color: string; bg: string }> = {
@@ -17,15 +17,27 @@ const STATUS_MAP: Record<string, { label: string; color: string; bg: string }> =
 export function UserManagement() {
   const currentUser = useAuthStore((s) => s.user);
   const [users, setUsers] = useState<OrganizationUser[]>([]);
+  const [departments, setDepartments] = useState<DepartmentNode[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [selectedUser, setSelectedUser] = useState<OrganizationUser | null>(null);
   const [editingUser, setEditingUser] = useState<OrganizationUser | null>(null);
+  const [editDepartmentId, setEditDepartmentId] = useState<string | null>(null);
   const [showUserDetail, setShowUserDetail] = useState(false);
 
   useEffect(() => {
     loadUsers();
+    loadDepartments();
   }, []);
+
+  async function loadDepartments() {
+    try {
+      const data = await adminOrganizationsApi.departments();
+      setDepartments(data);
+    } catch (e) {
+      console.error('加载组织列表失败:', e);
+    }
+  }
 
   async function loadUsers() {
     setLoading(true);
@@ -40,6 +52,7 @@ export function UserManagement() {
 
   async function handleEdit(user: OrganizationUser) {
     setEditingUser(user);
+    setEditDepartmentId(user.primaryDepartmentId || null);
   }
 
   async function handleSaveEdit() {
@@ -47,11 +60,16 @@ export function UserManagement() {
     
     try {
       // 更新用户角色/状态
-      const updatedUser = await adminOrganizationsApi.updateUser(editingUser.id, {
+      await adminOrganizationsApi.updateUser(editingUser.id, {
         role: editingUser.role,
         status: editingUser.status,
         avatar: editingUser.avatar
       });
+      
+      // [2026-05-17] 更新组织架构归属
+      if (editDepartmentId !== editingUser.primaryDepartmentId) {
+        await adminOrganizationsApi.assignUserDepartment(editingUser.id, editDepartmentId);
+      }
       
       // 刷新列表
       loadUsers();
@@ -61,10 +79,21 @@ export function UserManagement() {
     }
   }
 
+  // [2026-05-17] 实现删除用户功能
   async function handleDelete(id: string) {
-    if (!confirm('确定删除此用户？此操作不可恢复。')) return;
-    // TODO: 实现删除用户功能（后端需要添加相应API）
-    alert('删除用户功能暂未实现');
+    const user = users.find(u => u.id === id);
+    if (!user) return;
+    if (user.role === 'super_admin') {
+      alert('不能删除超级管理员');
+      return;
+    }
+    if (!confirm(`确定删除用户「${user.username}」？\n此操作将删除该用户的所有数据（会话、智能体、微信绑定等），不可恢复。`)) return;
+    try {
+      await adminOrganizationsApi.deleteUser(id);
+      loadUsers();
+    } catch (e: any) {
+      alert(`删除失败: ${e.message || '未知错误'}`);
+    }
   }
 
   async function handleViewPermissions(userId: string) {
@@ -139,6 +168,7 @@ export function UserManagement() {
               <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: 12, color: '#6b7280', borderBottom: '1px solid #e5e7eb' }}>角色</th>
               <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: 12, color: '#6b7280', borderBottom: '1px solid #e5e7eb' }}>状态</th>
               <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: 12, color: '#6b7280', borderBottom: '1px solid #e5e7eb' }}>所属组织</th>
+              <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: 12, color: '#6b7280', borderBottom: '1px solid #e5e7eb' }}>微信绑定</th>
               <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: 12, color: '#6b7280', borderBottom: '1px solid #e5e7eb' }}>最后登录</th>
               <th style={{ padding: '12px 16px', textAlign: 'right', fontSize: 12, color: '#6b7280', borderBottom: '1px solid #e5e7eb' }}>操作</th>
             </tr>
@@ -176,6 +206,15 @@ export function UserManagement() {
                   </td>
                   <td style={{ padding: '12px 16px', fontSize: 12, color: '#6b7280' }}>
                     {user.primaryDepartmentName || '-'}
+                  </td>
+                  <td style={{ padding: '12px 16px' }}>
+                    {user.wechatBound ? (
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, padding: '2px 8px', borderRadius: 4, background: '#ecfdf5', color: '#059669', fontWeight: 500 }}>
+                        <MessageCircle size={12} /> 已绑定
+                      </span>
+                    ) : (
+                      <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 4, background: '#f3f4f6', color: '#9ca3af' }}>未绑定</span>
+                    )}
                   </td>
                   <td style={{ padding: '12px 16px', fontSize: 11, color: '#9ca3af' }}>
                     {user.lastLoginAt ? new Date(user.lastLoginAt).toLocaleString('zh-CN') : '-'}
@@ -375,6 +414,21 @@ export function UserManagement() {
                 >
                   <option value="active">活跃</option>
                   <option value="disabled">禁用</option>
+                </select>
+              </div>
+              
+              {/* [2026-05-17] 组织架构归属选择 */}
+              <div style={{ marginBottom: 16 }}>
+                <label style={{ display: 'block', fontSize: 12, color: '#6b7280', marginBottom: 6 }}>所属组织</label>
+                <select
+                  value={editDepartmentId || ''}
+                  onChange={(e) => setEditDepartmentId(e.target.value || null)}
+                  style={{ width: '100%', padding: '8px 12px', borderRadius: 8, border: '1px solid #e5e7eb', fontSize: 14 }}
+                >
+                  <option value="">未分配</option>
+                  {departments.map(dept => (
+                    <option key={dept.id} value={dept.id}>{dept.name}</option>
+                  ))}
                 </select>
               </div>
               

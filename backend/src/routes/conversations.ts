@@ -155,11 +155,12 @@ router.get("/wechat-assistant", (req: Request, res: Response) => {
   const userId = (req as any).user?.id;
   if (!userId) return res.status(401).json({ error: '未认证' });
 
-  // 查找是否已有微信助手会话
-  // 关键修复：查找条件要兼容 agentIds 为空但 currentAgentId 正确的情况
+  // [2026-05-16] 统一查找逻辑：优先 conversation_type='wechat_assistant'，兼容 scope_type='wechat'
   const existingList = ConversationService.list(userId).filter(
-    c => c.title === '微信助手' && 
-         (c.agentIds.some(id => id === 'rc-wechat-agent') || c.currentAgentId === 'rc-wechat-agent')
+    c => c.conversationType === 'wechat_assistant' ||
+         c.scopeType === 'wechat' ||
+         (c.title === '微信助手' &&
+          (c.agentIds.some(id => id === 'rc-wechat-agent') || c.currentAgentId === 'rc-wechat-agent'))
   );
 
   if (existingList.length > 0) {
@@ -191,6 +192,8 @@ router.get("/wechat-assistant", (req: Request, res: Response) => {
     scopeType: 'user',
     scopeId: userId,
     memoryPolicy: 'private',
+    // 标记为微信助手会话，前端 kanban 过滤掉此类型
+    conversationType: 'wechat_assistant',
   });
 
   // 绑定 OC session key：agent:rc-wechat-agent:rc:{conversationId}

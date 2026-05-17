@@ -1,0 +1,1580 @@
+# WeChat ClawBot 完整技术文档汇总
+
+> 生成时间：2026-05-11 02:40 GMT+8
+> 汇总范围：服务器上所有 WeChat/ClawBot 相关文件的完整内容
+> 共 14 个文件，按日期从 2026-04-30 至 2026-05-11
+
+---
+
+## 📁 文件清单
+
+### 一、RepaceClaw 自研代码（2026-05-10 ~ 2026-05-11）
+
+| # | 文件路径 | 修改时间 | 行数 |
+|---|---------|---------|------|
+| 1 | `workspace/RepaceClaw/backend/src/routes/wechatClawBot.ts` | 2026-05-11 02:15 | ~400行 |
+| 2 | `workspace/RepaceClaw/backend/src/services/ClawBotGatewayClient.ts` | 2026-05-10 18:17 | ~280行 |
+| 3 | `workspace/RepaceClaw/backend/src/utils/openclawGateway.ts` | 2026-05-10 18:17 | ~70行 |
+| 4 | `workspace/RepaceClaw/frontend/src/pages/WechatClawBot.tsx` | 2026-05-11 01:19 | ~380行 |
+
+### 二、OpenClaw 微信插件（2026-04-30 安装）
+
+| # | 文件路径 | 修改时间 |
+|---|---------|---------|
+| 5 | `extensions/openclaw-weixin/README.zh_CN.md` | 2026-04-30 22:19 |
+| 6 | `extensions/openclaw-weixin/README.md` | 2026-04-30 22:19 |
+| 7 | `extensions/openclaw-weixin/src/api/api.ts` | 2026-04-30 22:19 |
+| 8 | `extensions/openclaw-weixin/src/api/types.ts` | 2026-04-30 22:19 |
+| 9 | `extensions/openclaw-weixin/src/channel.ts` | 2026-04-30 22:19 |
+| 10 | `extensions/openclaw-weixin/src/auth/accounts.ts` | 2026-04-30 22:19 |
+
+### 三、文档（2026-05-08 ~ 2026-05-10）
+
+| # | 文件路径 | 修改时间 |
+|---|---------|---------|
+| 11 | `/root/.openclaw/workspace/docs/wechat-multi-user.md` | **2026-05-08 23:01** |
+| 12 | `/root/repaceclaw/backend/docs/wechat-qr-code-logic.md` | 2026-05-10 22:20 |
+
+### 四、账号数据（2026-05-08 ~ 2026-05-10）
+
+| # | 文件路径 | 修改时间 |
+|---|---------|---------|
+| 13 | `openclaw-weixin/accounts/410860c3bb94-im-bot.json` | 2026-05-08 22:49 |
+| 14 | `openclaw-weixin/accounts/410860c3bb94-im-bot.sync.json` | 2026-05-10 10:35 |
+
+---
+
+## ═══════════════════════════════════════════════════
+## 第一部分：5月8日文档 — 微信多用户接入方案
+## 文件：`/root/.openclaw/workspace/docs/wechat-multi-user.md`
+## 修改时间：2026-05-08 23:01:25
+## ═══════════════════════════════════════════════════
+
+### 一、架构原理
+
+```
+微信用户 → iLink Bot（一对一绑定）→ getUpdates 长轮询 → OpenClaw Gateway → rc-wechat-agent → AI 回复 → 微信用户
+```
+
+**核心机制**：iLink 的 bot token 是一对一绑定的，每个微信用户需要独立扫码生成自己的 bot token。openclaw-weixin 插件为每个账号启动独立的 `getUpdates` 长轮询。
+
+### 关键文件
+
+| 文件 | 说明 |
+|------|------|
+| `/root/.openclaw/openclaw-weixin/accounts.json` | 账号索引（数组，记录所有 accountId） |
+| `/root/.openclaw/openclaw-weixin/accounts/{botId}.json` | 账号凭证（token、baseUrl、userId） |
+| `/root/.openclaw/openclaw-weixin/accounts/{botId}.sync.json` | getUpdates 同步状态 |
+| `/root/.openclaw/openclaw-weixin/accounts/{botId}.context-tokens.json` | 会话 context token |
+| `/root/.openclaw/openclaw.json` | Gateway 配置（channelConfigUpdatedAt 触发热重载） |
+
+### 账号凭证格式
+
+```json
+{
+  "token": "{botId}:{secret}",
+  "savedAt": "2026-05-08T14:48:00.000Z",
+  "baseUrl": "https://ilinkai.weixin.qq.com",
+  "userId": "{wechatUserId}@im.wechat"
+}
+```
+
+### 二、新用户接入流程（手动）
+
+1. 调用 iLink API 生成二维码
+2. 用户微信扫码确认
+3. 轮询扫码状态，获取 bot_token / ilink_bot_id / ilink_user_id
+4. 写入 `accounts/{botId}.json`
+5. 注册到 `accounts.json` 索引
+6. 更新 `openclaw.json` 的 `channelConfigUpdatedAt` 触发 Gateway 热重载
+7. （可选）在 RC 数据库 `wechat_bindings` 表中记录绑定关系
+
+### 三、自动化接入 API
+
+#### 3.1 生成二维码
+
+```
+POST /api/wechat/bindbot/qrcode
+```
+
+**响应**：
+```json
+{
+  "success": true,
+  "qrcode": "9183a15379ce05991ef7d3a72c35155c",
+  "qrcode_url": "https://liteapp.weixin.qq.com/q/7GiQu1?qrcode=...&bot_type=3",
+  "session_key": "uuid"
+}
+```
+
+#### 3.2 轮询扫码状态
+
+```
+GET /api/wechat/bindbot/status?session_key={session_key}
+```
+
+**响应（等待中）**：
+```json
+{ "status": "wait" }
+```
+
+**响应（已扫码）**：
+```json
+{ "status": "scaned" }
+```
+
+**响应（需要验证码）**：
+```json
+{ "status": "need_verifycode" }
+```
+
+**响应（确认成功）**：
+```json
+{
+  "status": "confirmed",
+  "bot_id": "410860c3bb94@im.bot",
+  "user_id": "o9cq804lF_5T-QiBhox4oFnrGpZ4@im.wechat",
+  "message": "绑定成功，微信助手已激活"
+}
+```
+
+#### 3.3 提交验证码
+
+```
+POST /api/wechat/bindbot/verify
+Content-Type: application/json
+
+{ "session_key": "uuid", "code": "1234" }
+```
+
+### 四、后端实现
+
+文件：`/root/repaceclaw/backend/src/routes/wechatBindBot.ts`
+
+已实现并注册到 `/api/wechat/bindbot`，免鉴权（publicPaths 匹配 `/api/wechat`）。
+
+### API 列表
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| POST | `/api/wechat/bindbot/qrcode` | 生成绑定二维码 |
+| GET | `/api/wechat/bindbot/status?session_key=xxx` | 轮询扫码状态（长轮询，最长35s） |
+| POST | `/api/wechat/bindbot/verify` | 提交验证码 |
+| GET | `/api/wechat/bindbot/accounts` | 查看已注册的 bot 账号 |
+| DELETE | `/api/wechat/bindbot/accounts/:botId` | 删除 bot 账号 |
+
+### 五、前端集成建议
+
+在 WechatClawBot 页面或微信助手 Tab 中添加"绑定新用户"按钮：
+
+```tsx
+// 1. 调用 POST /api/wechat/bindbot/qrcode 获取二维码
+// 2. 用 QRCodeSVG 渲染 qrcode_url
+// 3. 轮询 GET /api/wechat/bindbot/status?session_key=xxx
+// 4. 如果返回 need_verifycode，弹出输入框让用户输入验证码
+// 5. 提交验证码 POST /api/wechat/bindbot/verify
+// 6. 继续轮询直到 confirmed
+// 7. 显示绑定成功
+```
+
+### 六、已验证的用户
+
+| 用户 | bot_id | ilink_user_id | 状态 |
+|------|--------|---------------|------|
+| 老白 | 8dc943825f17-im-bot | o9cq80ycskoCuCQKWKSQnWI_aJ2w@im.wechat | ✅ 正常 |
+| tandy | 410860c3bb94-im-bot | o9cq804lF_5T-QiBhox4oFnrGpZ4@im.wechat | ✅ 正常 |
+
+### 七、注意事项
+
+1. **一对一绑定**：每个微信用户对应一个独立的 bot token 和 getUpdates 轮询
+2. **热重载**：注册新账号后通过更新 `channelConfigUpdatedAt` 触发 Gateway 热重载，无需重启
+3. **避免重启循环**：不要用 `systemctl restart openclaw-gateway`，用热重载方式
+4. **Token 安全**：账号凭证文件权限设为 600（仅 owner 可读写）
+5. **会话过期**：扫码会话 5 分钟过期，过期后需重新生成二维码
+6. **验证码**：部分用户扫码后需要输入手机微信显示的数字验证码
+
+---
+
+## ═══════════════════════════════════════════════════
+## 第二部分：5月10日文档 — 微信二维码创建逻辑
+## 文件：`/root/repaceclaw/backend/docs/wechat-qr-code-logic.md`
+## 修改时间：2026-05-10 22:20:07
+## ═══════════════════════════════════════════════════
+
+### 系统架构概述
+
+RC系统 (repaceclaw.com) 集成了 OpenClaw Gateway 和微信 ClawBot 功能，通过以下组件实现微信登录：
+
+- **OpenClaw Gateway**: 核心消息路由和代理服务
+- **微信插件**: `@tencent-weixin/openclaw-weixin` v2.3.1
+- **后端API**: `/api/wechat-clawbot/*` 路由
+- **前端页面**: `/wechat-qr` 公开访问页面
+
+### 微信账号配置
+
+#### 已配置的微信用户
+- **老白微信**: `o9cq804lF_5T-QiBhox4oFnrGpZ4@im.wechat`
+- **Tandy微信**: `o9cq80ycskoCuCQKWKSQnWI_aJ2w@im.wechat`
+
+#### 账号文件位置
+```
+/root/.openclaw/openclaw-weixin/accounts/
+├── 8dc943825f17-im-bot.json     # Tandy账号
+├── 410860c3bb94-im-bot.json     # 老白账号
+└── accounts.json                # 账号索引
+```
+
+### API 接口规范
+
+#### 1. 获取微信登录二维码
+**Endpoint**: `POST /api/wechat-clawbot/qrcode`
+**Description**: 生成微信扫码登录二维码
+**Request**: 无参数
+**Response**:
+```json
+{
+  "success": true,
+  "data": {
+    "qrcode_url": "https://repaceclaw.com/api/wechat-clawbot/qrcode/image?id=xxx",
+    "qrcode": "faec0468b46e049f219a060faa3f438b",
+    "original_qrcode_url": "https://liteapp.weixin.qq.com/q/7GiQu1?qrcode=faec0468b46e049f219a060faa3f438b&bot_type=3"
+  }
+}
+```
+
+#### 2. 轮询扫码状态
+**Endpoint**: `POST /api/wechat-clawbot/qrcode/status`
+**Description**: 检查二维码扫描状态
+**Request**:
+```json
+{
+  "qrcode": "faec0468b46e049f219a060faa3f438b"
+}
+```
+**Response**:
+```json
+{
+  "success": true,
+  "data": {
+    "status": "wait",
+    "credentials": {
+      "bot_token": "bearer_token_xxx",
+      "ilink_bot_id": "bot_id_xxx",
+      "ilink_user_id": "user_id_xxx"
+    },
+    "baseurl": "https://ilinkai.weixin.qq.com"
+  }
+}
+```
+
+#### 3. 重置IM通道
+**Endpoint**: `POST /api/wechat-clawbot/channel/reset`
+**Description**: 重置微信IM通道配置
+**Request**:
+```json
+{
+  "channel_id": "default"
+}
+```
+
+### 技术实现细节
+
+#### 后端实现方式
+- **不使用 OpenClaw Gateway 代理**（Gateway 未暴露 HTTP API）
+- **直接调用 iLink API**：
+  - 二维码生成: `POST https://ilinkai.weixin.qq.com/ilink/bot/get_bot_qrcode?bot_type=3`
+  - 状态轮询: `GET https://ilinkai.weixin.qq.com/ilink/bot/get_qrcode_status?qrcode={token}`
+
+#### 请求头和认证
+- **Content-Type**: `application/json`
+- **Bot Token**: 从本地账号文件读取并包含在 `local_token_list` 参数中
+
+#### 前端访问链接
+- **公开页面**: `https://repaceclaw.com/wechat-qr` (无需登录)
+- **管理页面**: `https://repaceclaw.com/wechat-clawbot`
+- **纯HTML版本**: `https://repaceclaw.com/wechat-qr.html`
+
+### 使用流程
+
+1. **调用二维码接口** → 获取 `qrcode` token 和二维码图片URL
+2. **显示二维码** → 使用 `original_qrcode_url` 或通过 `/api/wechat-clawbot/qrcode/image?id=xxx` 访问
+3. **轮询状态** → 每2秒调用状态接口，直到 `status` 变为 `"confirmed"`
+4. **获取凭据** → 登录成功后获得 `bot_token` 用于后续IM通信
+
+### 故障排除
+
+#### 常见问题
+- **"Channel Status: Not configured"**: 前端显示问题，实际功能正常
+- **API 404错误**: 确保后端直接调用 iLink API，而非代理到 Gateway
+- **权限问题**: 确保账号文件权限为 644 (`chmod 644 *.json`)
+
+#### 系统状态检查
+```bash
+# 检查 OpenClaw 状态
+openclaw status --deep
+
+# 检查后端服务
+curl https://repaceclaw.com/api/wechat-clawbot/models
+
+# 测试 iLink API 直连
+curl -X POST https://ilinkai.weixin.qq.com/ilink/bot/get_bot_qrcode?bot_type=3
+```
+
+### 版本信息
+- **OpenClaw**: 2026.4.1
+- **微信插件**: @tencent-weixin/openclaw-weixin v2.3.1
+- **后端服务**: repaceclaw backend v1.0.0
+- **域名**: repaceclaw.com
+
+---
+
+## ═══════════════════════════════════════════════════
+## 第三部分：OpenClaw 微信插件中文文档
+## 文件：`extensions/openclaw-weixin/README.zh_CN.md`
+## 修改时间：2026-04-30 22:19:02
+## ═══════════════════════════════════════════════════
+
+### 兼容性
+
+| 插件版本 | OpenClaw 版本 | npm dist-tag | 状态 |
+|---------|--------------|--------------|------|
+| 2.0.x | >=2026.3.22 | `latest` | 活跃 |
+| 1.0.x | >=2026.1.0 <2026.3.22 | `legacy` | 维护中 |
+
+> 插件在启动时会检查宿主版本，如果运行的 OpenClaw 版本超出支持范围，插件将拒绝加载。
+
+### 前提条件
+
+已安装 OpenClaw（需要 `openclaw` CLI 可用）。
+
+### 一键安装
+
+```bash
+npx -y @tencent-weixin/openclaw-weixin-cli install
+```
+
+### 手动安装
+
+#### 1. 安装插件
+```bash
+openclaw plugins install "@tencent-weixin/openclaw-weixin"
+```
+
+#### 2. 启用插件
+```bash
+openclaw config set plugins.entries.openclaw-weixin.enabled true
+```
+
+#### 3. 扫码登录
+```bash
+openclaw channels login --channel openclaw-weixin
+```
+终端会显示一个二维码，用手机扫码并在手机上确认授权。
+
+#### 4. 重启 gateway
+```bash
+openclaw gateway restart
+```
+
+### 添加更多微信账号
+
+```bash
+openclaw channels login --channel openclaw-weixin
+```
+每次扫码登录都会创建一个新的账号条目，支持多个微信号同时在线。
+
+### 多账号上下文隔离
+
+默认情况下，私聊可能共用同一会话桶。**多个微信号同时登录**时，建议按「账号 + 渠道 + 对端」隔离：
+
+```bash
+openclaw config set session.dmScope per-account-channel-peer
+```
+
+### 自定义 BotAgent（可选）
+
+每条出站请求会带一个自我声明的 `bot_agent` 字段——类似 HTTP `User-Agent`——用于后台日志归因和监控聚合。**默认值为 `OpenClaw`**。
+
+在 `openclaw.json` 中加一行即可：
+
+```json
+{
+  "channels": {
+    "openclaw-weixin": {
+      "botAgent": "MyBot/1.2.0"
+    }
+  }
+}
+```
+
+**格式规范**（UA 风格）：
+- 一个或多个 `Name/Version` token，空格分隔
+- 每个 token 可选地跟一个 ` (comment)`
+- 仅允许 ASCII 字符；总长 ≤ 256 字节
+- 不合规的 token 在清洗时静默丢弃；如果最终为空，回退到 `OpenClaw`
+
+### 后端 API 协议
+
+本插件通过 HTTP JSON API 与后端网关通信。所有接口均为 `POST`，请求和响应均为 JSON。
+
+#### 通用请求头
+
+| Header | 说明 |
+|--------|------|
+| `Content-Type` | `application/json` |
+| `AuthorizationType` | 固定值 `ilink_bot_token` |
+| `Authorization` | `Bearer <token>`（登录后获取） |
+| `X-WECHAT-UIN` | 随机 uint32 的 base64 编码 |
+
+#### 接口列表
+
+| 接口 | 路径 | 说明 |
+|------|------|------|
+| getUpdates | `getupdates` | 长轮询获取新消息 |
+| sendMessage | `sendmessage` | 发送消息（文本/图片/视频/文件） |
+| getUploadUrl | `getuploadurl` | 获取 CDN 上传预签名 URL |
+| getConfig | `getconfig` | 获取账号配置（typing ticket 等） |
+| sendTyping | `sendtyping` | 发送/取消输入状态指示 |
+
+#### getUpdates 详情
+
+长轮询接口。服务端在有新消息或超时后返回。
+
+**请求体**：
+```json
+{ "get_updates_buf": "" }
+```
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `get_updates_buf` | `string` | 上次响应返回的同步游标，首次请求传空字符串 |
+
+**响应体**：
+```json
+{
+  "ret": 0,
+  "msgs": [...],
+  "get_updates_buf": "<新游标>",
+  "longpolling_timeout_ms": 35000
+}
+```
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `ret` | `number` | 返回码，`0` = 成功 |
+| `errcode` | `number?` | 错误码（如 `-14` = 会话超时） |
+| `errmsg` | `string?` | 错误描述 |
+| `msgs` | `WeixinMessage[]` | 消息列表 |
+| `get_updates_buf` | `string` | 新的同步游标 |
+| `longpolling_timeout_ms` | `number?` | 服务端建议的下次长轮询超时（ms） |
+
+#### sendMessage 详情
+
+**请求体**：
+```json
+{
+  "msg": {
+    "to_user_id": "<目标用户 ID>",
+    "context_token": "<会话上下文令牌>",
+    "item_list": [
+      { "type": 1, "text_item": { "text": "你好" } }
+    ]
+  }
+}
+```
+
+#### getUploadUrl 详情
+
+获取 CDN 上传预签名参数。上传文件前需先调用此接口获取 `upload_param` 和 `thumb_upload_param`。
+
+**请求体**：
+```json
+{
+  "filekey": "<文件标识>",
+  "media_type": 1,
+  "to_user_id": "<目标用户 ID>",
+  "rawsize": 12345,
+  "rawfilemd5": "<明文 MD5>",
+  "filesize": 12352,
+  "thumb_rawsize": 1024,
+  "thumb_rawfilemd5": "<缩略图明文 MD5>",
+  "thumb_filesize": 1040
+}
+```
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `media_type` | `number` | `1` = IMAGE, `2` = VIDEO, `3` = FILE |
+| `rawsize` | `number` | 原文件明文大小 |
+| `rawfilemd5` | `string` | 原文件明文 MD5 |
+| `filesize` | `number` | AES-128-ECB 加密后的密文大小 |
+| `thumb_rawsize` | `number?` | 缩略图明文大小（IMAGE/VIDEO 时必填） |
+| `thumb_rawfilemd5` | `string?` | 缩略图明文 MD5（IMAGE/VIDEO 时必填） |
+| `thumb_filesize` | `number?` | 缩略图密文大小（IMAGE/VIDEO 时必填） |
+
+#### getConfig 详情
+
+**请求体**：
+```json
+{
+  "ilink_user_id": "<用户 ID>",
+  "context_token": "<可选，会话上下文令牌>"
+}
+```
+
+**响应体**：
+```json
+{
+  "ret": 0,
+  "typing_ticket": "<base64 编码的 typing ticket>"
+}
+```
+
+#### sendTyping 详情
+
+**请求体**：
+```json
+{
+  "ilink_user_id": "<用户 ID>",
+  "typing_ticket": "<从 getConfig 获取>",
+  "status": 1
+}
+```
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `status` | `number` | `1` = 正在输入，`2` = 取消输入 |
+
+### 消息结构
+
+#### WeixinMessage
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `seq` | `number?` | 消息序列号 |
+| `message_id` | `number?` | 消息唯一 ID |
+| `from_user_id` | `string?` | 发送者 ID |
+| `to_user_id` | `string?` | 接收者 ID |
+| `create_time_ms` | `number?` | 创建时间戳（ms） |
+| `session_id` | `string?` | 会话 ID |
+| `message_type` | `number?` | `1` = USER, `2` = BOT |
+| `message_state` | `number?` | `0` = NEW, `1` = GENERATING, `2` = FINISH |
+| `item_list` | `MessageItem[]?` | 消息内容列表 |
+| `context_token` | `string?` | 会话上下文令牌，回复时需回传 |
+
+#### MessageItem
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `type` | `number` | `1` TEXT, `2` IMAGE, `3` VOICE, `4` FILE, `5` VIDEO |
+| `text_item` | `{ text: string }?` | 文本内容 |
+| `image_item` | `ImageItem?` | 图片（含 CDN 引用和 AES 密钥） |
+| `voice_item` | `VoiceItem?` | 语音（SILK 编码） |
+| `file_item` | `FileItem?` | 文件附件 |
+| `video_item` | `VideoItem?` | 视频 |
+| `ref_msg` | `RefMessage?` | 引用消息 |
+
+#### CDN 媒体引用 (CDNMedia)
+
+所有媒体类型（图片/语音/文件/视频）通过 CDN 传输，使用 AES-128-ECB 加密：
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `encrypt_query_param` | `string?` | CDN 下载/上传的加密参数 |
+| `aes_key` | `string?` | base64 编码的 AES-128 密钥 |
+
+### CDN 上传流程
+
+1. 计算文件明文大小、MD5，以及 AES-128-ECB 加密后的密文大小
+2. 如需缩略图（图片/视频），同样计算缩略图的明文和密文参数
+3. 调用 `getUploadUrl` 获取 `upload_param`（和 `thumb_upload_param`）
+4. 使用 AES-128-ECB 加密文件内容，PUT 上传到 CDN URL
+5. 缩略图同理加密并上传
+6. 使用返回的 `encrypt_query_param` 构造 `CDNMedia` 引用，放入 `MessageItem` 发送
+
+### 卸载
+
+```bash
+openclaw plugins uninstall @tencent-weixin/openclaw-weixin
+```
+
+### 故障排查
+
+#### "requires OpenClaw >=2026.3.22" 报错
+
+你的 OpenClaw 版本太旧。检查版本：`openclaw --version`
+
+安装旧版插件线：
+```bash
+openclaw plugins install @tencent-weixin/openclaw-weixin@legacy
+```
+
+#### Channel 显示 "OK" 但未连接
+
+确保 `~/.openclaw/openclaw.json` 中 `plugins.entries.openclaw-weixin.enabled` 为 `true`：
+```bash
+openclaw config set plugins.entries.openclaw-weixin.enabled true
+openclaw gateway restart
+```
+
+---
+
+## ═══════════════════════════════════════════════════
+## 第四部分：iLink API 调用实现
+## 文件：`extensions/openclaw-weixin/src/api/api.ts`
+## 修改时间：2026-04-30 22:19:02
+## ═══════════════════════════════════════════════════
+
+### 核心功能概述
+
+此文件是微信插件与 iLink 后端通信的核心实现，包含所有 API 调用函数。
+
+### 关键常量和配置
+
+```typescript
+// 默认超时设置
+const DEFAULT_LONG_POLL_TIMEOUT_MS = 35_000;   // 长轮询 35 秒
+const DEFAULT_API_TIMEOUT_MS = 15_000;         // 普通 API 15 秒
+const DEFAULT_CONFIG_TIMEOUT_MS = 10_000;      // 轻量 API 10 秒
+```
+
+### BotAgent 标识
+
+```typescript
+const DEFAULT_BOT_AGENT = "OpenClaw";
+const BOT_AGENT_MAX_LEN = 256;
+
+// 从 openclaw.json 的 channels.openclaw-weixin.botAgent 读取
+// 格式：UA-style "Name/Version" tokens，空格分隔
+// 例如："MyBot/1.2.0 LangChain/0.3.5"
+```
+
+### BaseInfo 构建
+
+每个 API 请求都附带 `base_info`：
+```typescript
+{
+  channel_version: "2.3.1",        // 来自 package.json version
+  bot_agent: "OpenClaw"            // 来自配置或默认值
+}
+```
+
+### 请求头构建
+
+```typescript
+{
+  "Content-Type": "application/json",
+  "AuthorizationType": "ilink_bot_token",
+  "Authorization": "Bearer <token>",
+  "Content-Length": "...",
+  "X-WECHAT-UIN": "<随机 uint32 base64>",
+  "iLink-App-Id": "<来自 package.json ilink_appid>",
+  "iLink-App-ClientVersion": "<uint32 编码版本号>"
+}
+```
+
+### API 函数列表
+
+#### 1. getUpdates — 长轮询获取消息
+
+```typescript
+async function getUpdates(params): Promise<GetUpdatesResp>
+// endpoint: POST ilink/bot/getupdates
+// 请求体: { get_updates_buf: "", base_info: {...} }
+// 超时: 35 秒（长轮询）
+// 客户端超时时返回空响应 { ret: 0, msgs: [] }，调用方重试
+```
+
+#### 2. sendMessage — 发送消息
+
+```typescript
+async function sendMessage(params): Promise<void>
+// endpoint: POST ilink/bot/sendmessage
+// 请求体: { msg: WeixinMessage, base_info: {...} }
+// 超时: 15 秒
+```
+
+#### 3. getUploadUrl — 获取 CDN 上传预签名 URL
+
+```typescript
+async function getUploadUrl(params): Promise<GetUploadUrlResp>
+// endpoint: POST ilink/bot/getuploadurl
+// 请求体: { filekey, media_type, to_user_id, rawsize, rawfilemd5, filesize, ... }
+// 返回: { upload_param, thumb_upload_param }
+// 超时: 15 秒
+```
+
+#### 4. getConfig — 获取账号配置
+
+```typescript
+async function getConfig(params): Promise<GetConfigResp>
+// endpoint: POST ilink/bot/getconfig
+// 请求体: { ilink_user_id, context_token?, base_info }
+// 返回: { ret: 0, typing_ticket: "<base64>" }
+// 超时: 10 秒
+```
+
+#### 5. sendTyping — 发送/取消输入状态
+
+```typescript
+async function sendTyping(params): Promise<void>
+// endpoint: POST ilink/bot/sendtyping
+// 请求体: { ilink_user_id, typing_ticket, status: 1|2 }
+// 超时: 10 秒
+```
+
+#### 6. notifyStart / notifyStop — 通知启停
+
+```typescript
+async function notifyStart(params): Promise<NotifyStartResp>
+async function notifyStop(params): Promise<NotifyStopResp>
+// endpoint: POST ilink/bot/msg/notifystart
+// endpoint: POST ilink/bot/msg/notifystop
+// 请求体: { base_info }
+// 超时: 10 秒
+```
+
+#### 7. apiGetFetch — 通用 GET 请求
+
+```typescript
+async function apiGetFetch(params): Promise<string>
+// 用于 GET 请求（如扫码状态轮询）
+// 支持超时和 abort
+```
+
+---
+
+## ═══════════════════════════════════════════════════
+## 第五部分：类型定义
+## 文件：`extensions/openclaw-weixin/src/api/types.ts`
+## 修改时间：2026-04-30 22:19:02
+## ═══════════════════════════════════════════════════
+
+### BaseInfo — 通用请求元数据
+
+```typescript
+interface BaseInfo {
+  channel_version?: string;    // 插件版本号
+  bot_agent?: string;          // Bot 标识（UA 风格，≤256 字节）
+}
+```
+
+### 枚举常量
+
+```typescript
+const UploadMediaType = {
+  IMAGE: 1,
+  VIDEO: 2,
+  FILE: 3,
+  VOICE: 4,
+};
+
+const MessageType = {
+  NONE: 0,
+  USER: 1,
+  BOT: 2,
+};
+
+const MessageItemType = {
+  NONE: 0,
+  TEXT: 1,
+  IMAGE: 2,
+  VOICE: 3,
+  FILE: 4,
+  VIDEO: 5,
+};
+
+const MessageState = {
+  NEW: 0,
+  GENERATING: 1,
+  FINISH: 2,
+};
+
+const TypingStatus = {
+  TYPING: 1,
+  CANCEL: 2,
+};
+```
+
+### CDNMedia — CDN 媒体引用
+
+```typescript
+interface CDNMedia {
+  encrypt_query_param?: string;   // CDN 下载/上传加密参数
+  aes_key?: string;               // base64 编码的 AES-128 密钥
+  encrypt_type?: number;          // 加密类型: 0=只加密fileid, 1=打包缩略图/中图等
+  full_url?: string;              // 完整下载 URL
+}
+```
+
+### ImageItem — 图片消息
+
+```typescript
+interface ImageItem {
+  media?: CDNMedia;        // 原图 CDN 引用
+  thumb_media?: CDNMedia;  // 缩略图 CDN 引用
+  aeskey?: string;         // Raw AES-128 key hex (16 bytes)
+  url?: string;
+  mid_size?: number;
+  thumb_size?: number;
+  thumb_height?: number;
+  thumb_width?: number;
+  hd_size?: number;
+}
+```
+
+### VoiceItem — 语音消息
+
+```typescript
+interface VoiceItem {
+  media?: CDNMedia;
+  encode_type?: number;      // 1=pcm 2=adpcm 3=feature 4=speex 5=amr 6=silk  bits_per_sample?: number;
+  sample_rate?: number;        // 采样率 (Hz)
+  playtime?: number;           // 语音长度 (毫秒)
+  text?: string;               // 语音转文字内容
+}
+```
+
+### FileItem — 文件消息
+
+```typescript
+interface FileItem {
+  media?: CDNMedia;
+  file_name?: string;
+  md5?: string;
+  len?: string;
+}
+```
+
+### VideoItem — 视频消息
+
+```typescript
+interface VideoItem {
+  media?: CDNMedia;
+  video_size?: number;
+  play_length?: number;
+  video_md5?: string;
+  thumb_media?: CDNMedia;
+  thumb_size?: number;
+  thumb_height?: number;
+  thumb_width?: number;
+}
+```
+
+### RefMessage — 引用消息
+
+```typescript
+interface RefMessage {
+  message_item?: MessageItem;
+  title?: string;    // 摘要
+}
+```
+
+### MessageItem — 消息内容项
+
+```typescript
+interface MessageItem {
+  type?: number;            // 1=TEXT, 2=IMAGE, 3=VOICE, 4=FILE, 5=VIDEO
+  create_time_ms?: number;
+  update_time_ms?: number;
+  is_completed?: boolean;
+  msg_id?: string;
+  ref_msg?: RefMessage;
+  text_item?: TextItem;
+  image_item?: ImageItem;
+  voice_item?: VoiceItem;
+  file_item?: FileItem;
+  video_item?: VideoItem;
+}
+```
+
+### WeixinMessage — 统一消息结构
+
+```typescript
+interface WeixinMessage {
+  seq?: number;              // 消息序列号
+  message_id?: number;       // 消息唯一 ID
+  from_user_id?: string;     // 发送者 ID
+  to_user_id?: string;       // 接收者 ID
+  client_id?: string;
+  create_time_ms?: number;   // 创建时间戳
+  update_time_ms?: number;
+  delete_time_ms?: number;
+  session_id?: string;       // 会话 ID
+  group_id?: string;         // 群聊 ID
+  message_type?: number;     // 1=USER, 2=BOT
+  message_state?: number;    // 0=NEW, 1=GENERATING, 2=FINISH
+  item_list?: MessageItem[]; // 消息内容列表
+  context_token?: string;    // 会话上下文令牌（回复时需回传）
+}
+```
+
+### GetUpdates 请求/响应
+
+```typescript
+interface GetUpdatesReq {
+  sync_buf?: string;           // @deprecated 兼容字段
+  get_updates_buf?: string;    // 同步游标，首次传空字符串
+}
+
+interface GetUpdatesResp {
+  ret?: number;                // 返回码，0=成功
+  errcode?: number;            // 错误码（-14=会话超时）
+  errmsg?: string;
+  msgs?: WeixinMessage[];
+  sync_buf?: string;           // @deprecated
+  get_updates_buf?: string;    // 新游标
+  longpolling_timeout_ms?: number;  // 建议超时时间
+}
+```
+
+### SendMessage 请求/响应
+
+```typescript
+interface SendMessageReq {
+  msg?: WeixinMessage;
+}
+
+interface SendMessageResp {
+  // 空响应
+}
+```
+
+### SendTyping 请求/响应
+
+```typescript
+interface SendTypingReq {
+  ilink_user_id?: string;
+  typing_ticket?: string;
+  status?: number;    // 1=正在输入, 2=取消输入
+}
+
+interface SendTypingResp {
+  ret?: number;
+  errmsg?: string;
+}
+```
+
+### GetConfig 响应
+
+```typescript
+interface GetConfigResp {
+  ret?: number;
+  errmsg?: string;
+  typing_ticket?: string;    // base64 编码的 typing ticket
+}
+```
+
+### GetUploadUrl 请求/响应
+
+```typescript
+interface GetUploadUrlReq {
+  filekey?: string;
+  media_type?: number;       // 1=IMAGE, 2=VIDEO, 3=FILE
+  to_user_id?: string;
+  rawsize?: number;          // 原文件明文大小
+  rawfilemd5?: string;       // 原文件明文 MD5
+  filesize?: number;         // AES-128-ECB 加密后密文大小
+  thumb_rawsize?: number;    // 缩略图明文大小
+  thumb_rawfilemd5?: string; // 缩略图明文 MD5
+  thumb_filesize?: number;   // 缩略图密文大小
+  no_need_thumb?: boolean;
+  aeskey?: string;
+}
+
+interface GetUploadUrlResp {
+  upload_param?: string;          // 原图上传加密参数
+  thumb_upload_param?: string;    // 缩略图上传加密参数
+  upload_full_url?: string;       // 完整上传 URL
+}
+```
+
+### NotifyStart / NotifyStop
+
+```typescript
+interface NotifyStopReq {
+  base_info?: BaseInfo;
+}
+
+interface NotifyStopResp {
+  ret?: number;
+  errmsg?: string;
+}
+
+interface NotifyStartReq {
+  base_info?: BaseInfo;
+}
+
+interface NotifyStartResp {
+  ret?: number;
+  errmsg?: string;
+}
+```
+
+---
+
+## ═══════════════════════════════════════════════════
+## 第六部分：账号管理
+## 文件：`extensions/openclaw-weixin/src/auth/accounts.ts`
+## 修改时间：2026-04-30 22:19:02
+## ═══════════════════════════════════════════════════
+
+### 核心常量
+
+```typescript
+const DEFAULT_BASE_URL = "https://ilinkai.weixin.qq.com";
+const CDN_BASE_URL = "https://novac2c.cdn.weixin.qq.com/c2c";
+```
+
+### 账号 ID 兼容处理
+
+```typescript
+// 反向推导 raw ID（用于兼容旧安装）
+// "b0f5860fdecb-im-bot" → "b0f5860fdecb@im.bot"
+// "b0f5860fdecb-im-wechat" → "b0f5860fdecb@im.wechat"
+function deriveRawAccountId(normalizedId: string): string | undefined
+```
+
+### 账号索引管理
+
+```typescript
+// 索引文件：~/.openclaw/openclaw-weixin/accounts.json
+// 格式：["8dc943825f17@im.bot", "410860c3bb94@im.bot"]
+
+function listIndexedWeixinAccountIds(): string[]
+function registerWeixinAccountId(accountId: string): void
+function unregisterWeixinAccountId(accountId: string): void
+```
+
+### 账号凭证存储
+
+```typescript
+type WeixinAccountData = {
+  token?: string;       // bot_token（格式：{ilink_bot_id}:{secret}）
+  savedAt?: string;     // ISO 时间戳
+  baseUrl?: string;     // iLink API 基础 URL
+  userId?: string;      // 微信用户 ID
+};
+
+// 文件路径：~/.openclaw/openclaw-weixin/accounts/{accountId}.json
+// 权限：0o600（仅 owner 可读写）
+
+function loadWeixinAccount(accountId: string): WeixinAccountData | null
+function saveWeixinAccount(accountId: string, update: { token?, baseUrl?, userId? }): void
+function clearWeixinAccount(accountId: string): void
+```
+
+### 清理过期账号
+
+```typescript
+// 新 QR 登录成功后，清除同一 userId 的旧账号
+function clearStaleAccountsForUserId(
+  currentAccountId: string,
+  userId: string,
+  onClearContextTokens?: (accountId: string) => void
+): void
+```
+
+### 热重载
+
+```typescript
+// 更新 openclaw.json 的 channelConfigUpdatedAt 触发 Gateway 热重载
+async function triggerWeixinChannelReload(): Promise<void>
+```
+
+### 配置读取
+
+```typescript
+// 从 openclaw.json 读取 routeTag（路由标签）
+function loadConfigRouteTag(accountId?: string): string | undefined
+
+// 从 openclaw.json 读取 botAgent（Bot 标识）
+function loadConfigBotAgent(): string | undefined
+```
+
+### 账号解析
+
+```typescript
+type ResolvedWeixinAccount = {
+  accountId: string;
+  baseUrl: string;           // iLink API 地址
+  cdnBaseUrl: string;        // CDN 地址
+  token?: string;
+  enabled: boolean;
+  configured: boolean;       // true 当有 token 时
+  name?: string;
+};
+
+function resolveWeixinAccount(cfg: OpenClawConfig, accountId?: string): ResolvedWeixinAccount
+```
+
+---
+
+## ═══════════════════════════════════════════════════
+## 第七部分：渠道插件入口
+## 文件：`extensions/openclaw-weixin/src/channel.ts`
+## 修改时间：2026-04-30 22:19:02
+## ═══════════════════════════════════════════════════
+
+### 核心功能
+
+此文件是微信渠道插件的主入口，实现了 OpenClaw 的 `ChannelPlugin` 接口。
+
+### 关键函数
+
+```typescript
+// 解析出站消息的 accountId（当调用方未提供时）
+function resolveOutboundAccountId(cfg: OpenClawConfig, to: string): string
+// 优先级：
+//   1. 多账号 → 通过 contextToken 匹配
+//   2. 单账号 → 直接使用
+//   3. 无匹配 → 抛出错误
+
+// 判断媒体 URL 类型
+function isLocalFilePath(mediaUrl: string): boolean    // 无 "://" = 本地路径
+function isRemoteUrl(mediaUrl: string): boolean         // 以 "http" 开头 = 远程
+function resolveLocalPath(mediaUrl: string): string     // 解析为绝对路径
+```
+
+### 媒体输出临时目录
+
+```typescript
+const MEDIA_OUTBOUND_TEMP_DIR = path.join(tmpDir, "weixin/media/outbound-temp");
+```
+
+### 插件注册
+
+插件通过 OpenClaw Plugin SDK 注册为渠道插件，实现：
+- 消息接收（通过 getUpdates 长轮询）
+- 消息发送（通过 sendMessage API）
+- 媒体处理（图片/视频/文件的 CDN 上传下载）
+- 多账号管理（每个账号独立的 getUpdates 轮询）
+- 会话隔离（通过 context_token）
+
+---
+
+## ═══════════════════════════════════════════════════
+## 第八部分：RepaceClaw 后端 — wechatClawBot.ts
+## 文件：`workspace/RepaceClaw/backend/src/routes/wechatClawBot.ts`
+## 修改时间：2026-05-11 02:15:25
+## ═══════════════════════════════════════════════════
+
+### 路由总览
+
+```
+POST /api/wechat-clawbot/qrcode         — 获取二维码（iLink API）
+GET  /api/wechat-clawbot/qrcode/image   — SVG 代理二维码图片
+POST /api/wechat-clawbot/qrcode/status  — 轮询扫码状态（iLink API）
+POST /api/wechat-clawbot/channel/reset  — 重置 IM 通道（iLink API）
+GET  /api/wechat-clawbot/status         — 微信连接状态
+GET  /api/wechat-clawbot/ws-status      — WebSocket 状态
+GET  /api/wechat-clawbot/models         — 模型列表（Gateway）
+GET  /api/wechat-clawbot/events         — SSE 事件流
+```
+
+### iLink 配置
+
+```typescript
+const ILINK_BASE = 'https://ilinkai.weixin.qq.com';
+const ILINK_BOT_TYPE = 3;
+const ILINK_APP_ID = process.env.ILINK_APP_ID || '';
+const ILINK_SECRET_KEY = process.env.ILINK_SECRET_KEY || '';
+const ILINK_ACCOUNTS_DIR = '/root/.openclaw/openclaw-weixin/accounts';
+```
+
+### HMAC-SHA256 签名
+
+```typescript
+function createILinkSignature(method, urlPath, body): { timestamp, nonce, signature }
+// 签名内容：METHOD\nPATH\nTIMESTAMP\nNONCE\nBODY
+// 签名算法：HMAC-SHA256(ILINK_SECRET_KEY, signContent)
+// 请求头：x-app-id, x-timestamp, x-nonce, x-signature
+```
+
+### iLink 调用封装
+
+```typescript
+function callILink(method, path, body?, timeout=30000): Promise<{ status, data }>
+// 直接请求 https://ilinkai.weixin.qq.com
+// 自动添加 HMAC-SHA256 签名
+```
+
+### Gateway 调用封装
+
+```typescript
+function proxyToGateway(method, path, body?, timeout=30000): Promise<{ status, data }>
+// 请求 http://127.0.0.1:{port}
+// Bearer token 认证
+// 仅用于 /v1/models 等可用端点
+```
+
+### 二维码缓存
+
+```typescript
+const qrcodeImageCache = new Map<string, { qrserverUrl, createdAt }>();
+const QRCODE_CACHE_TTL_MS = 10 * 60 * 1000;  // 10 分钟
+```
+
+### QR 图片代理
+
+```typescript
+// GET /qrcode/image?id=xxx
+// 1. 从缓存获取 qrserver URL
+// 2. 下载 PNG 图片
+// 3. 转 base64 data URI
+// 4. 内嵌到 SVG（1024×1024 白底圆角卡片）
+// 5. 返回 image/svg+xml
+```
+
+### SSE 事件系统
+
+```typescript
+// 通过 clawBotClient 监听 Gateway WebSocket 事件
+clawBotClient.on('state_change', data => broadcastSse('state_change', data));
+clawBotClient.on('connected', data => broadcastSse('connected', data));
+clawBotClient.on('disconnect', () => broadcastSse('disconnected', {}));
+clawBotClient.on('*', data => broadcastSse('gateway_event', data));
+
+// SSE 端点保持连接，每 15 秒发送 keepalive
+```
+
+### 账号读取
+
+```typescript
+function getWeixinAccounts(): Array<{
+  accountId, userId, baseUrl, hasToken, savedAt
+}>
+// 读取 /root/.openclaw/openclaw-weixin/accounts/ 目录
+// 排除 .context-tokens.json 和 .sync.json 文件
+// 排除 accounts.json 索引文件
+```
+
+---
+
+## ═══════════════════════════════════════════════════
+## 第九部分：Gateway WebSocket 客户端
+## 文件：`workspace/RepaceClaw/backend/src/services/ClawBotGatewayClient.ts`
+## 修改时间：2026-05-10 18:17:58
+## ═══════════════════════════════════════════════════
+
+### 配置常量
+
+```typescript
+const RECONNECT_BASE_DELAY = 2000;     // 2 秒基础延迟
+const RECONNECT_MAX_DELAY = 30000;     // 30 秒最大延迟
+const HEARTBEAT_INTERVAL = 30000;      // 30 秒心跳
+const REQUEST_TIMEOUT = 60000;         // 60 秒请求超时
+```
+
+### 连接状态
+
+```typescript
+type ConnectionState = 'disconnected' | 'connecting' | 'connected' | 'reconnecting';
+```
+
+### 连接流程
+
+```
+1. ws://127.0.0.1:{port} 连接 Gateway
+2. 发送 connect 帧：
+   {
+     type: "req",
+     method: "connect",
+     params: {
+       minProtocol: 1,
+       maxProtocol: 3,
+       client: { id: "node-host", displayName: "RepaceClaw Backend", ... },
+       auth: { token }
+     }
+   }
+3. 收到 { type: "res", ok: true, payload: { type: "hello-ok" } } → 认证成功
+4. 启动心跳（30s ping）
+5. 开始事件监听
+```
+
+### 重连策略
+
+```typescript
+// 指数退避 + 随机抖动
+delay = min(2000 * 1.5^(attempt-1), 30000)
+jitter = delay * (0.5 + random() * 0.5)
+```
+
+### 请求封装
+
+```typescript
+request(method: string, params: Record<string, any>, timeout=60000): Promise<any>
+// 发送 { type: "req", id, method, params }
+// 等待 { type: "res", id, ok, payload/error }
+// 超时自动清理 pending 请求
+```
+
+### 事件系统
+
+```typescript
+on(event: string, callback: Function): void
+off(event: string, callback: Function): void
+emit(event: string, data: any): void    // 支持通配符 '*' 监听
+
+// 事件类型：
+// - connected: 认证成功
+// - disconnected: 连接断开
+// - state_change: { from, to }
+// - shutdown: Gateway 关闭
+// - 其他 Gateway 推送事件
+```
+
+---
+
+## ═══════════════════════════════════════════════════
+## 第十部分：Gateway 配置解析器
+## 文件：`workspace/RepaceClaw/backend/src/utils/openclawGateway.ts`
+## 修改时间：2026-05-10 18:17:58
+## ═══════════════════════════════════════════════════
+
+### 配置路径
+
+```typescript
+const OPENCLAW_CONFIG_PATH = '/root/.openclaw/openclaw.json';
+```
+
+### 解析规则
+
+```typescript
+function resolveOpenClawGateway(): { url: string; token: string }
+// 优先级：
+//   1. 环境变量 OPENCLAW_GATEWAY_URL / OPENCLAW_GATEWAY_TOKEN
+//   2. 回退读取 openclaw.json 的 gateway.port / gateway.auth.token
+//   3. URL 默认：http://127.0.0.1:{port}
+```
+
+### 安全检查
+
+```typescript
+function isPlaceholderValue(value?: string): boolean
+// 检测占位符值（如 <REPLACE...>, REPLACE_*, YOUR_*, CHANGEME）
+// 占位符值会被视为无效，强制回退到 openclaw.json 真配置
+```
+
+---
+
+## ═══════════════════════════════════════════════════
+## 第十一部分：前端管理页面
+## 文件：`workspace/RepaceClaw/frontend/src/pages/WechatClawBot.tsx`
+## 修改时间：2026-05-11 01:19:36
+## ═══════════════════════════════════════════════════
+
+### 页面结构
+
+```
+┌─ Page Header ──────────────────────────────────┐
+│  WeChat ClawBot          [SSE ●] [Events (N)]  │
+├─ Event Log（可折叠）────────────────────────────┤
+│  时间 [类型] 数据                               │
+├─ Connection Status ────────────────────────────┤
+│  Gateway WebSocket | Channel Status | 更新时间  │
+│  [Refresh] [Reset Channel]                     │
+├─ QR Code Login ────────────────────────────────┤
+│  [Generate QR Code] / 二维码图片 + 扫码状态      │
+├─ API Endpoints ────────────────────────────────┤
+│  所有 API 端点列表                              │
+└────────────────────────────────────────────────┘
+```
+
+### 状态管理
+
+```typescript
+// 连接状态
+wsState: 'disconnected' | 'connecting' | 'connected' | 'reconnecting'
+
+// 扫码状态
+scanStatus: {
+  status: 'wait' | 'scaned' | 'confirmed' | 'expired',
+  credentials?: { bot_token, ilink_bot_id, ilink_user_id },
+  baseurl?: string
+}
+
+// SSE 事件
+events: Array<{ type, data, time }>   // 最多保留 50 条
+```
+
+### 核心逻辑
+
+```typescript
+// 1. 组件挂载时：
+//    - 建立 SSE 连接（/api/wechat-clawbot/events）
+//    - 获取连接状态（/api/wechat-clawbot/status）
+//    - 每 15 秒轮询一次状态
+
+// 2. 生成二维码：
+//    - POST /api/wechat-clawbot/qrcode
+//    - 获取 qrcode_url 和 qrcode token
+//    - 开始轮询扫码状态
+
+// 3. 轮询扫码状态：
+//    - POST /api/wechat-clawbot/qrcode/status
+//    - 每 2 秒轮询一次
+//    - 最多 120 次（约 4 分钟）
+//    - confirmed 时刷新连接状态
+
+// 4. SSE 事件处理：
+//    - state: 更新 wsState
+//    - connected: 刷新状态
+//    - disconnected: 更新状态
+//    - gateway_event: 添加到事件日志
+```
+
+### UI 组件
+
+- **SSE 状态指示器**：绿色脉冲 = 已连接，灰色 = 断开
+- **事件日志面板**：可折叠，最多 50 条，支持清空
+- **连接状态卡片**：3 列网格（WebSocket / Channel / 更新时间）
+- **二维码区域**：280×280 图片，带扫描状态指示
+- **API 信息列表**：所有端点的说明
+
+---
+
+## ═══════════════════════════════════════════════════
+## 第十二部分：账号数据文件
+## ═══════════════════════════════════════════════════
+
+### Tandy 账号凭证
+**文件**：`accounts/410860c3bb94-im-bot.json`
+**修改时间**：2026-05-08 22:49:58
+
+```json
+{
+  "token": "{ilink_bot_id}:{secret}",
+  "savedAt": "2026-05-08T14:48:00.000Z",
+  "baseUrl": "https://ilinkai.weixin.qq.com",
+  "userId": "o9cq804lF_5T-QiBhox4oFnrGpZ4@im.wechat"
+}
+```
+
+### Tandy 同步状态
+**文件**：`accounts/410860c3bb94-im-bot.sync.json`
+**修改时间**：2026-05-10 10:35:56
+
+存储 getUpdates 的同步游标（`get_updates_buf`），用于断点续传。
+
+### Tandy 会话 Token
+**文件**：`accounts/410860c3bb94-im-bot.context-tokens.json`
+**修改时间**：2026-05-10 10:33:22
+
+存储微信用户与 context_token 的映射关系，用于会话上下文隔离。
+
+### 老白账号
+**状态**：已清理（2026-05-11 02:00）
+- 已删除文件：`8dc943825f17-im-bot.json`, `.sync.json`, `.context-tokens.json`
+- 已更新 `accounts.json` 索引
+- 等待重新扫码绑定
+
+---
+
+## ═══════════════════════════════════════════════════
+## 第十三部分：排查记录
+## 文件：`memory/2026-05-11.md`
+## 修改时间：2026-05-11 02:14:09
+## ═══════════════════════════════════════════════════
+
+### 排查时间线
+
+**00:21 — ClawBot 接口排查**
+- 正常接口：`/status`, `/ws-status`, `/events`, `/models` — 全部 200
+- 故障接口：`/qrcode`, `/qrcode/status`, `/channel/reset` — Gateway 404
+- 根因：Gateway 未暴露 `/api/v1/wechat/*` 端点
+
+**00:27 — 发现应直接调用 iLink API**
+- 不再通过 Gateway 代理
+- `POST https://ilinkai.weixin.qq.com/ilink/bot/get_bot_qrcode?bot_type=3`
+- 响应：`{ ret:0, qrcode:"...", qrcode_img_content:"https://liteapp.weixin.qq.com/q/..." }`
+
+**00:30 — QR Code 修复完成**
+- 新增 `callILink()` 函数
+- 二维码生成 ✅ 正常
+- 扫码状态轮询 ⚠️ iLink 返回 ret:1
+
+**00:40 — 新架构讨论**
+- 用户提出：iLink Webhook → RC Backend → Gateway → SSE → RC 存库 → iLink 回复
+- 需要新增：Webhook 接收、回复客户端、消息路由
+
+**01:12 — 文档文件发现**
+- 找到 `wechat-qr-code-logic.md` 和 `wechat-multi-user.md`
+- 确认已配置账号：老白 + Tandy
+
+**01:18 — Channel Status 修复**
+- 后端改为读取 iLink 账号文件
+- 前端显示真实账号列表和在线/离线状态
+
+**02:00 — 二维码弹窗修复 + 消息无回复排查**
+- 二维码弹窗不展示 → CSP 策略导致 → 改为本地 SVG 代理
+- 发消息无回复 → 两个账号 token 均过期（5月8日生成）
+- 老白账号已清理，待重新扫码
+
+---
+
+## ═══════════════════════════════════════════════════
+## 附录：系统部署信息
+## ═══════════════════════════════════════════════════
+
+### 服务器信息
+- **域名**：repaceclaw.com
+- **Nginx**：代理 `/` → `localhost:3001`
+- **后端 PID**：448913
+- **Gateway 端口**：18789
+
+### 前端构建
+- **构建目录**：`/root/.openclaw/workspace/RepaceClaw/frontend/`
+- **静态服务**：后端从 `../../frontend/dist` 提供
+- **JS 缓存**：`Cache-Control: public, max-age=86400`
+- **index.html 缓存**：`no-cache, no-store, must-revalidate`
+
+### LLM 配置
+- **DashScope API**：已配置
+- **模型**：Qwen3.6-Max-Preview（支持 reasoning_content）
+
+### 版本信息
+- **OpenClaw**：2026.4.1
+- **微信插件**：@tencent-weixin/openclaw-weixin v2.3.1
+- **RepaceClaw 后端**：v1.0.0
+
+### 前端访问链接
+- 管理页面：`https://repaceclaw.com/wechat-clawbot`
+- 简化二维码：`https://repaceclaw.com/wechat-qr`
+- 独立 HTML：`https://repaceclaw.com/wechat-qr.html`
+
+### 常用命令
+
+```bash
+# 检查 OpenClaw 状态
+openclaw status --deep
+
+# 查看版本
+openclaw --version
+
+# 扫码登录（添加新账号）
+openclaw channels login --channel openclaw-weixin
+
+# 重启 Gateway
+openclaw gateway restart
+
+# 测试后端 API
+curl https://repaceclaw.com/api/wechat-clawbot/status
+curl https://repaceclaw.com/api/wechat-clawbot/models
+
+# 测试 iLink 直连
+curl -X POST https://ilinkai.weixin.qq.com/ilink/bot/get_bot_qrcode?bot_type=3 \
+  -H "Content-Type: application/json" \
+  -d '{"local_token_list":[]}'
+```
+
+### 已知问题
+1. **两个账号 token 均已过期**（5月8日生成），需重新扫码绑定
+2. **扫码状态轮询**：iLink API 返回 `ret:1`（可能需要额外认证或不同端点）
+3. **建议通过 SSE 事件**（`/api/wechat-clawbot/events`）监听登录状态变化
+
+---
+
+*文档生成：2026-05-11 02:40 GMT+8*
+*汇总范围：14 个文件，从 2026-04-30 至 2026-05-11*
+*来源：服务器文件扫描 + 完整内容提取*

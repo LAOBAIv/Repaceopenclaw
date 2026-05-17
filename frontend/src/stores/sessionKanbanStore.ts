@@ -134,6 +134,9 @@ export const useSessionKanbanStore = create<SessionKanbanState>()(
             // 平台助手是独立入口服务，不进入会话列表/会话看板。
             if (isGlobalAssistantConversation(conv)) continue;
 
+            // 微信助手会话不在 kanban 展示（有独立的微信助手 tab）
+            if (conv.conversationType === 'wechat_assistant') continue;
+
             // ⚡ 去重
             if (addedIds.has(conv.id)) continue;
             addedIds.add(conv.id);

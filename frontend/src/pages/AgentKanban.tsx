@@ -199,6 +199,15 @@ function SessionCardItem({
             fontSize: 11, padding: '1px 7px', borderRadius: 4,
             background: agentColor + '15', color: agentColor,
           }}>{agentName}</span>
+          <span
+            title={session.id}
+            onClick={e => { e.stopPropagation(); navigator.clipboard?.writeText(session.id); }}
+            style={{
+              fontSize: 10, padding: '1px 6px', borderRadius: 4,
+              background: '#f3f4f6', color: '#9ca3af', cursor: 'pointer',
+              fontFamily: 'monospace', letterSpacing: 0,
+            }}
+          >{session.id.substring(0, 8)}…</span>
         </div>
       </div>
 

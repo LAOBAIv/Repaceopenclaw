@@ -15,6 +15,7 @@ export interface DepartmentNode {
   children: DepartmentNode[];
 }
 
+// [2026-05-17] 添加微信绑定状态字段
 export interface OrganizationUser {
   id: string;
   userCode?: string;
@@ -29,6 +30,8 @@ export interface OrganizationUser {
   primaryDepartmentId: string | null;
   primaryDepartmentName: string | null;
   primaryDepartmentCode: string | null;
+  wechatBound?: boolean;  // 微信绑定状态
+  wechatOpenid?: string;  // 微信 openid（部分显示）
 }
 
 function execRows(db: any, sql: string, params: any[] = []): any[] {
@@ -234,6 +237,7 @@ export class OrganizationService {
     saveDb();
   }
 
+  // [2026-05-17] 添加微信绑定状态查询
   static listUsersWithOrganization(): OrganizationUser[] {
     const db = getDb();
     const rows = execRows(
@@ -251,11 +255,13 @@ export class OrganizationService {
          u.updated_at,
          d.id AS primary_department_id,
          d.name AS primary_department_name,
-         d.department_code AS primary_department_code
+         d.department_code AS primary_department_code,
+         uwb.wechat_openid AS wechat_openid
        FROM users u
        LEFT JOIN user_org_scope uos
          ON uos.user_id = u.id AND uos.is_primary = 1 AND uos.status = 'active'
        LEFT JOIN departments d ON d.id = uos.department_id
+       LEFT JOIN user_wechat_bindings uwb ON uwb.user_id = u.id
        ORDER BY u.created_at DESC`
     );
 
@@ -273,6 +279,8 @@ export class OrganizationService {
       primaryDepartmentId: row.primary_department_id ? String(row.primary_department_id) : null,
       primaryDepartmentName: row.primary_department_name ? String(row.primary_department_name) : null,
       primaryDepartmentCode: row.primary_department_code ? String(row.primary_department_code) : null,
+      wechatBound: !!row.wechat_openid,
+      wechatOpenid: row.wechat_openid ? String(row.wechat_openid) : undefined,
     }));
   }
 

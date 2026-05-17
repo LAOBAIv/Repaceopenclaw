@@ -24,6 +24,8 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
     set({ loading: true });
     try {
       const agents = await agentsApi.list();
+      // 保留所有 agent（包括 visibility=system 的微信助手）
+      // 过滤只在 agents 管理页面和多智能体切换列表里做，不在这里全局过滤
       set({ agents, loading: false });
     } catch {
       set({ loading: false });

@@ -2,8 +2,50 @@ import { Router, Request, Response } from "express";
 import { UserService } from "../services/UserService";
 import { authenticate, requireRole } from "../middleware/auth";
 import { AuditService } from "../services/AuditService";
+import { ConversationService } from "../services/ConversationService";
+import { AgentService } from "../services/AgentService";
+import { logger } from "../utils/logger";
 
 const router = Router();
+
+/**
+ * 新用户登录/注册后自动初始化微信助手会话（幂等）
+ * - 已有 wechat_assistant 会话则跳过
+ * - 无则自动创建
+ */
+function ensureWechatAssistantConversation(userId: string): void {
+  try {
+    const existing = ConversationService.list(userId).find(
+      c => c.conversationType === 'wechat_assistant'
+    );
+    if (existing) return;
+
+    const waAgent = AgentService.getByIdOrCode('rc-wechat-agent', userId);
+    if (!waAgent) {
+      logger.warn(`[WechatAssistant] agent rc-wechat-agent not found, skip init for user ${userId}`);
+      return;
+    }
+
+    const conv = ConversationService.create({
+      agentIds: [waAgent.id],
+      title: '微信助手',
+      createdBy: userId,
+      userId,
+      currentAgentId: waAgent.id,
+      scopeType: 'user',
+      scopeId: userId,
+      memoryPolicy: 'private',
+      conversationType: 'wechat_assistant',
+    });
+
+    const ocSessionKey = `agent:rc-wechat-agent:rc:${conv.id}`;
+    ConversationService.bindOpenClawSession(conv.id, ocSessionKey, waAgent.id, [waAgent.id]);
+    logger.info(`[WechatAssistant] Auto-created conversation ${conv.id} for user ${userId}`);
+  } catch (err) {
+    // 不阻断登录流程
+    logger.error(`[WechatAssistant] Failed to init conversation for user ${userId}:`, err);
+  }
+}
 
 // POST /api/auth/register
 router.post("/register", async (req: Request, res: Response) => {
@@ -16,6 +58,8 @@ router.post("/register", async (req: Request, res: Response) => {
       return res.status(400).json({ error: "密码长度不能少于6位" });
     }
     const result = await UserService.register({ username, email, password });
+    // 新用户注册后自动创建微信助手会话
+    ensureWechatAssistantConversation(result.user.id);
     // 审计日志
     AuditService.log({
       userId: result.user.id,
@@ -42,6 +86,8 @@ router.post("/login", async (req: Request, res: Response) => {
       return res.status(400).json({ error: "账号和密码不能为空" });
     }
     const result = await UserService.login({ identifier: loginIdentifier, password });
+    // 登录后确保微信助手会话存在（幂等，已有则跳过）
+    ensureWechatAssistantConversation(result.user.id);
     // 审计日志
     AuditService.log({
       userId: result.user.id,

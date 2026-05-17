@@ -106,7 +106,7 @@ export interface ConversationPanel {
   conversationId: string;
   /** 会话业务编码,展示/排障优先用它 */
   sessionCode?: string;
-  /** 当前面板"主"agentId(单智能体对话时即为唯一 agent;多智能体时取第一个) */
+  /** 当前面板“主”agentId(单智能体对话时即为唯一 agent;多智能体时取第一个) */
   agentId: string;
   /** 当前智能体业务编码 */
   currentAgentCode?: string;
@@ -120,6 +120,8 @@ export interface ConversationPanel {
   streamingContent?: string;
   /** 协作任务启动提示,仅前端展示,不存库,用户可关闭 */
   systemBanner?: string;
+  /** 会话类型：general（普通）| wechat_assistant（微信助手） */
+  conversationType?: 'general' | 'wechat_assistant';
 }
 
 /** 顶部会话 Tab 数据结构 - 唯一 Tab 数据源 */
@@ -342,7 +344,7 @@ export const useConversationStore = create<ConversationStore>()(
   messagesMap: {},
   maxPanels: 4,
   wsConnected: false,
-  sessionTabs: [],  // 初始化为空数组，让 restoreFromPersist 函数处理所有 Tab 的恢复，包括微信助手 Tab
+  sessionTabs: [],  // 初始化为空数组,让 restoreFromPersist 函数处理所有 Tab 的恢复,包括微信助手 Tab
   activeTabId: '',
   currentAgentId: '',
   /** 用户主动关闭的会话 ID 列表(刷新后不再恢复) */
@@ -400,22 +402,22 @@ export const useConversationStore = create<ConversationStore>()(
               try {
                 const wechatConv = await conversationsApi.getWechatAssistant();
                 actualConversationId = wechatConv.id;
-                
+
                 // 更新面板的conversationId
                 set((s) => ({
-                  openPanels: s.openPanels.map(p => 
-                    p.id === panel.id 
+                  openPanels: s.openPanels.map(p =>
+                    p.id === panel.id
                       ? { ...p, conversationId: wechatConv.id, messages: wechatConv.messages || [] }
                       : p
                   ),
                 }));
               } catch (err) {
                 console.warn('[WS onopen] 无法获取微信助手真实ID:', err);
-                // 如果API失败，则跳过此面板的消息加载
+                // 如果API失败,则跳过此面板的消息加载
                 continue;
               }
             }
-            
+
             const messages = await conversationsApi.getMessages(actualConversationId);
             if (messages?.length) {
               set((s) => ({
@@ -472,7 +474,7 @@ export const useConversationStore = create<ConversationStore>()(
           }
 
           if (data.type === "agent_start" && data.messageId && data.agentId) {
-          console.log("[WS] agent_start:", data.messageId, data.agentId, data.conversationId, "panels:", panels.length);
+          console.log("[WS] agent_start:", data.messageId, data.agentId, data.conversationId, "panels:", panels.map(p => ({ id: p.id, convId: p.conversationId, agentId: p.agentId })));
             // 关键修复:流式回复必须优先按 conversationId 路由到 panel。
             // 原因:同一 agent 允许出现在多个会话里,如果只按 agentId 找 panel,
             // 就会把当前会话的回复挂到别的会话上,表现为"当前界面不刷新看不到回复,刷新后从 DB 重载才出现"。
@@ -498,6 +500,25 @@ export const useConversationStore = create<ConversationStore>()(
 
           if (data.type === "error" && data.message) {
             console.error("[WS] error:", data);
+          }
+
+          // [2026-05-16] 微信链路推送的新消息（用户消息 + 智能体回复）
+          if (data.type === "new_message" && data.message) {
+            const panel = panels.find((p) => p.conversationId === data.message.conversationId);
+            if (panel) {
+              const msg = data.message;
+              // 避免重复添加
+              const exists = panel.messages.some((m: any) => m.id === msg.id);
+              if (!exists) {
+                set({
+                  openPanels: panels.map((p) =>
+                    p.id === panel.id
+                      ? { ...p, messages: [...p.messages, msg] }
+                      : p
+                  ),
+                });
+              }
+            }
           }
 
           // ── 异步概述生成:流式片段 ──
@@ -830,29 +851,29 @@ export const useConversationStore = create<ConversationStore>()(
   loadMessages: async (panelId, conversationId) => {
     try {
       let actualConversationId = conversationId;
-      
-      // 🔧 关键修复 (2026-05-12): 对于微信助手占位符ID，需要获取真实ID
+
+      // 🔧 关键修复 (2026-05-12): 对于微信助手占位符ID,需要获取真实ID
       if (conversationId === 'wechat-assistant') {
         try {
           const { conversationsApi } = await import('@/api/conversations');
           const wechatConv = await conversationsApi.getWechatAssistant();
           actualConversationId = wechatConv.id;
-          
+
           // 同时更新对应面板的conversationId
           set((s) => ({
-            openPanels: s.openPanels.map(p => 
-              p.id === panelId 
+            openPanels: s.openPanels.map(p =>
+              p.id === panelId
                 ? { ...p, conversationId: wechatConv.id, messages: wechatConv.messages || [] }
                 : p
             ),
           }));
         } catch (err) {
           console.warn('[loadMessages] 无法获取微信助手真实ID:', err);
-          // 如果API失败，则不继续加载消息
+          // 如果API失败,则不继续加载消息
           return;
         }
       }
-      
+
       const messages = await conversationsApi.getMessages(actualConversationId);
       set((s) => ({
         openPanels: s.openPanels.map((p) => p.id === panelId ? { ...p, messages } : p),
@@ -882,26 +903,26 @@ export const useConversationStore = create<ConversationStore>()(
   getTabs: () => {
     const { sessionTabs } = get();
     const tabs = sessionTabs || [];
-    // 平台助手是独立入口服务，不进入顶部会话 tab。
+    // 平台助手是独立入口服务,不进入顶部会话 tab。
     const normalTabs = tabs
       .filter(t => !isGlobalAssistantConversationLike({ agentId: t.agentId, currentAgentCode: t.currentAgentCode, title: t.title }))
       .map(t => ({ ...t, type: (t.type || 'session') as 'home' | 'session' | 'wechat' }));
 
-    // ━━━ 确保微信助手 Tab 始终存在（方案 C：独立处理，确保始终存在）━━━━━━━━━━
-    // 🔧 关键修复 (2026-05-12)：微信助手 Tab 刷新恢复
-    // 逻辑：查找 sessionTabs 中的微信助手 tab，如果没有则创建一个
+    // ━━━ 确保微信助手 Tab 始终存在(方案 C:独立处理,确保始终存在)━━━━━━━━━━
+    // 🔧 关键修复 (2026-05-12):微信助手 Tab 刷新恢复
+    // 逻辑:查找 sessionTabs 中的微信助手 tab,如果没有则创建一个
     const wechatTabFromState = tabs.find(t => t.id === 'wechat');
-    
+
     if (wechatTabFromState) {
-      // 如果已存在，直接添加到 normalTabs
+      // 如果已存在,直接添加到 normalTabs
       normalTabs.unshift({ ...wechatTabFromState, type: 'wechat' as const });
     } else {
-      // 如果不存在，创建一个默认的微信助手 tab
+      // 如果不存在,创建一个默认的微信助手 tab
       const wechatTab = {
         id: 'wechat',
         type: 'wechat' as const,
         title: '微信助手',
-        conversationId: 'wechat-assistant', // 占位符，用户点击后会被真实 conv.id 覆盖
+        conversationId: 'wechat-assistant', // 占位符,用户点击后会被真实 conv.id 覆盖
         agentId: 'rc-wechat-agent',
         agentName: '微信助手',
         agentColor: '#2563eb',
@@ -1143,11 +1164,11 @@ export const useConversationStore = create<ConversationStore>()(
         try {
           const convList = await conversationsApi.list();
           const conv = convList.find(c => c.id === opts.conversationId);
-          
+
           // 🔧 关键修复 (2026-05-12): 检查是否为微信助手占位符ID
           let actualConversationId = opts.conversationId;
           let messages: Message[] = [];
-          
+
           if (opts.conversationId === 'wechat-assistant') {
             try {
               const wechatConv = await conversationsApi.getWechatAssistant();
@@ -1155,13 +1176,13 @@ export const useConversationStore = create<ConversationStore>()(
               messages = wechatConv.messages || [];
             } catch (err) {
               console.warn('[createSessionTab] 无法获取微信助手真实ID:', err);
-              // 如果API失败，使用opts.conversationId尝试获取消息
+              // 如果API失败,使用opts.conversationId尝试获取消息
               messages = [];
             }
           } else {
             messages = await conversationsApi.getMessages(opts.conversationId);
           }
-          
+
           const resolvedAgentId = resolveConversationCurrentAgent(conv, opts.agentId);
           const resolvedAgentIds = resolveConversationAgentIds(conv, resolvedAgentId ? [resolvedAgentId] : []);
           const panel: ConversationPanel = {
@@ -1175,6 +1196,8 @@ export const useConversationStore = create<ConversationStore>()(
             agentColor: opts.agentColor,
             messages,
             isStreaming: false,
+            // 微信助手会话标记，用于前端菜单栏只读控制
+            conversationType: (conv as any)?.conversationType || 'general',
           };
           set(s => ({
             openPanels: s.openPanels.some(p => p.id === panel.id)
@@ -1347,12 +1370,12 @@ export const useConversationStore = create<ConversationStore>()(
       // 允许同一会话恢复多个 tab,但 panel 只恢复一份并复用
       const panelCache = new Map<string, ConversationPanel>();
       for (const tab of persistedTabs) {
-        // 🔧 Bug修复 (2026-05-12): 微信助手 Tab 的 panelId 可能为 null（占位符状态）
-        // 根因: 微信助手 Tab 初始 panelId=null，用户点击后才绑定真实 UUID
-        //       但如果用户刷新时 panelId 已经被绑定为真实 UUID，则正常恢复
-        //       如果 panelId 仍为 null，则跳过此 Tab，由初始化逻辑单独处理
+        // 🔧 Bug修复 (2026-05-12): 微信助手 Tab 的 panelId 可能为 null(占位符状态)
+        // 根因: 微信助手 Tab 初始 panelId=null,用户点击后才绑定真实 UUID
+        //       但如果用户刷新时 panelId 已经被绑定为真实 UUID,则正常恢复
+        //       如果 panelId 仍为 null,则跳过此 Tab,由初始化逻辑单独处理
         if (!tab.panelId) {
-          // 微信助手 Tab 无 panelId 时保留在 restoredTabs 中（但不创建 panel）
+          // 微信助手 Tab 无 panelId 时保留在 restoredTabs 中(但不创建 panel)
           // 这样初始化逻辑可以检测到它并主动加载
           if (tab.id === 'wechat') {
             restoredTabs.push({
@@ -1381,7 +1404,7 @@ export const useConversationStore = create<ConversationStore>()(
           // Day 2:不再依赖 persistedPanel,面板完全由 API 数据 + tab 元数据构建
           let conv: Conversation | undefined;
           let messages: Message[] = [];
-          
+
           // 🔧 关键修复 (2026-05-12): 特殊处理微信助手会话
           if (convId === 'wechat-assistant') {
             // 微信助手需要通过专用 API 获取真实会话
@@ -1396,10 +1419,10 @@ export const useConversationStore = create<ConversationStore>()(
               messages = [];
             }
           } else {
-            // 普通会话：通过标准 API 获取消息
+            // 普通会话:通过标准 API 获取消息
             try {
               messages = await conversationsApi.getMessages(convId);
-              
+
               // 尝试获取会话详情
               try {
                 const convList = await conversationsApi.list();
@@ -1450,7 +1473,7 @@ export const useConversationStore = create<ConversationStore>()(
             messages: messages?.length ? messages : [],
             isStreaming: false,
           };
-          
+
           panelCache.set(convId, panel);
           restoredPanels.push(panel);
         }
@@ -1470,34 +1493,34 @@ export const useConversationStore = create<ConversationStore>()(
             }
           } catch {}
         }
-        
+
         // 🔧 关键修复 (2026-05-12): 确保微信助手Tab的conversationId为真实ID
         let finalConversationId = convId;
         if (convId === 'wechat-assistant') {
-          // 对于微信助手占位符ID，需要通过专用API获取真实ID
+          // 对于微信助手占位符ID,需要通过专用API获取真实ID
           try {
             const { conversationsApi } = await import('@/api/conversations');
             const wechatConv = await conversationsApi.getWechatAssistant();
             finalConversationId = wechatConv.id;
-            
+
             // 同时更新panel的conversationId和messages
             const updatedPanel = {
               ...panel,
               conversationId: wechatConv.id,
               messages: wechatConv.messages || [],
             };
-            
+
             // 更新openPanels中的对应面板
             set((s) => ({
               openPanels: s.openPanels.map(p => p.id === panel.id ? updatedPanel : p),
             }));
           } catch (err) {
             console.warn('[restoreFromPersist] 无法获取微信助手真实ID:', err);
-            // 如果API失败，保留原始ID
+            // 如果API失败,保留原始ID
             finalConversationId = convId;
           }
         }
-        
+
         restoredTabs.push({
           ...tab,
           type: tab.type || 'session',
@@ -1530,7 +1553,7 @@ export const useConversationStore = create<ConversationStore>()(
             activeTabId: state.activeTabId || persistedActiveId || (mergedTabs.length > 0 ? mergedTabs[0].id : null),
           };
         });
-        // 🔧 关键修复 (2026-05-12): 即使已恢复部分tabs，也要确保微信助手Tab存在
+        // 🔧 关键修复 (2026-05-12): 即使已恢复部分tabs,也要确保微信助手Tab存在
         const { sessionTabs: currentTabs } = get();
         const hasWechat = currentTabs.some(t => t.id === 'wechat');
         if (!hasWechat) {

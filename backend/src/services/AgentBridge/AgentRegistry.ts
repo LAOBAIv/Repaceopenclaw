@@ -154,7 +154,15 @@ export async function syncAllAgents(): Promise<{
     try {
       // 跳过独立绑定的全局智能体（不走 agent_type 映射链路）
       if (agent.openclawAgentId === 'repaceclaw-platform-assistant') continue;
-      if (agent.id === 'rc-wechat-agent' || agent.openclawAgentId === 'rc-wechat-agent') continue;
+      // [2026-05-16] 稳定方案：用 agent_code 识别微信助手，固定其 openclaw_agent_id
+      if ((agent as any).agentCode === 'rc-wechat-agent' || agent.id === '151194a0-385e-4fc6-8aca-c1622e5967f8') {
+        // 确保微信助手的 openclaw_agent_id 始终为 rc-wechat-agent
+        if (agent.openclawAgentId !== 'rc-wechat-agent') {
+          db.run('UPDATE agents SET openclaw_agent_id = ? WHERE id = ?', ['rc-wechat-agent', agent.id]);
+          saveDb();
+        }
+        continue;
+      }
       // 按类型映射
       const ocAgentId = toOpenClawAgentId(agent.agentType);
       db.run('UPDATE agents SET openclaw_agent_id = ?, agent_type = ? WHERE id = ?', [ocAgentId, agent.agentType || 'general', agent.id]);

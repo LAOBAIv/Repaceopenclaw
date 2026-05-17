@@ -24,7 +24,7 @@ export interface Conversation {
   /** 会话状态：'in_progress' | 'completed' | 'archived' | 'deleted' */
   status: 'in_progress' | 'completed' | 'archived' | 'deleted';
   /** V1: 会话作用域（user / department / role / enterprise） */
-  scopeType: 'user' | 'department' | 'role' | 'enterprise';
+  scopeType: 'user' | 'department' | 'role' | 'enterprise' | 'wechat';
   /** V1: 作用域 ID；enterprise 级可为空 */
   scopeId: string;
   /** V1: 记忆策略（private / summary_shared） */
@@ -37,6 +37,8 @@ export interface Conversation {
   userId: string;
   createdBy: string | null;
   createdAt: string;
+  /** 会话类型：general（普通）| wechat_assistant（微信助手，不出现在 kanban） */
+  conversationType: 'general' | 'wechat_assistant';
 }
 
 export interface Message {
@@ -118,6 +120,8 @@ function rowToConversation(r: any, agentIds: string[]): Conversation {
     userId: r.user_id || '',
     createdBy: r.created_by || null,
     createdAt: r.created_at,
+    // 会话类型：general（普通）| wechat_assistant（微信助手）
+    conversationType: (r.conversation_type as Conversation['conversationType']) || 'general',
   };
 }
 
@@ -210,7 +214,7 @@ export const ConversationService = {
    * @param taskId 关联的任务 id(可选)
    * @param createdBy 创建人 id(可选)
    */
-  create(data: { agentIds: string[]; projectId?: string; taskId?: string; title?: string; createdBy?: string; userId?: string; currentAgentId?: string; scopeType?: Conversation['scopeType']; scopeId?: string; memoryPolicy?: Conversation['memoryPolicy'] }): Conversation {
+  create(data: { agentIds: string[]; projectId?: string; taskId?: string; title?: string; createdBy?: string; userId?: string; currentAgentId?: string; scopeType?: Conversation['scopeType']; scopeId?: string; memoryPolicy?: Conversation['memoryPolicy']; conversationType?: Conversation['conversationType'] }): Conversation {
     const db = getDb();
     // Dual-code Phase 1:先在现有结构上开始双写业务编码,不一次性推翻会话主键。
     // 注意:当前 conversation.id 仍沿用既有行为(很多前端/恢复逻辑依赖它),
@@ -240,9 +244,11 @@ export const ConversationService = {
     const scopeType = data.scopeType || 'user';
     const scopeId = data.scopeId ?? userUuid;
     const memoryPolicy = data.memoryPolicy || 'private';
+    // 会话类型：默认 general，微信助手会话传入 wechat_assistant
+    const conversationType = data.conversationType || 'general';
     db.run(
-      `INSERT INTO conversations (id, project_id, task_id, session_code, current_agent_id, current_agent_code, title, status, created_by, user_id, agent_id, agent_ids, scope_type, scope_id, memory_policy, summary, last_message_at, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-      [conversationId, data.projectId || null, taskId, sessionCode, currentAgentId, currentAgentCode, title, 'in_progress', data.createdBy || null, userUuid, currentAgentId, agentIdStr, scopeType, scopeId, memoryPolicy, '', '', now]
+      `INSERT INTO conversations (id, project_id, task_id, session_code, current_agent_id, current_agent_code, title, status, created_by, user_id, agent_id, agent_ids, scope_type, scope_id, memory_policy, summary, last_message_at, created_at, conversation_type) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      [conversationId, data.projectId || null, taskId, sessionCode, currentAgentId, currentAgentCode, title, 'in_progress', data.createdBy || null, userUuid, currentAgentId, agentIdStr, scopeType, scopeId, memoryPolicy, '', '', now, conversationType]
     );
     // 写入关联表(统一存 RepaceClaw agent UUID)
     for (const agentId of data.agentIds.map(resolveBusinessAgentId)) {

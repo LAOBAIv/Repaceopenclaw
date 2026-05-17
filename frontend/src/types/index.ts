@@ -28,7 +28,7 @@ export interface Agent {
   memoryTurns?: number;
   temperatureOverride?: number | null;
   tokenUsed?: number;
-  visibility?: 'private' | 'public' | 'template';
+  visibility?: 'private' | 'public' | 'template' | 'system';
   skillsConfig?: Record<string, boolean>;
   quotaConfig?: {
     maxDailyTokens?: number;
@@ -91,6 +91,8 @@ export interface Conversation {
   createdAt: string;
   /** 会话状态：'in_progress' | 'completed' | 'archived' | 'deleted' */
   status?: 'in_progress' | 'completed' | 'archived' | 'deleted';
+  /** 会话类型：general（普通）| wechat_assistant（微信助手，不在 kanban 展示） */
+  conversationType?: 'general' | 'wechat_assistant';
 }
 
 export interface Message {

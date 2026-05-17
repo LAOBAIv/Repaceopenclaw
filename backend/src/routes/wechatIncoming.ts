@@ -19,6 +19,7 @@ import { getDb, saveDb } from "../db/client";
 import { logger } from "../utils/logger";
 import { resolveOpenClawGateway } from "../utils/openclawGateway";
 import { getBindingCodes } from "./wechat"; // [2026-05-16] 绑定验证码缓存
+import { broadcastToConversation } from "../ws/wsHandler"; // [2026-05-16] 推送消息到前端
 import http from "http";
 import https from "https";
 import crypto from "crypto";
@@ -96,6 +97,18 @@ router.post("/", async (req: Request, res: Response) => {
     // [2026-05-16] 存用户消息
     saveMessage(conversationId, boundUserId, "user", text, createdAt);
 
+    // [2026-05-16] 推送用户消息到前端
+    broadcastToConversation(conversationId, {
+      type: "new_message",
+      message: {
+        id: `wechat-user-${crypto.randomUUID()}`,
+        conversationId,
+        role: "user",
+        content: text,
+        createdAt,
+      },
+    });
+
     // [2026-05-16] 调 OC Gateway 获取 AI 回复
     const reply = await callGateway(
       [{ role: "user", content: text }],
@@ -107,7 +120,21 @@ router.post("/", async (req: Request, res: Response) => {
 
     // [2026-05-16] 存助手回复（带 R.P.C.I.S 标识）
     const replyTime = new Date().toISOString();
-    saveMessage(conversationId, boundUserId, "assistant", formattedReply, replyTime);
+    saveMessage(conversationId, boundUserId, "agent", formattedReply, replyTime);
+
+    // [2026-05-16] 通过 WebSocket 推送给前端，让微信助手面板实时显示新消息
+    const agentMsgId = `wechat-reply-${crypto.randomUUID()}`;
+    broadcastToConversation(conversationId, {
+      type: "new_message",
+      message: {
+        id: agentMsgId,
+        conversationId,
+        role: "agent",
+        content: formattedReply,
+        agentId: "rc-wechat-agent",
+        createdAt: replyTime,
+      },
+    });
 
     logger.info(`[WechatIncoming] Reply ready for=${ilinkUserId} text="${formattedReply.substring(0, 50)}..."`);
     res.json({ ok: true, reply: formattedReply });
@@ -144,11 +171,11 @@ function getOrCreateConversation(ilinkUserId: string): { conversationId: string;
     logger.warn("[WechatIncoming] Query binding failed", err);
   }
 
-  // [2026-05-16] 用 scope_type=wechat + scope_id=ilinkUserId 精确查找
+  // [2026-05-16] 统一查找逻辑：优先 scope_type=wechat，兼容 conversation_type=wechat_assistant
   try {
     const existing = db.exec(
-      `SELECT id FROM conversations WHERE scope_type = 'wechat' AND scope_id = ? AND agent_id = 'rc-wechat-agent' LIMIT 1`,
-      [ilinkUserId]
+      `SELECT id FROM conversations WHERE user_id = ? AND (scope_type = 'wechat' OR conversation_type = 'wechat_assistant') ORDER BY created_at DESC LIMIT 1`,
+      [boundUserId]
     );
     if (existing.length > 0 && existing[0].values.length > 0) {
       return { conversationId: existing[0].values[0][0] as string, userId: boundUserId };
@@ -188,14 +215,13 @@ function saveMessage(conversationId: string, userId: string, role: string, conte
     db.run(
       `INSERT OR IGNORE INTO messages (id, user_id, conversation_id, role, content, agent_id, token_count, created_at)
        VALUES (?, ?, ?, ?, ?, ?, 0, ?)`,
-      [messageId, userId, conversationId, role, content, role === "assistant" ? "rc-wechat-agent" : null, createdAt]
+      [messageId, userId, conversationId, role, content, (role === "assistant" || role === "agent") ? "rc-wechat-agent" : null, createdAt]
     );
     db.run(`UPDATE conversations SET last_message_at = ? WHERE id = ?`, [createdAt, conversationId]);
     saveDb();
+    logger.info(`[WechatIncoming] saveMessage OK: id=${messageId.slice(0,12)} conv=${conversationId.slice(0,8)} role=${role}`);
   } catch (err: any) {
-    if (!err.message?.includes("UNIQUE") && !err.message?.includes("PRIMARY KEY")) {
-      logger.warn("[WechatIncoming] Failed to save message", err);
-    }
+    logger.error(`[WechatIncoming] saveMessage FAILED: ${err.message}`);
   }
 }
 
