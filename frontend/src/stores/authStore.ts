@@ -34,6 +34,16 @@ export const useAuthStore = create<AuthStore>()(
 
       logout: () => {
         set({ user: null, token: null, isAuthenticated: false });
+        // [2026-05-18] 退出登录时清空会话数据，避免重新登录后加载旧会话
+        try {
+          const { useConversationStore } = require('../stores/conversationStore');
+          useConversationStore.setState({
+            openPanels: [],
+            sessionTabs: [],
+            activeTabId: null,
+            closedSessionIds: [],
+          });
+        } catch {}
       },
 
       updateUser: (data) => {
