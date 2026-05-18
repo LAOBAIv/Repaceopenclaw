@@ -2234,55 +2234,8 @@ export function ProjectWorkspace() {
           // 当前 Tab 有面板, 直接使用
           targetPanelId = currentActiveTab.panelId;
         } else if (currentActiveTab?.id === 'wechat') {
-          // 🔧 Bug修复 (2026-05-12): 微信助手 Tab 激活但无 panelId
-          // 根因: 微信助手 Tab 的 panelId 初始为 null（占位符），
-          //       刷新后 restoreFromPersist 不会为它创建面板，导致内容区白屏。
-          // 方案: 主动调用 API 获取/创建微信助手会话，创建面板并绑定到 Tab
-          try {
-            const { conversationsApi } = await import('@/api/conversations');
-            const conv = await conversationsApi.getWechatAssistant();
-            if (conv?.id) {
-              const wechatPanelId = conv.id;
-              // 检查是否已有面板
-              const existingWechatPanel = freshPanels.find(p => p.id === wechatPanelId || p.conversationId === wechatPanelId);
-              if (!existingWechatPanel) {
-                // 创建新面板
-                const wechatPanel = {
-                  id: wechatPanelId,
-                  conversationId: wechatPanelId,
-                  sessionCode: conv.sessionCode,
-                  agentId: 'rc-wechat-agent',
-                  currentAgentCode: conv.currentAgentCode,
-                  agentIds: conv.agentIds?.length ? conv.agentIds : ['rc-wechat-agent'],
-                  agentName: '微信助手',
-                  agentColor: '#2563eb',
-                  messages: conv.messages || [],
-                  isStreaming: false,
-                };
-                useConversationStore.setState(s => ({
-                  openPanels: [...s.openPanels, wechatPanel],
-                }));
-              } else if (!existingWechatPanel.messages?.length && conv.messages?.length) {
-                // 面板存在但消息为空，补充消息
-                useConversationStore.setState(s => ({
-                  openPanels: s.openPanels.map(p =>
-                    p.id === wechatPanelId ? { ...p, messages: conv.messages } : p
-                  ),
-                }));
-              }
-              // 绑定到 Tab
-              useConversationStore.getState().bindPanelToTab('wechat', wechatPanelId, '微信助手', '#2563eb');
-              targetPanelId = wechatPanelId;
-            }
-          } catch (err) {
-            // 加载失败时，切换到其他有面板的 Tab
-            const firstTabWithPanel = freshTabs.find(t => t.panelId && t.id !== 'wechat' && freshPanels.some(p => p.id === t.panelId));
-            if (firstTabWithPanel) {
-              targetTabId = firstTabWithPanel.id;
-              targetPanelId = firstTabWithPanel.panelId;
-              useConversationStore.setState({ activeTabId: targetTabId });
-            }
-          }
+          // [2026-05-18] 微信助手 panelId 必然存在，直接使用
+          targetPanelId = currentActiveTab.panelId;
         } else {
           // 当前 Tab 没有面板, 需要切换到第一个有面板的 Tab
           const firstTabWithPanel = freshTabs.find(t => t.panelId && freshPanels.some(p => p.id === t.panelId));
