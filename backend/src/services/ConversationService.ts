@@ -22,7 +22,7 @@ export interface Conversation {
   agentId: string;
   title: string;
   /** 会话状态：'in_progress' | 'completed' | 'archived' | 'deleted' */
-  status: 'in_progress' | 'completed' | 'archived' | 'deleted';
+  status: 'in_progress' | 'completed' | 'archived' | 'deleted' | 'closed';
   /** V1: 会话作用域（user / department / role / enterprise） */
   scopeType: 'user' | 'department' | 'role' | 'enterprise' | 'wechat';
   /** V1: 作用域 ID；enterprise 级可为空 */
@@ -444,7 +444,7 @@ export const ConversationService = {
   /**
    * 更新会话状态：in_progress | completed | archived
    */
-  updateStatus(id: string, status: 'in_progress' | 'completed' | 'archived' | 'deleted'): Conversation | null {
+  updateStatus(id: string, status: 'in_progress' | 'completed' | 'archived' | 'deleted' | 'closed'): Conversation | null {
     const db = getDb();
     const existing = this.getById(id);
     if (!existing) return null;

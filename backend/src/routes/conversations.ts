@@ -352,7 +352,7 @@ router.patch("/:id/status", (req: Request, res: Response) => {
   if (!canAccessConversation(conv, userId, userRole)) {
     return res.status(403).json({ error: "无权操作此会话" });
   }
-  const updated = ConversationService.updateStatus(conv.id, status as 'in_progress' | 'completed' | 'archived' | 'deleted');
+  const updated = ConversationService.updateStatus(conv.id, status as 'in_progress' | 'completed' | 'archived' | 'deleted' | 'closed');
   if (!updated) return res.status(404).json({ error: "Conversation not found" });
   res.json({ data: updated });
 });
@@ -362,6 +362,10 @@ router.get("/:id/messages", (req: Request, res: Response) => {
   const userRole = (req as any).user?.role;
   const conv = resolveConversationOr404(req.params.id, userId);
   if (!conv) return res.status(404).json({ error: "Conversation not found" });
+  // [2026-05-18] 已关闭/删除的会话不再返回消息，前端恢复时会跳过
+  if (conv.status === 'closed' || conv.status === 'deleted') {
+    return res.status(404).json({ error: "Conversation not found" });
+  }
   if (!canAccessConversation(conv, userId, userRole)) {
     return res.status(403).json({ error: "无权限访问此会话消息" });
   }

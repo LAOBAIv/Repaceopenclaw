@@ -1345,14 +1345,6 @@ export const useConversationStore = create<ConversationStore>()(
         // 新逻辑:panelId 是真实 UUID 时优先使用,conversationId 仅作兜底
         const convId = (tab.panelId && !tab.panelId.startsWith('local-')) ? tab.panelId : (tab.conversationId || tab.id);
 
-        // [2026-05-18] 过滤已关闭/删除的会话：后端 list 不返回 closed/deleted 状态的会话
-        // 如果后端列表中找不到该会话，说明已被关闭或删除，跳过恢复
-        const convList = await getConvList();
-        if (convList.length > 0 && !convList.some(c => c.id === convId)) {
-          // 后端确认该会话不存在或已关闭，跳过恢复
-          continue;
-        }
-
         let panel = panelCache.get(convId);
         if (!panel) {
           // Day 2:不再依赖 persistedPanel,面板完全由 API 数据 + tab 元数据构建
