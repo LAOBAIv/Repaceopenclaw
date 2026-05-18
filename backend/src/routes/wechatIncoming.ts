@@ -297,3 +297,36 @@ function callGateway(
 }
 
 export default router;
+
+// [2026-05-18] 供 ILinkMonitor 调用的消息处理函数（复用路由中的核心逻辑）
+export async function handleILinkMessage(
+  ilinkUserId: string,
+  text: string,
+  timestamp?: number
+): Promise<string | null> {
+  try {
+    const { conversationId, userId: boundUserId } = getOrCreateConversation(ilinkUserId);
+    const sessionKey = `${SESSION_PREFIX}:${conversationId}`;
+    const createdAt = timestamp ? new Date(timestamp).toISOString() : new Date().toISOString();
+
+    // 存用户消息
+    saveMessage(conversationId, boundUserId, "user", text, createdAt);
+
+    // 调 OC Gateway 获取 AI 回复
+    const reply = await callGateway(
+      [{ role: "user", content: text }],
+      sessionKey
+    );
+
+    const formattedReply = `R.P.C.I.S\n${reply}`;
+
+    // 存助手回复
+    const replyTime = new Date().toISOString();
+    saveMessage(conversationId, boundUserId, "agent", formattedReply, replyTime);
+
+    return formattedReply;
+  } catch (e: any) {
+    logger.error(`[handleILinkMessage] Error: ${e.message}`);
+    return null;
+  }
+}

@@ -186,7 +186,7 @@ async function handleIncomingMessage(config: ILinkConfig, msg: any): Promise<voi
 
   // 调用现有的 wechatIncoming 处理逻辑
   try {
-    const { handleILinkMessage } = await import('../routes/wechatIncoming.js');
+    const { handleILinkMessage } = await import('../routes/wechatIncoming');
     const reply = await handleILinkMessage(fromUserId, text, msg.create_time_ms);
     
     if (reply) {
