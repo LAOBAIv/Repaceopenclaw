@@ -1368,6 +1368,10 @@ export const useConversationStore = create<ConversationStore>()(
    *               表现为"刷新后会话全丢"。
    */
   restoreFromPersist: async () => {
+    // [2026-05-18] 防重入锁，避免多次调用导致死循环
+    if ((get() as any)._restoring) return;
+    set({ _restoring: true } as any);
+    try {
     const { sessionTabs: persistedTabs, activeTabId: persistedActiveId, closedSessionIds } = get();
 
     // ━━━ 第一优先:从 sessionStorage 恢复 sessionTabs(UI 布局)━━━━━━━━━━
@@ -1608,12 +1612,14 @@ export const useConversationStore = create<ConversationStore>()(
       if (activeConvId || openConvIds.length > 0) {
         const { useAgentStore } = await import('@/stores/agentStore');
         const agents = useAgentStore.getState().agents;
+        // 会话列表只调一次
+        let convList: Conversation[] = [];
+        try { convList = await conversationsApi.list(); } catch {}
 
         // 辅助函数：根据 convId 构建 panel + tab
         async function buildPanelAndTab(convId: string) {
           const messages = await conversationsApi.getMessages(convId);
           if (!messages || messages.length === 0) return null;
-          const convList = await conversationsApi.list();
           const conv = convList.find(c => c.id === convId);
           const agentId = conv?.currentAgentId || conv?.agentId || conv?.agentIds?.[0] || '';
           const agent = agents.find(a => a.id === agentId);
@@ -1686,6 +1692,9 @@ export const useConversationStore = create<ConversationStore>()(
           ...state.sessionTabs,
         ],
       }));
+    }
+    } finally {
+      set({ _restoring: false } as any);
     }
   },
   }),
