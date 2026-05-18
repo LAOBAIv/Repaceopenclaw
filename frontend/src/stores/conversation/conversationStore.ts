@@ -1295,6 +1295,17 @@ export const useConversationStore = create<ConversationStore>()(
       const restoredTabs: SessionTab[] = [];
       // 允许同一会话恢复多个 tab,但 panel 只恢复一份并复用
       const panelCache = new Map<string, ConversationPanel>();
+      // [2026-05-18] 性能优化：会话列表只调一次，避免每个 tab 都重复请求
+      let cachedConvList: Conversation[] | null = null;
+      async function getConvList(): Promise<Conversation[]> {
+        if (cachedConvList !== null) return cachedConvList;
+        try {
+          cachedConvList = await conversationsApi.list();
+        } catch {
+          cachedConvList = [];
+        }
+        return cachedConvList;
+      }
       for (const tab of persistedTabs) {
         // 🔧 Bug修复 (2026-05-12): 微信助手 Tab 的 panelId 可能为 null(占位符状态)
         // 根因: 微信助手 Tab 初始 panelId=null,用户点击后才绑定真实 UUID
@@ -1349,9 +1360,9 @@ export const useConversationStore = create<ConversationStore>()(
             try {
               messages = await conversationsApi.getMessages(convId);
 
-              // 尝试获取会话详情
+              // [2026-05-18] 使用缓存的会话列表，避免每个 tab 重复请求
               try {
-                const convList = await conversationsApi.list();
+                const convList = await getConvList();
                 conv = convList.find((c) => c.id === convId);
               } catch {}
             } catch (err) {
