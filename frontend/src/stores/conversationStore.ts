@@ -1399,14 +1399,18 @@ export const useConversationStore = create<ConversationStore>()(
         //       但如果用户刷新时 panelId 已经被绑定为真实 UUID,则正常恢复
         //       如果 panelId 仍为 null,则跳过此 Tab,由初始化逻辑单独处理
         if (!tab.panelId) {
-          // 微信助手 Tab 无 panelId 时保留在 restoredTabs 中(但不创建 panel)
-          // 这样初始化逻辑可以检测到它并主动加载
+          // [2026-05-18] 微信助手 panelId 为空时直接调 API 获取真实 ID
           if (tab.id === 'wechat') {
-            restoredTabs.push({
-              ...tab,
-              type: tab.type || 'wechat',
-              panelId: null,
-            });
+            try {
+              const conv = await conversationsApi.getWechatAssistant();
+              if (conv?.id) {
+                restoredTabs.push({ ...tab, type: 'wechat' as const, panelId: conv.id, conversationId: conv.id });
+              } else {
+                restoredTabs.push({ ...tab, type: 'wechat' as const, panelId: null });
+              }
+            } catch {
+              restoredTabs.push({ ...tab, type: 'wechat' as const, panelId: null });
+            }
           }
           continue;
         }
@@ -1581,19 +1585,25 @@ export const useConversationStore = create<ConversationStore>()(
         const { sessionTabs: currentTabs } = get();
         const hasWechat = currentTabs.some(t => t.id === 'wechat');
         if (!hasWechat) {
+          // [2026-05-18] 直接获取真实 panelId
+          let wPanelId: string | null = null;
+          try {
+            const conv = await conversationsApi.getWechatAssistant();
+            if (conv?.id) wPanelId = conv.id;
+          } catch {}
           set((state) => ({
             sessionTabs: [
+              ...state.sessionTabs,
               {
                 id: 'wechat',
                 type: 'wechat' as const,
                 title: '微信助手',
-                conversationId: 'wechat-assistant', // 占位符,用户点击后会被真实 conv.id 覆盖
+                conversationId: wPanelId || 'wechat-assistant',
                 agentId: 'rc-wechat-agent',
                 agentName: '微信助手',
                 agentColor: '#2563eb',
-                panelId: null, // 用户点击后会被真实 panelId 覆盖
+                panelId: wPanelId,
               },
-              ...state.sessionTabs,
             ],
           }));
         }
