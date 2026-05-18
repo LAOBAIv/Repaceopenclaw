@@ -1668,27 +1668,45 @@ export const useConversationStore = create<ConversationStore>()(
         }
       }
     } catch {}
-    // ━━━ 收尾:确保微信助手 Tab 始终存在(方案 C)━━━━━━━━━━
-    // 🔧 关键修复 (2026-05-12):微信助手 Tab 恢复保障
-    // 背景:微信助手是系统级全局智能体,不参与常规会话恢复流程
-    // 逻辑:如果 restoreFromPersist 完成后仍没有 wechat tab,则添加初始占位 tab
-    // 注意:此占位 tab 的 conversationId='wechat-assistant'、panelId=null
-    //       用户点击后,handleWechatTabClick 会调用 API 创建真实会话并更新 panelId 和 conversationId
+    // ━━━ 收尾:确保微信助手 Tab 始终存在，直接拿真实 ID ━━━━━━━━━━
     const { sessionTabs: finalTabs } = get();
     const hasWechat = finalTabs.some(t => t.id === 'wechat');
     if (!hasWechat) {
+      // [2026-05-18] 直接调 API 获取微信助手真实会话 ID，避免 panelId=null 导致卡死
+      let wechatPanelId: string | null = null;
+      let wechatMessages: Message[] = [];
+      try {
+        const conv = await conversationsApi.getWechatAssistant();
+        if (conv?.id) {
+          wechatPanelId = conv.id;
+          wechatMessages = conv.messages || [];
+        }
+      } catch {}
+
+      const wechatPanel: ConversationPanel | null = wechatPanelId ? {
+        id: wechatPanelId,
+        conversationId: wechatPanelId,
+        agentId: 'rc-wechat-agent',
+        agentIds: ['rc-wechat-agent'],
+        agentName: '微信助手',
+        agentColor: '#2563eb',
+        messages: wechatMessages,
+        isStreaming: false,
+      } : null;
+
       set((state) => ({
+        openPanels: wechatPanel ? [...state.openPanels, wechatPanel] : state.openPanels,
         sessionTabs: [
           ...state.sessionTabs,
           {
             id: 'wechat',
             type: 'wechat' as const,
             title: '微信助手',
-            conversationId: 'wechat-assistant',
+            conversationId: wechatPanelId || 'wechat-assistant',
             agentId: 'rc-wechat-agent',
             agentName: '微信助手',
             agentColor: '#2563eb',
-            panelId: null,
+            panelId: wechatPanelId,
           },
         ],
       }));
