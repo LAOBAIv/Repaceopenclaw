@@ -394,7 +394,7 @@ export const useConversationStore = create<ConversationStore>()(
             const panel = data.conversationId
               ? panels.find((p) => p.conversationId === data.conversationId)
               : panels.find((p) => p.agentId === data.agentId || p.agentIds.includes(data.agentId));
-            // console.log("[WS] agent_start panel:", panel?.id); if (panel) get().startStreaming(panel.id, data.messageId);
+            if (panel) get().startStreaming(panel.id, data.messageId);
           }
           if (data.type === "agent_chunk" && data.messageId && data.chunk) {
             // 先按 streamingMessageId 命中正在流式输出的消息;命不中再按 conversationId 兜底。
@@ -408,7 +408,7 @@ export const useConversationStore = create<ConversationStore>()(
             // 与 agent_start / agent_chunk 保持同一归属规则:优先 messageId,其次 conversationId。
             const panel = panels.find((p) => p.streamingMessageId === data.messageId)
               || (data.conversationId ? panels.find((p) => p.conversationId === data.conversationId) : undefined);
-            // console.log("[WS] agent_done panel:", panel?.id); if (panel) get().finishStreaming(panel.id, data.messageId, data.message);
+            if (panel) get().finishStreaming(panel.id, data.messageId, data.message);
           }
 
           if (data.type === "error" && data.message) {
