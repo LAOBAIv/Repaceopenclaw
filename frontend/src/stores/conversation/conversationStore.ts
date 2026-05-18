@@ -1306,7 +1306,16 @@ export const useConversationStore = create<ConversationStore>()(
         }
         return cachedConvList;
       }
-      for (const tab of persistedTabs) {
+
+      // [2026-05-18] 性能优化：优先加载当前激活 tab，其他 tab 延迟异步加载
+      // 将 tabs 分为“激活”和“非激活”两组
+      const activeTabs = persistedTabs.filter(t => t.id === persistedActiveId);
+      const inactiveTabs = persistedTabs.filter(t => t.id !== persistedActiveId);
+      // 激活 tab 优先处理
+      const orderedTabs = [...activeTabs, ...inactiveTabs];
+      let activeTabRestored = false;
+
+      for (const tab of orderedTabs) {
         // 🔧 Bug修复 (2026-05-12): 微信助手 Tab 的 panelId 可能为 null(占位符状态)
         // 根因: 微信助手 Tab 初始 panelId=null,用户点击后才绑定真实 UUID
         //       但如果用户刷新时 panelId 已经被绑定为真实 UUID,则正常恢复
@@ -1469,6 +1478,16 @@ export const useConversationStore = create<ConversationStore>()(
           agentName: finalAgentName,
           agentColor: finalAgentColor,
         });
+
+        // [2026-05-18] 激活 tab 恢复完成后立即刷新 UI，不等其他 tab
+        if (tab.id === persistedActiveId && !activeTabRestored) {
+          activeTabRestored = true;
+          set((state) => ({
+            openPanels: [...state.openPanels.filter(p => p.id !== panel!.id), panel!],
+            sessionTabs: [...state.sessionTabs.filter(t => t.id !== tab.id), restoredTabs[restoredTabs.length - 1]],
+            activeTabId: tab.id,
+          }));
+        }
       }
       // 关键修复:不能因为"persistedTabs 数组非空"就盲目 return。
       // 如果这些 tab 在恢复过程中全部被跳过/恢复失败,必须继续走后面的 API 回补分支,
