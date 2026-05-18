@@ -937,6 +937,16 @@ export const useConversationStore = create<ConversationStore>()(
   /** 切换激活 Tab */
   switchTab: (tabId) => {
     set({ activeTabId: tabId });
+    // [2026-05-18] 同步更新 localStorage，确保重新登录能恢复
+    const state = get();
+    const openConvIds = state.sessionTabs
+      .filter(t => t.panelId && t.id !== 'home' && t.id !== 'wechat')
+      .map(t => t.panelId || t.conversationId);
+    const activeTab = state.sessionTabs.find(t => t.id === tabId);
+    localStorage.setItem('rc:last-session-state', JSON.stringify({
+      activeConvId: activeTab?.panelId || activeTab?.conversationId || '',
+      openConvIds,
+    }));
   },
 
   /**
@@ -1602,11 +1612,9 @@ export const useConversationStore = create<ConversationStore>()(
         const parsed = JSON.parse(raw);
         activeConvId = parsed.activeConvId || '';
         openConvIds = parsed.openConvIds || [];
-        localStorage.removeItem('rc:last-session-state');
       } else if (oldKey) {
         activeConvId = oldKey;
         openConvIds = [oldKey];
-        localStorage.removeItem('rc:last-active-conversation');
       }
 
       if (activeConvId || openConvIds.length > 0) {
