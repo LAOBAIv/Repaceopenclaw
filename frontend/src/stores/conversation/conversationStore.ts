@@ -17,8 +17,6 @@ import {
   resolveConversationAgentIds,
   isConversationNotFoundError,
 } from './helpers';
-
-
 /**
  * Plan C: conversationStore 不能在模块加载时把 persist key 算死。
  *
@@ -1533,158 +1531,11 @@ export const useConversationStore = create<ConversationStore>()(
       }
     }
 
-    // ━━━ 第二优先:首次访问(无 persist 数据),从 conversations API 填充 ━━━
-    // Day 2:不再使用 persistedPanelMap,面板数据完全来自 API
-    try {
-      const { useAgentStore } = await import('@/stores/agentStore');
-      const agents = useAgentStore.getState().agents;
-      const convList = await conversationsApi.list();
-      if (convList && convList.length > 0) {
-        const restoredPanels: ConversationPanel[] = [];
-        const restoredTabs: SessionTab[] = [];
-        for (const conv of convList.slice(0, 10)) {
-          if (closedSessionIds?.includes(conv.id)) continue;
-          // 平台助手是独立入口服务,不参与工作台 tab / panel 自动恢复。
-          if (isGlobalAssistantConversationLike(conv)) continue;
-          try {
-            const messages = await conversationsApi.getMessages(conv.id);
-            // 关键过滤:跳过没有消息的会话,避免创建空 tab
-            if (!messages || messages.length === 0) continue;
+    // ━━━ 第二优先:首次访问(无 persist 数据),不自动加载历史会话 ━━━━━━━━━━
+    // [2026-05-18] 修复：首次登录不再自动把所有历史会话加载为 tab
+    // 用户需要从会话列表主动打开想要的会话
 
-            const agentId = resolveConversationCurrentAgent(conv, '');
-            const agent = agents.find(a => a.id === agentId);
-            const agentName = agent?.name || '智能体';
-            const displayTitle = conv.title || agent?.name || '会话';
-            const agentColor = agent?.color || '#6366f1';
-            const convAgentIds = resolveConversationAgentIds(conv, agentId ? [agentId] : []);
-            restoredPanels.push({
-              id: conv.id,
-              conversationId: conv.id,
-              sessionCode: conv.sessionCode,
-              agentId: agentId || '',
-              currentAgentCode: conv.currentAgentCode,
-              agentIds: convAgentIds?.length ? convAgentIds : [],
-              agentName,
-              agentColor: agentColor || '#6366f1',
-              messages: messages?.length ? messages : [],
-              isStreaming: false,
-            });
-            restoredTabs.push({
-              id: conv.id,
-              type: 'session',
-              title: displayTitle,
-              panelId: conv.id,
-              color: agentColor,
-              conversationId: conv.id,
-              sessionCode: conv.sessionCode,
-              agentId,
-              currentAgentCode: conv.currentAgentCode,
-              agentName,
-            });
-          } catch {
-            // 跳过获取消息失败的会话,不创建空 tab
-            continue;
-          }
-        }
-        // 只恢复有效 tab(有消息的会话),没有有效会话则不创建任何 tab
-        if (restoredTabs.length > 0) {
-          set((state) => ({
-            openPanels: restoredPanels,
-            sessionTabs: restoredTabs,
-            activeTabId: state.activeTabId || restoredTabs[0].id,
-          }));
-          return;
-        }
-      }
-    } catch {}
-
-    // ━━━ 兜底:sessions API ━━━
-    try {
-      const { sessionsApi } = await import('@/api/sessions');
-      const sessions = await sessionsApi.list();
-      if (sessions && sessions.length > 0) {
-        const restoredPanels: ConversationPanel[] = [];
-        const restoredTabs: SessionTab[] = [];
-        for (const session of sessions.slice(0, 10)) {
-          if (closedSessionIds?.includes(session.id)) continue;
-          // sessions API 兜底恢复链也必须排除平台助手,避免它被当普通会话补回 tab。
-          if (isGlobalAssistantConversationLike(session as any)) continue;
-          try {
-            const preview = await sessionsApi.preview(session.id, 20);
-            const messages = (preview?.messages || []).map((m: any) => ({
-              id: m.id,
-              messageCode: m.messageCode,
-              conversationId: session.id,
-              role: m.role as 'user' | 'agent',
-              content: m.content,
-              createdAt: m.createdAt,
-            }));
-            // 关键过滤:跳过没有消息的会话
-            if (messages.length === 0) continue;
-
-            const agentId = preview?.currentAgentId || preview?.agentId || session.currentAgentId || session.agentId || '';
-            let agentName = '';
-            let agentColor = '#6366f1';
-            if (agentId) {
-              try {
-                const { useAgentStore } = await import('@/stores/agentStore');
-                const agent = useAgentStore.getState().agents.find(a => a.id === agentId);
-                if (agent) {
-                  agentName = agent.name;
-                  agentColor = agent.color || '#6366f1';
-                }
-              } catch {}
-            }
-            const displayTitle = preview?.title || session.title || agentName || '会话';
-            restoredPanels.push({
-              id: session.id,
-              conversationId: session.id,
-              sessionCode: preview?.sessionCode,
-              agentId,
-              currentAgentCode: preview?.currentAgentCode,
-              agentIds: preview?.agentIds || session.agentIds || [],
-              agentName: agentName || '智能体',
-              agentColor,
-              messages,
-              isStreaming: false,
-            });
-            restoredTabs.push({
-              id: session.id,
-              type: 'session',
-              title: displayTitle,
-              panelId: session.id,
-              color: agentColor,
-              conversationId: session.id,
-              sessionCode: preview?.sessionCode,
-              agentId,
-              currentAgentCode: preview?.currentAgentCode,
-              agentName: agentName || '智能体',
-            });
-          } catch {
-            // 跳过获取失败的会话,不创建空 tab
-            continue;
-          }
-        }
-        if (restoredTabs.length > 0) {
-          set((state) => {
-            const mergedPanels = [...restoredPanels];
-            for (const p of state.openPanels) {
-              if (!mergedPanels.some(x => x.id === p.id)) mergedPanels.push(p);
-            }
-            const mergedTabs = [...restoredTabs];
-            for (const t of state.sessionTabs) {
-              if (!mergedTabs.some(x => x.id === t.id)) mergedTabs.push(t);
-            }
-            return {
-              openPanels: mergedPanels,
-              sessionTabs: mergedTabs,
-              activeTabId: state.activeTabId || restoredTabs[0].id,
-            };
-          });
-        }
-      }
-    } catch {}
-
+    // [2026-05-18] 首次登录不自动加载历史会话，用户从会话列表主动打开
     // ━━━ 收尾:确保微信助手 Tab 始终存在(方案 C)━━━━━━━━━━
     // 🔧 关键修复 (2026-05-12):微信助手 Tab 恢复保障
     // 背景:微信助手是系统级全局智能体,不参与常规会话恢复流程
