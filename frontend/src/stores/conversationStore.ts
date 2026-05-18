@@ -1679,17 +1679,17 @@ export const useConversationStore = create<ConversationStore>()(
     if (!hasWechat) {
       set((state) => ({
         sessionTabs: [
+          ...state.sessionTabs,
           {
             id: 'wechat',
             type: 'wechat' as const,
             title: '微信助手',
-            conversationId: 'wechat-assistant', // 占位符,用户点击后会被真实 conv.id 覆盖
+            conversationId: 'wechat-assistant',
             agentId: 'rc-wechat-agent',
             agentName: '微信助手',
             agentColor: '#2563eb',
-            panelId: null, // 用户点击后会被真实 panelId 覆盖
+            panelId: null,
           },
-          ...state.sessionTabs,
         ],
       }));
     }
