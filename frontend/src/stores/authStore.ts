@@ -33,10 +33,17 @@ export const useAuthStore = create<AuthStore>()(
       },
 
       logout: () => {
-        set({ user: null, token: null, isAuthenticated: false });
-        // [2026-05-18] 退出登录时清空会话数据，避免重新登录后加载旧会话
+        // [2026-05-18] 退出前记录当前激活会话 ID，登录时只恢复这一个
         try {
           const { useConversationStore } = require('../stores/conversationStore');
+          const state = useConversationStore.getState();
+          const activeTab = state.sessionTabs.find((t: any) => t.id === state.activeTabId);
+          const activeConvId = activeTab?.panelId || activeTab?.conversationId || '';
+          if (activeConvId && activeConvId !== 'home' && activeConvId !== 'wechat-assistant') {
+            localStorage.setItem('rc:last-active-conversation', activeConvId);
+          } else {
+            localStorage.removeItem('rc:last-active-conversation');
+          }
           useConversationStore.setState({
             openPanels: [],
             sessionTabs: [],
@@ -44,6 +51,7 @@ export const useAuthStore = create<AuthStore>()(
             closedSessionIds: [],
           });
         } catch {}
+        set({ user: null, token: null, isAuthenticated: false });
       },
 
       updateUser: (data) => {

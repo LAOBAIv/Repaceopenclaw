@@ -6,17 +6,37 @@ import { getCurrentUserId, getOrCreateTabId } from "../lib/storageScope";
 // sync 模块按需懒加载,避免循环依赖
 import type { WsSync } from "../lib/sync";
 import type { BroadcastSync } from "../lib/sync";
-import type { ConversationPanel, SessionTab } from './conversation/types';
-import {
-  PLATFORM_ASSISTANT_IDS,
-  WECHAT_ASSISTANT_IDS,
-  isPlatformAssistantAgent,
-  isWechatAssistantAgent,
-  isGlobalAssistantConversationLike,
-  resolveConversationCurrentAgent,
-  resolveConversationAgentIds,
-  isConversationNotFoundError,
-} from './conversation/helpers';
+
+// 平台助手 UUID(DB 真实 id)+ 兼容旧别名
+const PLATFORM_ASSISTANT_IDS = new Set([
+  'platform-assistant',
+  'repaceclaw-platform-assistant',
+  '24cf6cc5-da0d-48df-814e-11582e398007',  // DB 平台助手 UUID
+]);
+
+// 微信助手 ID(全局智能体,独立会话管理)
+const WECHAT_ASSISTANT_IDS = new Set([
+  'rc-wechat-agent',
+]);
+
+const isPlatformAssistantAgent = (agentId?: string | null) =>
+  agentId ? PLATFORM_ASSISTANT_IDS.has(agentId) : false;
+
+const isWechatAssistantAgent = (agentId?: string | null) =>
+  agentId ? WECHAT_ASSISTANT_IDS.has(agentId) : false;
+
+/** 判断是否属于全局独立助手类会话(平台助手或微信助手) */
+const isGlobalAssistantConversationLike = (input: {
+  agentId?: string | null;
+  currentAgentCode?: string | null;
+  title?: string | null;
+}) => {
+  const agentId = input.agentId || '';
+  return (agentId && (PLATFORM_ASSISTANT_IDS.has(agentId) || WECHAT_ASSISTANT_IDS.has(agentId)))
+    || input.title === 'RepaceClaw 平台助手'
+    || input.title === '微信助手';
+};
+
 /**
  * Plan C: conversationStore 不能在模块加载时把 persist key 算死。
  *
@@ -65,6 +85,75 @@ const convPersistStorage = {
   },
 };
 
+function resolveConversationCurrentAgent(conv?: Partial<Conversation> | null, fallback = ""): string {
+  return conv?.currentAgentId || conv?.agentId || conv?.agentIds?.[0] || fallback;
+}
+
+function resolveConversationAgentIds(conv?: Partial<Conversation> | null, fallback?: string[]): string[] {
+  const agentIds = conv?.agentIds || [];
+  if (agentIds.length > 0) return agentIds;
+  const currentAgentId = conv?.currentAgentId || conv?.agentId;
+  if (currentAgentId) return [currentAgentId];
+  return fallback || [];
+}
+
+function isConversationNotFoundError(err: any): boolean {
+  return err?.response?.status === 404 || err?.response?.data?.error === 'Conversation not found';
+}
+
+export interface ConversationPanel {
+  id: string;
+  conversationId: string;
+  /** 会话业务编码,展示/排障优先用它 */
+  sessionCode?: string;
+  /** 当前面板“主”agentId(单智能体对话时即为唯一 agent;多智能体时取第一个) */
+  agentId: string;
+  /** 当前智能体业务编码 */
+  currentAgentCode?: string;
+  /** 参与此会话的所有 agentIds */
+  agentIds: string[];
+  agentName: string;
+  agentColor: string;
+  messages: Message[];
+  isStreaming: boolean;
+  streamingMessageId?: string;
+  streamingContent?: string;
+  /** 协作任务启动提示,仅前端展示,不存库,用户可关闭 */
+  systemBanner?: string;
+  /** 会话类型：general（普通）| wechat_assistant（微信助手） */
+  conversationType?: 'general' | 'wechat_assistant';
+}
+
+/** 顶部会话 Tab 数据结构 - 唯一 Tab 数据源 */
+export interface SessionTab {
+  /** 唯一 id:'home' 或 conversationId */
+  id: string;
+  /** Tab 类型 */
+  type: 'home' | 'session' | 'wechat';
+  /** Tab 标题(智能体名称、项目名称或"新会话 N") */
+  title: string;
+  /** 绑定的会话 panel id(home/wechat tab 为 null) */
+  panelId: string | null;
+  /** Tab 颜色(智能体颜色,home tab 无) */
+  color?: string;
+  /** 是否正在 streaming */
+  isStreaming?: boolean;
+  /** 绑定的会话 ID(与 panelId 相同,冗余字段便于查询) */
+  conversationId?: string;
+  /** 会话业务编码 */
+  sessionCode?: string;
+  /** 关联的智能体 ID */
+  agentId?: string;
+  /** 当前智能体业务编码 */
+  currentAgentCode?: string;
+  /** 关联的智能体名称 */
+  agentName?: string;
+  /** 关联的智能体颜色 */
+  agentColor?: string;
+  /** 最近一次改名前的标题,用于把"旧标题 -> 新标题"的变化带给后端上下文 */
+  previousTitle?: string;
+}
+
 interface ConversationStore {
   openPanels: ConversationPanel[];
   messagesMap: Record<string, Message[]>;
@@ -111,7 +200,7 @@ interface ConversationStore {
   // internal streaming helpers
   startStreaming: (panelId: string, messageId: string) => void;
   appendStreamChunk: (panelId: string, messageId: string, chunk: string) => void;
-  finishStreaming: (panelId: string, messageId: string, finalMessage: Message | null) => void;
+  finishStreaming: (panelId: string, messageId: string, finalMessage: Message) => void;
   loadMessages: (panelId: string, conversationId: string) => Promise<void>;
   clearPanels: () => void;
   /** 关闭协作任务 Banner */
@@ -295,7 +384,7 @@ export const useConversationStore = create<ConversationStore>()(
       const currentWs = new WebSocket(wsUrl);
       wsInstance = currentWs;
       currentWs.onopen = async () => {
-        // console.log("[WS] Connected");
+        console.log("[WS] Connected");
         if (wsReconnectTimer) {
           clearTimeout(wsReconnectTimer);
           wsReconnectTimer = null;
@@ -347,7 +436,7 @@ export const useConversationStore = create<ConversationStore>()(
         }
       };
       currentWs.onclose = () => {
-        // console.log("[WS] Disconnected");
+        console.log("[WS] Disconnected");
         set({ wsConnected: false });
 
         // 只允许存在一个待执行的重连定时器,避免多处 connect() 叠加触发重连风暴。
@@ -385,14 +474,14 @@ export const useConversationStore = create<ConversationStore>()(
           }
 
           if (data.type === "agent_start" && data.messageId && data.agentId) {
-          // console.log("[WS] agent_start:", data.messageId, data.agentId, data.conversationId, "panels:", panels.map(p => ({ id: p.id, convId: p.conversationId, agentId: p.agentId })));
+          console.log("[WS] agent_start:", data.messageId, data.agentId, data.conversationId, "panels:", panels.map(p => ({ id: p.id, convId: p.conversationId, agentId: p.agentId })));
             // 关键修复:流式回复必须优先按 conversationId 路由到 panel。
             // 原因:同一 agent 允许出现在多个会话里,如果只按 agentId 找 panel,
             // 就会把当前会话的回复挂到别的会话上,表现为"当前界面不刷新看不到回复,刷新后从 DB 重载才出现"。
             const panel = data.conversationId
               ? panels.find((p) => p.conversationId === data.conversationId)
               : panels.find((p) => p.agentId === data.agentId || p.agentIds.includes(data.agentId));
-            if (panel) get().startStreaming(panel.id, data.messageId);
+            console.log("[WS] agent_start panel:", panel?.id); if (panel) get().startStreaming(panel.id, data.messageId);
           }
           if (data.type === "agent_chunk" && data.messageId && data.chunk) {
             // 先按 streamingMessageId 命中正在流式输出的消息;命不中再按 conversationId 兜底。
@@ -402,18 +491,18 @@ export const useConversationStore = create<ConversationStore>()(
             if (panel) get().appendStreamChunk(panel.id, data.messageId, data.chunk);
           }
           if (data.type === "agent_done" && data.messageId && data.message) {
-          // console.log("[WS] agent_done:", data.messageId, data.conversationId, "content:", data.message?.content?.length);
+          console.log("[WS] agent_done:", data.messageId, data.conversationId, "content:", data.message?.content?.length);
             // 与 agent_start / agent_chunk 保持同一归属规则:优先 messageId,其次 conversationId。
             const panel = panels.find((p) => p.streamingMessageId === data.messageId)
               || (data.conversationId ? panels.find((p) => p.conversationId === data.conversationId) : undefined);
-            if (panel) get().finishStreaming(panel.id, data.messageId, data.message);
+            console.log("[WS] agent_done panel:", panel?.id); if (panel) get().finishStreaming(panel.id, data.messageId, data.message);
           }
 
           if (data.type === "error" && data.message) {
             console.error("[WS] error:", data);
           }
 
-          // [2026-05-16] 微信链路推送的新消息(用户消息 + 智能体回复)
+          // [2026-05-16] 微信链路推送的新消息（用户消息 + 智能体回复）
           if (data.type === "new_message" && data.message) {
             const panel = panels.find((p) => p.conversationId === data.message.conversationId);
             if (panel) {
@@ -558,7 +647,7 @@ export const useConversationStore = create<ConversationStore>()(
             agentIds: panel.agentId ? [panel.agentId] : [],
             content,
           }));
-          // console.log("[WS] Message sent after reconnect");
+          console.log("[WS] Message sent after reconnect");
         } else if (retries > 15) {
           clearInterval(retryInterval);
           console.error("[WS] Failed to reconnect, message lost");
@@ -753,10 +842,7 @@ export const useConversationStore = create<ConversationStore>()(
           isStreaming: false,
           streamingMessageId: undefined,
           streamingContent: undefined,
-          // [2026-05-18] finalMessage 可能为 null(超时重试时),此时不更新消息列表
-          messages: finalMessage
-            ? p.messages.map((m) => m.id === messageId ? { ...finalMessage, streaming: false } : m)
-            : p.messages.filter((m) => m.id !== messageId),
+          messages: p.messages.map((m) => m.id === messageId ? { ...finalMessage, streaming: false } : m),
         };
       }),
     }));
@@ -938,7 +1024,7 @@ export const useConversationStore = create<ConversationStore>()(
       ? [...closedSessionIds, convId]
       : closedSessionIds;
 
-    // [2026-05-18] 调后端 API 标记会话为 closed,重新登录后不再出现
+    // [2026-05-18] 调后端 API 标记会话为 closed，重新登录后不再出现
     if (convId && convId !== 'home') {
       conversationsApi.updateStatus(convId, 'closed').catch(() => {});
     }
@@ -1115,7 +1201,7 @@ export const useConversationStore = create<ConversationStore>()(
             agentColor: opts.agentColor,
             messages,
             isStreaming: false,
-            // 微信助手会话标记,用于前端菜单栏只读控制
+            // 微信助手会话标记，用于前端菜单栏只读控制
             conversationType: (conv as any)?.conversationType || 'general',
           };
           set(s => ({
@@ -1293,27 +1379,7 @@ export const useConversationStore = create<ConversationStore>()(
       const restoredTabs: SessionTab[] = [];
       // 允许同一会话恢复多个 tab,但 panel 只恢复一份并复用
       const panelCache = new Map<string, ConversationPanel>();
-      // [2026-05-18] 性能优化：会话列表只调一次，避免每个 tab 都重复请求
-      let cachedConvList: Conversation[] | null = null;
-      async function getConvList(): Promise<Conversation[]> {
-        if (cachedConvList !== null) return cachedConvList;
-        try {
-          cachedConvList = await conversationsApi.list();
-        } catch {
-          cachedConvList = [];
-        }
-        return cachedConvList;
-      }
-
-      // [2026-05-18] 性能优化：优先加载当前激活 tab，其他 tab 延迟异步加载
-      // 将 tabs 分为“激活”和“非激活”两组
-      const activeTabs = persistedTabs.filter(t => t.id === persistedActiveId);
-      const inactiveTabs = persistedTabs.filter(t => t.id !== persistedActiveId);
-      // 激活 tab 优先处理
-      const orderedTabs = [...activeTabs, ...inactiveTabs];
-      let activeTabRestored = false;
-
-      for (const tab of orderedTabs) {
+      for (const tab of persistedTabs) {
         // 🔧 Bug修复 (2026-05-12): 微信助手 Tab 的 panelId 可能为 null(占位符状态)
         // 根因: 微信助手 Tab 初始 panelId=null,用户点击后才绑定真实 UUID
         //       但如果用户刷新时 panelId 已经被绑定为真实 UUID,则正常恢复
@@ -1367,9 +1433,9 @@ export const useConversationStore = create<ConversationStore>()(
             try {
               messages = await conversationsApi.getMessages(convId);
 
-              // [2026-05-18] 使用缓存的会话列表，避免每个 tab 重复请求
+              // 尝试获取会话详情
               try {
-                const convList = await getConvList();
+                const convList = await conversationsApi.list();
                 conv = convList.find((c) => c.id === convId);
               } catch {}
             } catch (err) {
@@ -1476,16 +1542,6 @@ export const useConversationStore = create<ConversationStore>()(
           agentName: finalAgentName,
           agentColor: finalAgentColor,
         });
-
-        // [2026-05-18] 激活 tab 恢复完成后立即刷新 UI，不等其他 tab
-        if (tab.id === persistedActiveId && !activeTabRestored) {
-          activeTabRestored = true;
-          set((state) => ({
-            openPanels: [...state.openPanels.filter(p => p.id !== panel!.id), panel!],
-            sessionTabs: [...state.sessionTabs.filter(t => t.id !== tab.id), restoredTabs[restoredTabs.length - 1]],
-            activeTabId: tab.id,
-          }));
-        }
       }
       // 关键修复:不能因为"persistedTabs 数组非空"就盲目 return。
       // 如果这些 tab 在恢复过程中全部被跳过/恢复失败,必须继续走后面的 API 回补分支,
@@ -1531,11 +1587,48 @@ export const useConversationStore = create<ConversationStore>()(
       }
     }
 
-    // ━━━ 第二优先:首次访问(无 persist 数据),不自动加载历史会话 ━━━━━━━━━━
-    // [2026-05-18] 修复：首次登录不再自动把所有历史会话加载为 tab
-    // 用户需要从会话列表主动打开想要的会话
-
-    // [2026-05-18] 首次登录不自动加载历史会话，用户从会话列表主动打开
+    // [2026-05-18] 首次登录只恢复退出时记录的激活会话
+    try {
+      const lastConvId = localStorage.getItem('rc:last-active-conversation');
+      if (lastConvId) {
+        localStorage.removeItem('rc:last-active-conversation');
+        const messages = await conversationsApi.getMessages(lastConvId);
+        if (messages && messages.length > 0) {
+          const { useAgentStore } = await import('@/stores/agentStore');
+          const convList = await conversationsApi.list();
+          const conv = convList.find(c => c.id === lastConvId);
+          const agentId = conv?.currentAgentId || conv?.agentId || conv?.agentIds?.[0] || '';
+          const agent = useAgentStore.getState().agents.find(a => a.id === agentId);
+          const agentName = agent?.name || conv?.title || '会话';
+          const agentColor = agent?.color || '#6366f1';
+          const panel: ConversationPanel = {
+            id: lastConvId,
+            conversationId: lastConvId,
+            sessionCode: conv?.sessionCode,
+            agentId: agentId || '',
+            currentAgentCode: conv?.currentAgentCode,
+            agentIds: conv?.agentIds?.length ? conv.agentIds : (agentId ? [agentId] : []),
+            agentName,
+            agentColor,
+            messages,
+            isStreaming: false,
+          };
+          const tab: SessionTab = {
+            id: lastConvId,
+            type: 'session',
+            title: conv?.title || agentName,
+            panelId: lastConvId,
+            color: agentColor,
+            conversationId: lastConvId,
+            sessionCode: conv?.sessionCode,
+            agentId,
+            currentAgentCode: conv?.currentAgentCode,
+            agentName,
+          };
+          set({ openPanels: [panel], sessionTabs: [tab], activeTabId: lastConvId });
+        }
+      }
+    } catch {}
     // ━━━ 收尾:确保微信助手 Tab 始终存在(方案 C)━━━━━━━━━━
     // 🔧 关键修复 (2026-05-12):微信助手 Tab 恢复保障
     // 背景:微信助手是系统级全局智能体,不参与常规会话恢复流程
