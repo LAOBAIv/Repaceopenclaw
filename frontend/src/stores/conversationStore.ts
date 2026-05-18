@@ -1587,45 +1587,78 @@ export const useConversationStore = create<ConversationStore>()(
       }
     }
 
-    // [2026-05-18] 首次登录只恢复退出时记录的激活会话
+    // [2026-05-18] 登录时恢复退出前的会话：先同步加载激活会话，再异步加载其他
     try {
-      const lastConvId = localStorage.getItem('rc:last-active-conversation');
-      if (lastConvId) {
+      const raw = localStorage.getItem('rc:last-session-state');
+      // 兼容旧格式
+      const oldKey = localStorage.getItem('rc:last-active-conversation');
+      let activeConvId = '';
+      let openConvIds: string[] = [];
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        activeConvId = parsed.activeConvId || '';
+        openConvIds = parsed.openConvIds || [];
+        localStorage.removeItem('rc:last-session-state');
+      } else if (oldKey) {
+        activeConvId = oldKey;
+        openConvIds = [oldKey];
         localStorage.removeItem('rc:last-active-conversation');
-        const messages = await conversationsApi.getMessages(lastConvId);
-        if (messages && messages.length > 0) {
-          const { useAgentStore } = await import('@/stores/agentStore');
+      }
+
+      if (activeConvId || openConvIds.length > 0) {
+        const { useAgentStore } = await import('@/stores/agentStore');
+        const agents = useAgentStore.getState().agents;
+
+        // 辅助函数：根据 convId 构建 panel + tab
+        async function buildPanelAndTab(convId: string) {
+          const messages = await conversationsApi.getMessages(convId);
+          if (!messages || messages.length === 0) return null;
           const convList = await conversationsApi.list();
-          const conv = convList.find(c => c.id === lastConvId);
+          const conv = convList.find(c => c.id === convId);
           const agentId = conv?.currentAgentId || conv?.agentId || conv?.agentIds?.[0] || '';
-          const agent = useAgentStore.getState().agents.find(a => a.id === agentId);
+          const agent = agents.find(a => a.id === agentId);
           const agentName = agent?.name || conv?.title || '会话';
           const agentColor = agent?.color || '#6366f1';
           const panel: ConversationPanel = {
-            id: lastConvId,
-            conversationId: lastConvId,
-            sessionCode: conv?.sessionCode,
-            agentId: agentId || '',
-            currentAgentCode: conv?.currentAgentCode,
+            id: convId, conversationId: convId, sessionCode: conv?.sessionCode,
+            agentId: agentId || '', currentAgentCode: conv?.currentAgentCode,
             agentIds: conv?.agentIds?.length ? conv.agentIds : (agentId ? [agentId] : []),
-            agentName,
-            agentColor,
-            messages,
-            isStreaming: false,
+            agentName, agentColor, messages, isStreaming: false,
           };
           const tab: SessionTab = {
-            id: lastConvId,
-            type: 'session',
-            title: conv?.title || agentName,
-            panelId: lastConvId,
-            color: agentColor,
-            conversationId: lastConvId,
-            sessionCode: conv?.sessionCode,
-            agentId,
-            currentAgentCode: conv?.currentAgentCode,
-            agentName,
+            id: convId, type: 'session', title: conv?.title || agentName,
+            panelId: convId, color: agentColor, conversationId: convId,
+            sessionCode: conv?.sessionCode, agentId, currentAgentCode: conv?.currentAgentCode, agentName,
           };
-          set({ openPanels: [panel], sessionTabs: [tab], activeTabId: lastConvId });
+          return { panel, tab };
+        }
+
+        // ① 同步加载激活会话
+        if (activeConvId) {
+          try {
+            const result = await buildPanelAndTab(activeConvId);
+            if (result) {
+              set({ openPanels: [result.panel], sessionTabs: [result.tab], activeTabId: activeConvId });
+            }
+          } catch {}
+        }
+
+        // ② 异步加载其他非激活会话
+        const otherIds = openConvIds.filter(id => id !== activeConvId);
+        if (otherIds.length > 0) {
+          setTimeout(async () => {
+            for (const convId of otherIds) {
+              try {
+                const result = await buildPanelAndTab(convId);
+                if (result) {
+                  set((s) => ({
+                    openPanels: [...s.openPanels, result.panel],
+                    sessionTabs: [...s.sessionTabs, result.tab],
+                  }));
+                }
+              } catch {}
+            }
+          }, 500);
         }
       }
     } catch {}

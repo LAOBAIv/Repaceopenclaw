@@ -33,17 +33,20 @@ export const useAuthStore = create<AuthStore>()(
       },
 
       logout: () => {
-        // [2026-05-18] 退出前记录当前激活会话 ID，登录时只恢复这一个
+        // [2026-05-18] 退出前记录所有打开的会话 + 激活会话，登录时恢复
         try {
           const { useConversationStore } = require('../stores/conversationStore');
           const state = useConversationStore.getState();
           const activeTab = state.sessionTabs.find((t: any) => t.id === state.activeTabId);
           const activeConvId = activeTab?.panelId || activeTab?.conversationId || '';
-          if (activeConvId && activeConvId !== 'home' && activeConvId !== 'wechat-assistant') {
-            localStorage.setItem('rc:last-active-conversation', activeConvId);
-          } else {
-            localStorage.removeItem('rc:last-active-conversation');
-          }
+          // 收集所有有效会话 tab 的 ID
+          const openConvIds = state.sessionTabs
+            .filter((t: any) => t.panelId && t.id !== 'home' && t.id !== 'wechat' && t.panelId !== 'wechat-assistant')
+            .map((t: any) => t.panelId || t.conversationId);
+          localStorage.setItem('rc:last-session-state', JSON.stringify({
+            activeConvId: activeConvId || '',
+            openConvIds: openConvIds || [],
+          }));
           useConversationStore.setState({
             openPanels: [],
             sessionTabs: [],
