@@ -2223,7 +2223,6 @@ export function ProjectWorkspace() {
       const freshTabs = useConversationStore.getState().sessionTabs;
       const freshActiveTabId = useConversationStore.getState().activeTabId;
 
-      console.log('[Restore] freshActiveTabId:', freshActiveTabId, 'freshPanels:', freshPanels.length, 'freshTabs:', freshTabs.map(t => ({ id: t.id, panelId: t.panelId })));
 
       // 步骤 1: 检查当前 activeTab 是否有 panelId
       let targetTabId = freshActiveTabId;
@@ -2231,7 +2230,6 @@ export function ProjectWorkspace() {
 
       if (targetTabId) {
         const currentActiveTab = freshTabs.find(t => t.id === targetTabId);
-        console.log('[Restore] 当前激活Tab:', currentActiveTab?.id, 'panelId:', currentActiveTab?.panelId);
         if (currentActiveTab?.panelId) {
           // 当前 Tab 有面板, 直接使用
           targetPanelId = currentActiveTab.panelId;
@@ -2240,7 +2238,6 @@ export function ProjectWorkspace() {
           // 根因: 微信助手 Tab 的 panelId 初始为 null（占位符），
           //       刷新后 restoreFromPersist 不会为它创建面板，导致内容区白屏。
           // 方案: 主动调用 API 获取/创建微信助手会话，创建面板并绑定到 Tab
-          console.log('[Restore] 微信助手Tab激活但无panelId，自动加载会话');
           try {
             const { conversationsApi } = await import('@/api/conversations');
             const conv = await conversationsApi.getWechatAssistant();
@@ -2276,10 +2273,8 @@ export function ProjectWorkspace() {
               // 绑定到 Tab
               useConversationStore.getState().bindPanelToTab('wechat', wechatPanelId, '微信助手', '#2563eb');
               targetPanelId = wechatPanelId;
-              console.log('[Restore] 微信助手面板自动创建成功, panelId =', wechatPanelId);
             }
           } catch (err) {
-            console.warn('[Restore] 微信助手会话自动加载失败:', err);
             // 加载失败时，切换到其他有面板的 Tab
             const firstTabWithPanel = freshTabs.find(t => t.panelId && t.id !== 'wechat' && freshPanels.some(p => p.id === t.panelId));
             if (firstTabWithPanel) {
@@ -2290,14 +2285,12 @@ export function ProjectWorkspace() {
           }
         } else {
           // 当前 Tab 没有面板, 需要切换到第一个有面板的 Tab
-          console.log('[Restore] 当前Tab无panelId, 查找第一个有panelId的Tab');
           const firstTabWithPanel = freshTabs.find(t => t.panelId && freshPanels.some(p => p.id === t.panelId));
           if (firstTabWithPanel) {
             targetTabId = firstTabWithPanel.id;
             targetPanelId = firstTabWithPanel.panelId;
             // 同步更新 store 中的 activeTabId
             useConversationStore.setState({ activeTabId: targetTabId });
-            console.log('[Restore] 自动切换到Tab:', targetTabId, 'panelId:', targetPanelId);
           } else {
             // 没有任何 Tab 有面板, 但至少确保 activeTabId 指向第一个 Tab
             const firstTab = freshTabs[0];
@@ -2305,12 +2298,10 @@ export function ProjectWorkspace() {
               targetTabId = firstTab.id;
               useConversationStore.setState({ activeTabId: targetTabId });
             }
-            console.log('[Restore] 无Tab有panelId, activeTabId设为:', targetTabId);
           }
         }
       } else {
         // 没有 activeTabId, 自动激活第一个有面板的 Tab
-        console.log('[Restore] 无activeTabId, 自动激活第一个Tab');
         const firstTabWithPanel = freshTabs.find(t => t.panelId && freshPanels.some(p => p.id === t.panelId));
         if (firstTabWithPanel) {
           targetTabId = firstTabWithPanel.id;
@@ -2326,15 +2317,12 @@ export function ProjectWorkspace() {
       // 步骤 2: 设置 activePanelId
       if (targetPanelId) {
         setActivePanelId(targetPanelId);
-        console.log('[Restore] 激活面板:', targetPanelId);
       } else if (freshPanels.length > 0) {
         // 没有 panelId 但有面板(可能是未被 Tab 引用的面板), 激活第一个
         setActivePanelId(freshPanels[0].id);
-        console.log('[Restore] 激活面板(fallback):', freshPanels[0].id);
       } else {
         // 完全没有面板, 清空 activePanelId
         setActivePanelId(null);
-        console.log('[Restore] 无面板可激活');
       }
 
       setRestoreReady(true);
@@ -2468,14 +2456,10 @@ export function ProjectWorkspace() {
    *   6. 智能体参数 → systemPrompt, temperature=0.7, maxTokens=4096, visibility=public
    */
   const handleWechatTabClick = useCallback(async () => {
-    console.log('[WechatTab] 点击微信助手 Tab');
     const { sessionTabs, openPanels, bindPanelToTab, loadMessages } = useConversationStore.getState();
-    console.log('[WechatTab] sessionTabs:', JSON.stringify(sessionTabs.map(t => ({ id: t.id, type: t.type, panelId: t.panelId }))));
-    console.log('[WechatTab] openPanels 数量:', openPanels.length);
 
     // 2. 查找微信助手 Tab，如果不存在则创建
     let wechatTab = sessionTabs.find(t => t.id === 'wechat');
-    console.log('[WechatTab] 找到 wechatTab:', !!wechatTab, 'panelId:', wechatTab?.panelId);
     
     if (!wechatTab) {
       console.warn('[WechatTab] 未找到 wechat Tab，尝试补种');
@@ -2500,7 +2484,6 @@ export function ProjectWorkspace() {
       }
       // 重新获取 wechatTab
       wechatTab = useConversationStore.getState().sessionTabs.find(t => t.id === 'wechat');
-      console.log('[WechatTab] 补种后 wechatTab:', !!wechatTab);
     }
 
     // 1. 切换激活微信助手 Tab
@@ -2558,7 +2541,6 @@ export function ProjectWorkspace() {
 
     // 5. 创建面板并绑定到微信 Tab
     const panelId = conv.id;
-    console.log('[WechatTab] 会话创建成功, conv.id =', panelId);
     const existingPanel = openPanels.find(p => p.id === panelId || p.conversationId === panelId);
 
     if (existingPanel) {
