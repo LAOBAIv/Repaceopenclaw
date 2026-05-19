@@ -484,7 +484,7 @@ function renderSheetContent(
           <input
             ref={fileInputRef}
             type="file"
-            accept=".xlsx,.xls,.csv,.pdf,.docx,.md,.txt,.json"
+            accept=".xlsx,.xls,.csv,.pdf,.docx,.md,.txt,.json,.png,.jpg,.jpeg,.gif,.webp,.svg,.bmp"
             style={{ display: 'none' }}
             onChange={(e) => {
               const file = e.target.files?.[0];
@@ -534,7 +534,7 @@ function renderSheetContent(
                   <line x1="12" y1="3" x2="12" y2="15" />
                 </svg>
                 <div style={{ fontSize: 13, color: '#a3a3a3', fontWeight: 500 }}>点击选择文件</div>
-                <div style={{ fontSize: 12, color: '#737373', marginTop: 4 }}>支持 Excel、PDF、Word、TXT、JSON，最大 50MB</div>
+                <div style={{ fontSize: 12, color: '#737373', marginTop: 4 }}>支持图片、Excel、PDF、Word、TXT、JSON，最大 50MB</div>
               </>
             )}
           </div>
@@ -558,6 +558,17 @@ function renderSheetContent(
               ))}
             </div>
           )}
+          {/* [2026-05-19] 从历史文件添加入口 */}
+          <div
+            onClick={() => {
+              if ((window as any).__showFileHistory) {
+                (window as any).__showFileHistory();
+              }
+            }}
+            style={{ marginTop: 14, padding: '10px 0', textAlign: 'center', cursor: 'pointer', borderTop: '1px dashed #404040', fontSize: 13, color: '#6366f1', fontWeight: 500 }}
+          >
+            📂 从历史文件添加
+          </div>
         </div>
       );
 

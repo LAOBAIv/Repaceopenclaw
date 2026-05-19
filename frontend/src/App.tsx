@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AppShell } from './components/layout/AppShell';
 import { ProjectWorkspace } from './pages/ProjectWorkspace';
@@ -38,6 +39,17 @@ function PrivateRoute({ children }: { children: React.ReactNode }) {
 }
 
 function App() {
+  // [2026-05-19] 自动识别移动端浏览器，跳转到移动端路由
+  useEffect(() => {
+    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)
+      || window.innerWidth <= 768;
+    const isAlreadyMobile = window.location.pathname.startsWith('/mobile');
+    const isLogin = window.location.pathname === '/login';
+    if (isMobile && !isAlreadyMobile && !isLogin) {
+      window.location.replace('/mobile');
+    }
+  }, []);
+
   return (
     <BrowserRouter>
       <Routes>
