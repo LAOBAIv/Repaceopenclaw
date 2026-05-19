@@ -16,6 +16,7 @@ import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { conversationsApi } from '@/api/conversations';
 import filesApi, { type FileAsset } from '@/api/files';
+import { FileHistoryModal } from '@/components/workspace/FileHistoryModal';
 
 /* ── 浏览器标签页类型（与会话绑定） ── */
 interface BrowserTab {
@@ -1072,6 +1073,7 @@ function TabPanel({
   const [dragOver, setDragOver] = useState(false);
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [showFileHistory, setShowFileHistory] = useState(false);
 
   async function loadProjectFiles() {
     try {
@@ -1258,7 +1260,7 @@ function TabPanel({
               <input
                 ref={fileInputRef}
                 type="file"
-                accept=".xlsx,.xls,.csv,.pdf,.docx,.md,.txt,.json"
+                accept=".xlsx,.xls,.csv,.pdf,.docx,.md,.txt,.json,.png,.jpg,.jpeg,.gif,.webp,.svg,.bmp"
                 style={{ display: 'none' }}
                 onChange={async (e) => {
                   const file = e.target.files?.[0];
@@ -1291,7 +1293,7 @@ function TabPanel({
                   <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
                 </svg>
                 <div style={{ fontSize: 13, color: '#6b7280', fontWeight: 500 }}>{uploading ? '上传中...' : '点击或拖拽文件到此处'}</div>
-                <div style={{ fontSize: 12, color: '#9ca3af', marginTop: 4 }}>支持 Excel、CSV、PDF、Word、TXT、Markdown、JSON，最大 50MB；项目可为空，后续再关联</div>
+                <div style={{ fontSize: 12, color: '#9ca3af', marginTop: 4 }}>支持图片、Excel、CSV、PDF、Word、TXT、Markdown、JSON，最大 50MB</div>
               </div>
               {uploadedFiles.length > 0 && (
                 <div style={{ marginTop: 14 }}>
@@ -1344,6 +1346,29 @@ function TabPanel({
                   暂无上传文件，项目可后续再关联
                 </div>
               )}
+              {/* [2026-05-19] 从历史文件添加 */}
+              <div
+                onClick={() => setShowFileHistory(true)}
+                style={{ marginTop: 14, padding: '10px 0', textAlign: 'center', cursor: 'pointer', borderTop: '1px dashed #e5e7eb', fontSize: 13, color: '#3b82f6', fontWeight: 500 }}
+                onMouseEnter={e => { e.currentTarget.style.background = '#f0f7ff'; }}
+                onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
+              >
+                📂 从历史文件添加
+              </div>
+              <FileHistoryModal
+                visible={showFileHistory}
+                onClose={() => setShowFileHistory(false)}
+                excludeIds={uploadedFiles.map(f => f.id)}
+                onConfirm={async (fileIds) => {
+                  const convId = activePanel?.conversationId || '';
+                  if (!convId) return;
+                  for (const fid of fileIds) {
+                    await filesApi.associate(fid, convId).catch(() => {});
+                  }
+                  await loadProjectFiles();
+                  showToast(`已添加 ${fileIds.length} 个文件到当前会话`, 'success');
+                }}
+              />
             </div>
           )}
 
