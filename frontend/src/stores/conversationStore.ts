@@ -934,6 +934,8 @@ export const useConversationStore = create<ConversationStore>()(
     // 只要是真实 UUID 就记录 active，排除占位符和本地面板
     if (activeConvId && activeConvId !== 'wechat-assistant' && !activeConvId.startsWith('local-')) {
       conversationsApi.updateStatus(activeConvId, 'active').catch(() => {});
+      // [2026-05-19] 缓存最后激活的会话ID，用于刷新恢复
+      try { sessionStorage.setItem('rc:last-active-conv', activeConvId); } catch {}
     }
     // [2026-05-19] 缓存当前激活会话的消息快照到 sessionStorage，刷新时秒级恢复
     if (activeConvId) {
@@ -1421,111 +1423,109 @@ export const useConversationStore = create<ConversationStore>()(
         return { panel, tab };
       }
 
-      // ① 同步加载 active 会话（第一优先级）
-      const activeConvs = await conversationsApi.list(undefined, 'active');
-      let hasActive = false;
+      // [2026-05-19] 并行获取 active 会话和微信助手，一次性构建完整 TAB 列表
+      const [activeConvs, wechatConv] = await Promise.all([
+        conversationsApi.list(undefined, 'active').catch(() => [] as Conversation[]),
+        conversationsApi.getWechatAssistant().catch(() => null),
+      ]);
+
+      const panels: ConversationPanel[] = [];
+      const tabs: SessionTab[] = [];
+      let activeTabId = '';
+
+      // ① 构建微信助手 Tab（始终在最左侧）
+      if (wechatConv?.id) {
+        const wechatMessages = wechatConv.messages || await conversationsApi.getMessages(wechatConv.id).catch(() => [] as Message[]);
+        const wechatPanel: ConversationPanel = {
+          id: wechatConv.id, conversationId: wechatConv.id,
+          agentId: 'rc-wechat-agent', agentIds: ['rc-wechat-agent'],
+          agentName: '微信助手', agentColor: '#2563eb',
+          messages: wechatMessages || [], isStreaming: false,
+        };
+        const wechatTab: SessionTab = {
+          id: 'wechat', type: 'wechat', title: '微信助手',
+          panelId: wechatConv.id, conversationId: wechatConv.id, color: '#2563eb',
+          agentId: 'rc-wechat-agent', agentName: '微信助手', agentColor: '#2563eb',
+        };
+        panels.push(wechatPanel);
+        tabs.push(wechatTab);
+        
+        // 没有 active 会话时，微信助手就是 active
+        if (!activeConvs.length) {
+          activeTabId = 'wechat';
+          conversationsApi.updateStatus(wechatConv.id, 'active').catch(() => {});
+        }
+      }
+
+      // ② 构建 active 会话 Tab
       if (activeConvs.length > 0) {
         const activeConv = activeConvs[0];
         try {
           const result = await buildPanelAndTab(activeConv.id, activeConv);
           if (result) {
-            set({ openPanels: [result.panel], sessionTabs: [result.tab], activeTabId: activeConv.id });
-            hasActive = true;
+            panels.push(result.panel);
+            tabs.push(result.tab);
+            activeTabId = activeConv.id;
           }
         } catch {}
       }
 
-      // 没有 active 时，微信助手就是 active
-      if (!hasActive) {
+      // [2026-05-19] 兜底：如果没有找到 active 会话，从 sessionStorage 恢复最后激活的会话
+      if (!activeTabId && !activeConvs.length) {
         try {
-          const conv = await conversationsApi.getWechatAssistant();
-          if (conv?.id) {
-            const messages = await conversationsApi.getMessages(conv.id).catch(() => [] as Message[]);
-            const panel: ConversationPanel = {
-              id: conv.id, conversationId: conv.id,
-              agentId: 'rc-wechat-agent', agentIds: ['rc-wechat-agent'],
-              agentName: '微信助手', agentColor: '#2563eb',
-              messages: messages || [], isStreaming: false,
-            };
-            const tab: SessionTab = {
-              id: 'wechat', type: 'wechat', title: '微信助手',
-              panelId: conv.id, conversationId: conv.id, color: '#2563eb',
-              agentId: 'rc-wechat-agent', agentName: '微信助手', agentColor: '#2563eb',
-            };
-            set({ openPanels: [panel], sessionTabs: [tab], activeTabId: 'wechat' });
-            conversationsApi.updateStatus(conv.id, 'active').catch(() => {});
-            hasActive = true;
+          const lastActiveConvId = sessionStorage.getItem('rc:last-active-conv');
+          if (lastActiveConvId) {
+            const allConvs = await conversationsApi.list();
+            const lastActiveConv = allConvs.find(c => c.id === lastActiveConvId);
+            if (lastActiveConv) {
+              const result = await buildPanelAndTab(lastActiveConv.id, lastActiveConv);
+              if (result) {
+                // 确保该会话不在 panels/tabs 中
+                if (!panels.some(p => p.id === result.panel.id)) {
+                  panels.push(result.panel);
+                  tabs.push(result.tab);
+                  activeTabId = result.tab.id;
+                  // 标记为 active
+                  conversationsApi.updateStatus(lastActiveConvId, 'active').catch(() => {});
+                }
+              }
+            }
           }
         } catch {}
       }
 
-      // [2026-05-19] in_progress 会话异步加载为 Tab（打开但未激活的会话）
+      // 一次性设置，避免闪烁
+      if (panels.length > 0) {
+        set({ openPanels: panels, sessionTabs: tabs, activeTabId });
+      }
+
+      // [2026-05-19] in_progress 会话批量加载（保持顺序，避免闪烁）
       setTimeout(async () => {
         try {
           const inProgressConvs = await conversationsApi.list(undefined, 'in_progress');
           const currentState = get();
           const existingIds = new Set(currentState.sessionTabs.map(t => t.panelId || t.id));
-          for (const conv of inProgressConvs) {
-            if (existingIds.has(conv.id)) continue;
-            if (isGlobalAssistantConversationLike({ agentId: conv.currentAgentId || conv.agentIds?.[0], title: conv.title })) continue;
-            try {
-              const result = await buildPanelAndTab(conv.id, conv);
-              if (result) {
-                set((s) => ({
-                  openPanels: [...s.openPanels, result.panel],
-                  sessionTabs: [...s.sessionTabs, result.tab],
-                }));
-              }
-            } catch {}
+          
+          // 并行构建所有 panel 和 tab，保持后端返回顺序
+          const results = await Promise.all(
+            inProgressConvs
+              .filter(conv => !existingIds.has(conv.id) && !isGlobalAssistantConversationLike({ 
+                agentId: conv.currentAgentId || conv.agentIds?.[0], 
+                title: conv.title 
+              }))
+              .map(conv => buildPanelAndTab(conv.id, conv).catch(() => null))
+          );
+          
+          // 过滤掉 null 结果，一次性批量设置
+          const validResults = results.filter((r): r is NonNullable<typeof r> => r !== null);
+          if (validResults.length > 0) {
+            set((s) => ({
+              openPanels: [...s.openPanels, ...validResults.map(r => r.panel)],
+              sessionTabs: [...s.sessionTabs, ...validResults.map(r => r.tab)],
+            }));
           }
         } catch {}
-      }, 500);
-    // ━━━ 收尾:确保微信助手 Tab 始终存在，直接拿真实 ID ━━━━━━━━━━
-    const { sessionTabs: finalTabs } = get();
-    const hasWechat = finalTabs.some(t => t.id === 'wechat');
-    if (!hasWechat) {
-      // [2026-05-18] 直接调 API 获取微信助手真实会话 ID，避免 panelId=null 导致卡死
-      let wechatPanelId: string | null = null;
-      let wechatMessages: Message[] = [];
-      try {
-        const conv = await conversationsApi.getWechatAssistant();
-        if (conv?.id) {
-          wechatPanelId = conv.id;
-          wechatMessages = conv.messages || [];
-        }
-      } catch {}
-
-      const wechatPanel: ConversationPanel | null = wechatPanelId ? {
-        id: wechatPanelId,
-        conversationId: wechatPanelId,
-        agentId: 'rc-wechat-agent',
-        agentIds: ['rc-wechat-agent'],
-        agentName: '微信助手',
-        agentColor: '#2563eb',
-        messages: wechatMessages,
-        isStreaming: false,
-      } : null;
-
-      // [2026-05-19] 只有拿到真实 UUID 才创建 wechat Tab，不用占位符
-      if (wechatPanelId) {
-        set((state) => ({
-          openPanels: wechatPanel ? [...state.openPanels, wechatPanel] : state.openPanels,
-          sessionTabs: [
-            ...state.sessionTabs,
-            {
-              id: 'wechat',
-              type: 'wechat' as const,
-              title: '微信助手',
-              conversationId: wechatPanelId,
-              agentId: 'rc-wechat-agent',
-              agentName: '微信助手',
-              agentColor: '#2563eb',
-              panelId: wechatPanelId,
-            },
-          ],
-        }));
-      }
-    }
+      }, 300);
     } finally {
       set({ _restoring: false } as any);
     }
