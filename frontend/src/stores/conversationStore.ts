@@ -1554,8 +1554,10 @@ export const useConversationStore = create<ConversationStore>()(
     // Day 2 改造:只持久化 UI 状态,不持久化业务数据
     // - sessionTabs: 用户打开的 Tab 列表(UI 布局)
     // - activeTabId: 当前激活的 Tab(UI 状态)
-    // [2026-05-19] 不再持久化 sessionTabs，会话状态完全由后端 DB 决定
-    partialize: () => ({}),
+    // [2026-05-19] 持久化 activeTabId，解决刷新丢失激活状态问题
+    partialize: (state) => ({
+      activeTabId: state.activeTabId,
+    }),
   }
 )
 );
