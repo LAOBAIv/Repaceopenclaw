@@ -22,11 +22,36 @@ export interface UploadFileInput {
   base64: string;
   projectId?: string;
   conversationId?: string;
+  scopeType?: 'user' | 'department' | 'enterprise';
+  scopeId?: string;
+}
+
+// [2026-05-19] 文件列表筛选参数
+export interface FileListParams {
+  projectId?: string;
+  conversationId?: string;
+  startDate?: string;
+  endDate?: string;
+  type?: 'image' | 'document' | '';
 }
 
 export const filesApi = {
-  async list(projectId?: string, conversationId?: string): Promise<FileAsset[]> {
-    const res = await apiClient.get('/files', { params: { projectId, conversationId } });
+  async list(projectIdOrParams?: string | FileListParams, conversationId?: string): Promise<FileAsset[]> {
+    let params: Record<string, string> = {};
+    if (typeof projectIdOrParams === 'object') {
+      // 新版参数格式
+      const p = projectIdOrParams;
+      if (p.projectId) params.projectId = p.projectId;
+      if (p.conversationId) params.conversationId = p.conversationId;
+      if (p.startDate) params.startDate = p.startDate;
+      if (p.endDate) params.endDate = p.endDate;
+      if (p.type) params.type = p.type;
+    } else {
+      // 兼容旧版调用
+      if (projectIdOrParams) params.projectId = projectIdOrParams;
+      if (conversationId) params.conversationId = conversationId;
+    }
+    const res = await apiClient.get('/files', { params });
     return res.data?.data || [];
   },
 
@@ -40,8 +65,19 @@ export const filesApi = {
     return res.data?.data?.prompt || '';
   },
 
+  // [2026-05-19] 软删除
   async remove(id: string): Promise<void> {
     await apiClient.delete(`/files/${id}`);
+  },
+
+  // [2026-05-19] 关联文件到会话
+  async associate(id: string, conversationId: string): Promise<void> {
+    await apiClient.put(`/files/${id}/associate`, { conversationId });
+  },
+
+  // [2026-05-19] 解除文件与会话的关联
+  async disassociate(id: string): Promise<void> {
+    await apiClient.put(`/files/${id}/disassociate`);
   },
 };
 

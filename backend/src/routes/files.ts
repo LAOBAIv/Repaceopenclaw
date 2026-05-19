@@ -41,10 +41,14 @@ router.get(
     const userId = req.user?.id || '';
     const projectId = String(req.query.projectId || '').trim();
     const conversationId = String(req.query.conversationId || '').trim();
+    // [2026-05-19] 新增筛选参数
+    const startDate = String(req.query.startDate || '').trim();
+    const endDate = String(req.query.endDate || '').trim();
+    const fileType = String(req.query.type || '').trim(); // image / document / all
     const db = getDb();
 
     let sql = `SELECT id, user_id, project_id, conversation_id, original_name, stored_name, mime_type, extension, size_bytes, storage_path, status, created_at, updated_at
-               FROM file_assets WHERE user_id=?`;
+               FROM file_assets WHERE user_id=? AND status='uploaded'`;
     const params: any[] = [userId];
     if (projectId) {
       sql += ' AND project_id=?';
@@ -53,6 +57,19 @@ router.get(
     if (conversationId) {
       sql += ' AND conversation_id=?';
       params.push(conversationId);
+    }
+    if (startDate) {
+      sql += ' AND created_at >= ?';
+      params.push(startDate + 'T00:00:00.000Z');
+    }
+    if (endDate) {
+      sql += ' AND created_at <= ?';
+      params.push(endDate + 'T23:59:59.999Z');
+    }
+    if (fileType === 'image') {
+      sql += " AND extension IN ('.png','.jpg','.jpeg','.gif','.webp','.svg','.bmp')";
+    } else if (fileType === 'document') {
+      sql += " AND extension IN ('.xlsx','.xls','.csv','.pdf','.docx','.md','.txt','.json')";
     }
     sql += ' ORDER BY created_at DESC';
 
@@ -197,16 +214,59 @@ router.delete(
       return sendNotFound(res, '文件');
     }
 
-    const row = result[0].values[0];
-    const relPath = String(row[1] || '');
-    const absPath = path.join(__dirname, '../../', relPath);
-    try {
-      if (relPath && fs.existsSync(absPath)) fs.unlinkSync(absPath);
-    } catch {}
-
-    db.run(`DELETE FROM file_assets WHERE id=? AND user_id=?`, [fileId, userId]);
+    // [2026-05-19] 软删除：标记 status='deleted'，不删除磁盘文件
+    db.run(`UPDATE file_assets SET status='deleted', updated_at=? WHERE id=? AND user_id=?`,
+      [new Date().toISOString(), fileId, userId]);
     saveDb();
     sendNoContent(res);
+  })
+);
+
+// [2026-05-19] PUT /api/files/:id/associate - 关联文件到会话
+router.put(
+  '/:id/associate',
+  authenticate,
+  asyncHandler(async (req: Request, res: Response) => {
+    const userId = req.user?.id || '';
+    const fileId = req.params.id;
+    const { conversationId } = req.body;
+    if (!conversationId) {
+      return sendValidationError(res, '缺少 conversationId');
+    }
+    const db = getDb();
+    const result = db.exec(
+      `SELECT id FROM file_assets WHERE id=? AND user_id=? AND status='uploaded' LIMIT 1`,
+      [fileId, userId]
+    );
+    if (!result.length || !result[0].values.length) {
+      return sendNotFound(res, '文件');
+    }
+    db.run(`UPDATE file_assets SET conversation_id=?, updated_at=? WHERE id=?`,
+      [conversationId, new Date().toISOString(), fileId]);
+    saveDb();
+    sendSuccess(res, { id: fileId, conversationId });
+  })
+);
+
+// [2026-05-19] PUT /api/files/:id/disassociate - 解除文件与会话的关联
+router.put(
+  '/:id/disassociate',
+  authenticate,
+  asyncHandler(async (req: Request, res: Response) => {
+    const userId = req.user?.id || '';
+    const fileId = req.params.id;
+    const db = getDb();
+    const result = db.exec(
+      `SELECT id FROM file_assets WHERE id=? AND user_id=? AND status='uploaded' LIMIT 1`,
+      [fileId, userId]
+    );
+    if (!result.length || !result[0].values.length) {
+      return sendNotFound(res, '文件');
+    }
+    db.run(`UPDATE file_assets SET conversation_id='', updated_at=? WHERE id=?`,
+      [new Date().toISOString(), fileId]);
+    saveDb();
+    sendSuccess(res, { id: fileId, conversationId: '' });
   })
 );
 
