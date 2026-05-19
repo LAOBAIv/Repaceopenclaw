@@ -299,22 +299,42 @@ function callGateway(
 export default router;
 
 // [2026-05-18] 供 ILinkMonitor 调用的消息处理函数（复用路由中的核心逻辑）
+// [2026-05-19] 新增 imageUrls 参数，支持图片消息
 export async function handleILinkMessage(
   ilinkUserId: string,
   text: string,
-  timestamp?: number
+  timestamp?: number,
+  imageUrls?: string[]
 ): Promise<string | null> {
   try {
     const { conversationId, userId: boundUserId } = getOrCreateConversation(ilinkUserId);
     const sessionKey = `${SESSION_PREFIX}:${conversationId}`;
     const createdAt = timestamp ? new Date(timestamp).toISOString() : new Date().toISOString();
 
-    // 存用户消息
-    saveMessage(conversationId, boundUserId, "user", text, createdAt);
+    // 存用户消息（图片用标记表示）
+    const displayText = imageUrls?.length
+      ? `${text}\n[图片 x${imageUrls.length}]`
+      : text;
+    saveMessage(conversationId, boundUserId, "user", displayText, createdAt);
+
+    // [2026-05-19] 构建消息内容：有图片时用 vision 格式，无图片时用纯文本
+    let messageContent: string | Array<{ type: string; text?: string; image_url?: { url: string } }>;
+
+    if (imageUrls && imageUrls.length > 0) {
+      // Vision 格式：文本 + 图片
+      const parts: Array<{ type: string; text?: string; image_url?: { url: string } }> = [];
+      parts.push({ type: 'text', text });
+      for (const url of imageUrls) {
+        parts.push({ type: 'image_url', image_url: { url } });
+      }
+      messageContent = parts;
+    } else {
+      messageContent = text;
+    }
 
     // 调 OC Gateway 获取 AI 回复
     const reply = await callGateway(
-      [{ role: "user", content: text }],
+      [{ role: "user", content: messageContent }],
       sessionKey
     );
 

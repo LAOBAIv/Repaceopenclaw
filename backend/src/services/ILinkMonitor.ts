@@ -236,18 +236,40 @@ async function handleIncomingMessage(config: ILinkConfig, msg: any): Promise<voi
   // [2026-05-18] 提取 context_token，回复时必须带回
   const contextToken = msg.context_token || '';
 
-  // 提取文本内容
+  // [2026-05-19] 提取文本和图片内容
   let text = '';
+  const imageUrls: string[] = [];
+
   if (msg.item_list && Array.isArray(msg.item_list)) {
     for (const item of msg.item_list) {
+      // 文本消息 (type=1)
       if (item.type === 1 && item.text_item?.text) {
         text += item.text_item.text;
       }
+      // 图片消息 (type=2 或 type=3)
+      if ((item.type === 2 || item.type === 3) && item.image_item) {
+        try {
+          const base64 = await downloadImageAsBase64(config, item.image_item);
+          if (base64) {
+            imageUrls.push(base64);
+            logger.info(`[iLink] Downloaded image from ${fromUserId.slice(0, 15)}...`);
+          }
+        } catch (e: any) {
+          logger.error(`[iLink] Image download failed: ${e.message}`);
+        }
+      }
     }
   }
-  if (!text) return;
 
-  logger.info(`[iLink] Incoming from ${fromUserId.slice(0, 15)}...: ${text.slice(0, 50)}`);
+  // 没有文本也没有图片，跳过
+  if (!text && imageUrls.length === 0) return;
+
+  // 图片没有文本时，默认提示词
+  if (!text && imageUrls.length > 0) {
+    text = '请分析这张图片';
+  }
+
+  logger.info(`[iLink] Incoming from ${fromUserId.slice(0, 15)}...: text="${text.slice(0, 50)}" images=${imageUrls.length}`);
 
   // [2026-05-18] 获取 typing_ticket 并发送 typing 状态
   let typingTicket = '';
@@ -262,7 +284,7 @@ async function handleIncomingMessage(config: ILinkConfig, msg: any): Promise<voi
   // 调用现有的 wechatIncoming 处理逻辑
   try {
     const { handleILinkMessage } = await import('../routes/wechatIncoming');
-    const reply = await handleILinkMessage(fromUserId, text, msg.create_time_ms);
+    const reply = await handleILinkMessage(fromUserId, text, msg.create_time_ms, imageUrls);
     
     if (reply) {
       await sendMessage(config, fromUserId, reply, contextToken);
