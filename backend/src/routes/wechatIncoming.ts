@@ -37,7 +37,7 @@ const SESSION_PREFIX = "agent:rc-wechat-agent:rc";
  * 接收 OC 微信插件转发的用户消息，调 Gateway 获取回复
  */
 router.post("/", async (req: Request, res: Response) => {
-  const { ilinkUserId, text, messageType, hasImage, timestamp, contextToken, authHeader } = req.body;
+  const { ilinkUserId, text, messageType, hasImage, imageBase64, timestamp, contextToken, authHeader } = req.body;
 
   // [2026-05-16] API Key 验证
   if (!authHeader || authHeader !== INBOUND_API_KEY) {
@@ -230,7 +230,7 @@ function saveMessage(conversationId: string, userId: string, role: string, conte
  * SSE 流式接收，拼接完整回复后返回
  */
 function callGateway(
-  messages: Array<{ role: string; content: string }>,
+  messages: Array<{ role: string; content: string | Array<{ type: string; text?: string; image?: { url: string } }> }>,
   sessionKey: string
 ): Promise<string> {
   return new Promise((resolve, reject) => {

@@ -6,6 +6,7 @@ import { getCurrentUserId, getOrCreateTabId } from "../lib/storageScope";
 // sync 模块按需懒加载,避免循环依赖
 import type { WsSync } from "../lib/sync";
 import type { BroadcastSync } from "../lib/sync";
+import { restoreTabs, isGlobalAssistant as isGlobalAssistantCheck } from "./conversation/tabRestore";
 
 // 平台助手 UUID(DB 真实 id)+ 兼容旧别名
 const PLATFORM_ASSISTANT_IDS = new Set([
@@ -1377,156 +1378,26 @@ export const useConversationStore = create<ConversationStore>()(
       const { useAgentStore } = await import('@/stores/agentStore');
       const agents = useAgentStore.getState().agents;
 
-      // 辅助函数：根据 convId 构建 panel + tab，优先读缓存
-      async function buildPanelAndTab(convId: string, conv?: Conversation) {
-        // [2026-05-19] 优先从 sessionStorage 缓存恢复消息（秒级渲染）
-        let messages: Message[] = [];
-        let usedCache = false;
-        try {
-          const cached = sessionStorage.getItem(`rc:msg-cache:${convId}`);
-          if (cached) {
-            const parsed = JSON.parse(cached);
-            messages = parsed.messages || [];
-            usedCache = true;
-          }
-        } catch {}
-        if (!usedCache) {
-          messages = await conversationsApi.getMessages(convId);
+      // [2026-05-19] 使用拆分后的 tabRestore 模块，一次性加载所有 TAB
+      const result = await restoreTabs(
+        agents,
+        // 缓存更新回调
+        (convId, freshMsgs) => {
+          set((s) => ({
+            openPanels: s.openPanels.map(p =>
+              p.id === convId ? { ...p, messages: freshMsgs } : p
+            ),
+          }));
         }
-        if (!messages || messages.length === 0) return null;
-        const agentId = conv?.currentAgentId || conv?.agentId || conv?.agentIds?.[0] || '';
-        const agent = agents.find(a => a.id === agentId);
-        const agentName = agent?.name || conv?.title || '会话';
-        const agentColor = agent?.color || '#6366f1';
-        const panel: ConversationPanel = {
-          id: convId, conversationId: convId, sessionCode: conv?.sessionCode,
-          agentId: agentId || '', currentAgentCode: conv?.currentAgentCode,
-          agentIds: conv?.agentIds?.length ? conv.agentIds : (agentId ? [agentId] : []),
-          agentName, agentColor, messages, isStreaming: false,
-        };
-        const tab: SessionTab = {
-          id: convId, type: 'session', title: conv?.title || agentName,
-          panelId: convId, color: agentColor, conversationId: convId,
-          sessionCode: conv?.sessionCode, agentId, currentAgentCode: conv?.currentAgentCode, agentName,
-        };
-        // 缓存命中后，后台增量更新消息
-        if (usedCache) {
-          conversationsApi.getMessages(convId).then(freshMsgs => {
-            if (freshMsgs && freshMsgs.length > 0) {
-              set((s) => ({
-                openPanels: s.openPanels.map(p =>
-                  p.id === convId ? { ...p, messages: freshMsgs } : p
-                ),
-              }));
-            }
-          }).catch(() => {});
-        }
-        return { panel, tab };
+      );
+
+      if (result.panels.length > 0) {
+        set({
+          openPanels: result.panels as any,
+          sessionTabs: result.tabs as any,
+          activeTabId: result.activeTabId,
+        });
       }
-
-      // [2026-05-19] 并行获取 active 会话和微信助手，一次性构建完整 TAB 列表
-      const [activeConvs, wechatConv] = await Promise.all([
-        conversationsApi.list(undefined, 'active').catch(() => [] as Conversation[]),
-        conversationsApi.getWechatAssistant().catch(() => null),
-      ]);
-
-      const panels: ConversationPanel[] = [];
-      const tabs: SessionTab[] = [];
-      let activeTabId = '';
-
-      // ① 构建微信助手 Tab（始终在最左侧）
-      if (wechatConv?.id) {
-        const wechatMessages = wechatConv.messages || await conversationsApi.getMessages(wechatConv.id).catch(() => [] as Message[]);
-        const wechatPanel: ConversationPanel = {
-          id: wechatConv.id, conversationId: wechatConv.id,
-          agentId: 'rc-wechat-agent', agentIds: ['rc-wechat-agent'],
-          agentName: '微信助手', agentColor: '#2563eb',
-          messages: wechatMessages || [], isStreaming: false,
-        };
-        const wechatTab: SessionTab = {
-          id: 'wechat', type: 'wechat', title: '微信助手',
-          panelId: wechatConv.id, conversationId: wechatConv.id, color: '#2563eb',
-          agentId: 'rc-wechat-agent', agentName: '微信助手', agentColor: '#2563eb',
-        };
-        panels.push(wechatPanel);
-        tabs.push(wechatTab);
-        
-        // 没有 active 会话时，微信助手就是 active
-        if (!activeConvs.length) {
-          activeTabId = 'wechat';
-          conversationsApi.updateStatus(wechatConv.id, 'active').catch(() => {});
-        }
-      }
-
-      // ② 构建 active 会话 Tab
-      if (activeConvs.length > 0) {
-        const activeConv = activeConvs[0];
-        try {
-          const result = await buildPanelAndTab(activeConv.id, activeConv);
-          if (result) {
-            panels.push(result.panel);
-            tabs.push(result.tab);
-            activeTabId = activeConv.id;
-          }
-        } catch {}
-      }
-
-      // [2026-05-19] 兜底：如果没有找到 active 会话，从 sessionStorage 恢复最后激活的会话
-      if (!activeTabId && !activeConvs.length) {
-        try {
-          const lastActiveConvId = sessionStorage.getItem('rc:last-active-conv');
-          if (lastActiveConvId) {
-            const allConvs = await conversationsApi.list();
-            const lastActiveConv = allConvs.find(c => c.id === lastActiveConvId);
-            if (lastActiveConv) {
-              const result = await buildPanelAndTab(lastActiveConv.id, lastActiveConv);
-              if (result) {
-                // 确保该会话不在 panels/tabs 中
-                if (!panels.some(p => p.id === result.panel.id)) {
-                  panels.push(result.panel);
-                  tabs.push(result.tab);
-                  activeTabId = result.tab.id;
-                  // 标记为 active
-                  conversationsApi.updateStatus(lastActiveConvId, 'active').catch(() => {});
-                }
-              }
-            }
-          }
-        } catch {}
-      }
-
-      // 一次性设置，避免闪烁
-      if (panels.length > 0) {
-        set({ openPanels: panels, sessionTabs: tabs, activeTabId });
-      }
-
-      // [2026-05-19] in_progress 会话批量加载（保持顺序，避免闪烁）
-      setTimeout(async () => {
-        try {
-          const inProgressConvs = await conversationsApi.list(undefined, 'in_progress');
-          const currentState = get();
-          const existingIds = new Set(currentState.sessionTabs.map(t => t.panelId || t.id));
-          
-          // 并行构建所有 panel 和 tab，保持后端返回顺序
-          const results = await Promise.all(
-            inProgressConvs
-              .filter(conv => !existingIds.has(conv.id) && !isGlobalAssistantConversationLike({ 
-                agentId: conv.currentAgentId || conv.agentIds?.[0], 
-                title: conv.title 
-              }))
-              .map(conv => buildPanelAndTab(conv.id, conv).catch(() => null))
-          );
-          
-          // 过滤掉 null 结果，一次性批量设置
-          const validResults = results.filter((r): r is NonNullable<typeof r> => r !== null);
-          if (validResults.length > 0) {
-            set((s) => ({
-              openPanels: [...s.openPanels, ...validResults.map(r => r.panel)],
-              sessionTabs: [...s.sessionTabs, ...validResults.map(r => r.tab)],
-            }));
-          }
-        } catch {}
-      }, 300);
     } finally {
       set({ _restoring: false } as any);
     }

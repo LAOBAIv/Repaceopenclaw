@@ -123,7 +123,7 @@ router.post("/callback", async (req: Request, res: Response) => {
         try {
           const tokenUrl = `https://api.weixin.qq.com/sns/oauth2/access_token?appid=${appId}&secret=${appSecret}&code=${code}&grant_type=authorization_code`;
           const response = await fetch(tokenUrl);
-          const data = await response.json();
+          const data: any = await response.json();
 
           if (data.errcode) {
             throw new Error(data.errmsg || '微信授权失败');
@@ -284,7 +284,7 @@ router.post("/bind", async (req: Request, res: Response) => {
     try {
       const tokenUrl = `https://api.weixin.qq.com/sns/oauth2/access_token?appid=${appId}&secret=${appSecret}&code=${code}&grant_type=authorization_code`;
       const response = await fetch(tokenUrl);
-      const data = await response.json();
+      const data: any = await response.json();
 
       if (data.errcode) {
         return res.status(400).json({ error: data.errmsg || '微信授权失败' });

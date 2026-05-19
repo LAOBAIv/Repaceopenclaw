@@ -153,6 +153,81 @@ async function getConfig(config: ILinkConfig, ilinkUserId: string, contextToken?
   return JSON.parse(resp);
 }
 
+// ── 图片下载工具 ─────────────────────────────────────────────
+/**
+ * [2026-05-19] 下载图片并转换为 base64
+ * 支持 URL 或 media_id
+ */
+async function downloadImageAsBase64(config: ILinkConfig, imageItem: any): Promise<string | null> {
+  try {
+    let imageUrl = '';
+
+    // 优先使用 image_url
+    if (imageItem.image_url) {
+      imageUrl = imageItem.image_url;
+    } else if (imageItem.url) {
+      imageUrl = imageItem.url;
+    }
+    // media_id 需要调用 API 获取 URL
+    else if (imageItem.media_id) {
+      try {
+        const body = JSON.stringify({
+          media_id: imageItem.media_id,
+          base_info: buildBaseInfo(),
+        });
+        const resp = await apiPost(config.baseUrl, 'ilink/bot/getmessage', body, config.token, 10000);
+        const data = JSON.parse(resp);
+        imageUrl = data.url || data.image_url || '';
+      } catch (e) {
+        logger.error('[iLink] Failed to get image URL from media_id');
+      }
+    }
+
+    if (!imageUrl) {
+      logger.warn('[iLink] No image URL found in image_item');
+      return null;
+    }
+
+    // 下载图片
+    return downloadImage(imageUrl);
+  } catch (e) {
+    logger.error('[iLink] Failed to download image');
+    return null;
+  }
+}
+
+/**
+ * [2026-05-19] 从 URL 下载图片并转为 base64
+ */
+function downloadImage(imageUrl: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const urlObj = new URL(imageUrl);
+    const lib = urlObj.protocol === 'https:' ? https : http;
+    const req = lib.get({
+      hostname: urlObj.hostname,
+      port: urlObj.port || (urlObj.protocol === 'https:' ? 443 : 80),
+      path: urlObj.pathname + urlObj.search,
+      timeout: 30000,
+    }, (res) => {
+      if (res.statusCode && res.statusCode >= 400) {
+        reject(new Error('HTTP ' + res.statusCode));
+        return;
+      }
+      const chunks: Buffer[] = [];
+      res.on('data', (chunk: Buffer) => chunks.push(chunk));
+      res.on('end', () => {
+        const buffer = Buffer.concat(chunks);
+        const base64 = buffer.toString('base64');
+        const mimeType = res.headers['content-type'] || 'image/jpeg';
+        resolve('data:' + mimeType + ';base64,' + base64);
+      });
+      res.on('error', reject);
+    });
+    req.on('timeout', () => { req.destroy(); reject(new Error('TIMEOUT')); });
+    req.on('error', reject);
+  });
+}
+
 // ── 消息处理 ──────────────────────────────────────────────────
 async function handleIncomingMessage(config: ILinkConfig, msg: any): Promise<void> {
   const fromUserId = msg.from_user_id;

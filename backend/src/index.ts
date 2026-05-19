@@ -30,6 +30,7 @@ import * as AgentBridge from './services/AgentBridge';
 import { clawBotClient } from './services/ClawBotGatewayClient';
 import { wechatMessageService, loadWechatAccountsFromFile } from './services/WechatMessageService';
 import { wechatSessionSync } from './services/WechatSessionSync';
+import { ILinkMonitor } from './services/ILinkMonitor';
 
 // 环境变量配置
 const PORT = process.env.PORT || 3001;
@@ -70,6 +71,18 @@ async function main(): Promise<void> {
     logger.info('[WechatSessionSync] Started, syncing every 15s');
   } catch (err: any) {
     logger.warn('[WechatSessionSync] Failed to start: ' + err.message);
+  }
+
+  // 1.8 启动 ILinkMonitor 微信消息主动轮询
+  // OC 插件在 RC-MODE 下禁用轮询，由 RC 平台直接轮询 iLink
+  // [2026-05-19] 不用 await，避免网络请求卡住阻塞服务器启动
+  try {
+    ILinkMonitor.start().catch((err: any) => {
+      logger.warn('[ILinkMonitor] Failed to start: ' + err.message);
+    });
+    logger.info('[ILinkMonitor] Starting in background...');
+  } catch (err: any) {
+    logger.warn('[ILinkMonitor] Failed to start: ' + err.message);
   }
 
   // 2. 创建 Express 应用
@@ -173,6 +186,12 @@ async function main(): Promise<void> {
       wechatSessionSync.stop();
     } catch (err: any) {
       logger.warn('[Server] Failed to stop WechatSessionSync during shutdown: ' + err.message);
+    }
+
+    try {
+      ILinkMonitor.stop();
+    } catch (err: any) {
+      logger.warn('[Server] Failed to stop ILinkMonitor during shutdown: ' + err.message);
     }
 
     // 不等待 server.close 回调，避免长连接/SSE 卡住退出

@@ -772,7 +772,9 @@ function backfillBusinessCodes(db: any) {
     let seq = 1;
     for (const msg of msgs) {
       if (!msg.message_code) {
-        db.run("UPDATE messages SET message_code=? WHERE id=?", [IdGenerator.messageCode(conv.session_code, seq), msg.id]);
+        try {
+          db.run("UPDATE messages SET message_code=? WHERE id=?", [IdGenerator.messageCode(conv.session_code, seq), msg.id]);
+        } catch {}
       }
       seq += 1;
     }
