@@ -1054,11 +1054,12 @@ export const useConversationStore = create<ConversationStore>()(
       }));
     }
 
-    // 重新计算激活 Tab:若关闭的是当前激活,切换到相邻 Tab
+    // 重新计算激活 Tab:若关闭的是当前激活,优先切换到左侧相邻 Tab
     let newActiveTabId: string | null = activeTabId;
     if (activeTabId === tabId) {
       const idx = sessionTabs.findIndex(t => t.id === tabId);
-      newActiveTabId = remaining[idx]?.id ?? remaining[idx - 1]?.id ?? '';
+      // [2026-05-19] 用户需求:关闭激活会话时优先激活左侧相邻会话
+      newActiveTabId = remaining[idx - 1]?.id ?? remaining[idx]?.id ?? '';
     }
     set({ sessionTabs: remaining, activeTabId: newActiveTabId, closedSessionIds: newClosedIds, currentAgentId: '' });
 
