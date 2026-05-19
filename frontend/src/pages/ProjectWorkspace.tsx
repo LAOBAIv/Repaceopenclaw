@@ -2287,6 +2287,29 @@ export function ProjectWorkspace() {
     useTaskStore.getState().restoreFromPersist().catch(() => {});
     // Day 2: 项目看板恢复（此前从未调用，刷新后项目看板为空）
     useProjectKanbanStore.getState().restoreFromPersist().catch(() => {});
+
+    // [2026-05-19] 页面卸载前缓存当前 active 会话消息快照
+    const handleBeforeUnload = () => {
+      const state = useConversationStore.getState();
+      const activeTab = state.sessionTabs.find(t => t.id === state.activeTabId);
+      const convId = activeTab?.panelId || activeTab?.conversationId;
+      if (convId) {
+        const panel = state.openPanels.find(p => p.id === convId);
+        if (panel && panel.messages.length > 0) {
+          try {
+            sessionStorage.setItem(`rc:msg-cache:${convId}`, JSON.stringify({
+              messages: panel.messages.slice(-50),
+              agentId: panel.agentId,
+              agentName: panel.agentName,
+              agentColor: panel.agentColor,
+              sessionCode: panel.sessionCode,
+            }));
+          } catch {}
+        }
+      }
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -3031,7 +3054,7 @@ export function ProjectWorkspace() {
                     }} />
                   )}
 
-                  {editingTabId === tab.id ? (
+                  {editingTabId === tab.id && tab.type !== 'wechat' ? (
                     <input
                       type="text"
                       value={editingTabTitle}
@@ -3055,13 +3078,15 @@ export function ProjectWorkspace() {
                   ) : (
                     <span
                       onDoubleClick={(e) => {
+                        // [2026-05-19] 微信助手标题不允许修改
+                        if (tab.type === 'wechat') return;
                         e.stopPropagation();
                         setEditingTabId(tab.id);
                         setEditingTabTitle(tab.title);
                       }}
                       className="workspace-tab-title"
                       style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 160 }}
-                      title="双击重命名"
+                      title={tab.type === 'wechat' ? '' : '双击重命名'}
                     >{tab.title}</span>
                   )}
                   {tab.type !== 'home' && tab.id !== 'wechat' && (

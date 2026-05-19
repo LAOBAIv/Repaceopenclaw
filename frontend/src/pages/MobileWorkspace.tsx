@@ -548,7 +548,7 @@ export function MobileWorkspace() {
                   )}
                 </button>
               )}
-              {renamingTabId !== tab.id && (
+              {renamingTabId !== tab.id && tab.type !== 'wechat' && (
                 <div style={{ display: 'flex', gap: 4 }}>
                   <button
                     onClick={() => handleStartRename(tab.id, tab.title)}

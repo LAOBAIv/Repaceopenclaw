@@ -70,6 +70,7 @@ export function AuthPage() {
       // zustand persist 的 name 在模块加载时执行一次，不会随登录动态更新
       // 必须清理后刷新，让新用户的 key 生效
       clearUserData();
+      // [2026-05-19] 不再依赖 localStorage 恢复会话，改用后端 active 状态
       clearAllRcStorage();
       // 强制刷新页面，store 用新用户的 auth 重新初始化
       window.location.replace(fromPath);

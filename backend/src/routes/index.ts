@@ -34,6 +34,7 @@ import sessionsRoutes from './sessions';
 import wechatClawBotRoutes from './wechatClawBot';
 import wechatRoutes from './wechat';
 import wechatIncomingRoutes from './wechatIncoming'; // [2026-05-16] OC 微信插件 RC-proxy 入口
+import authWechatRoutes from './authWechat'; // [2026-05-19] 微信扫码登录
 
 // 路由配置项
 interface RouteConfig {
@@ -73,6 +74,8 @@ const apiRoutes: RouteConfig[] = [
   { path: '/wechat', router: wechatRoutes },
   // [2026-05-16] OC 微信插件 incoming 端点（无需用户认证，用 API Key）
   { path: '/wechat-incoming', router: wechatIncomingRoutes },
+  // [2026-05-19] 微信扫码登录（无需认证）
+  { path: '/auth/wechat', router: authWechatRoutes },
 ];
 
 // 外部兼容路由列表（不使用 /api 前缀）

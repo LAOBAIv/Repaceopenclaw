@@ -917,18 +917,8 @@ export const useConversationStore = create<ConversationStore>()(
       // 如果已存在,直接添加到 normalTabs
       normalTabs.unshift({ ...wechatTabFromState, type: 'wechat' as const });
     } else {
-      // 如果不存在,创建一个默认的微信助手 tab
-      const wechatTab = {
-        id: 'wechat',
-        type: 'wechat' as const,
-        title: '微信助手',
-        conversationId: 'wechat-assistant', // 占位符,用户点击后会被真实 conv.id 覆盖
-        agentId: 'rc-wechat-agent',
-        agentName: '微信助手',
-        agentColor: '#2563eb',
-        panelId: null, // 用户点击后会被真实 panelId 覆盖
-      };
-      normalTabs.unshift(wechatTab);
+      // [2026-05-19] 不用占位符，等 restoreFromPersist 完成后自然有真实 UUID 的 wechat Tab
+      // 如果还没初始化完，不显示微信助手 Tab
     }
 
     return normalTabs;
@@ -937,16 +927,30 @@ export const useConversationStore = create<ConversationStore>()(
   /** 切换激活 Tab */
   switchTab: (tabId) => {
     set({ activeTabId: tabId });
-    // [2026-05-18] 同步更新 localStorage，确保重新登录能恢复
+    // [2026-05-19] 切换时把激活会话标记为 active，后端自动把其他 active 降为 in_progress
     const state = get();
-    const openConvIds = state.sessionTabs
-      .filter(t => t.panelId && t.id !== 'home' && t.id !== 'wechat')
-      .map(t => t.panelId || t.conversationId);
     const activeTab = state.sessionTabs.find(t => t.id === tabId);
-    localStorage.setItem('rc:last-session-state', JSON.stringify({
-      activeConvId: activeTab?.panelId || activeTab?.conversationId || '',
-      openConvIds,
-    }));
+    const activeConvId = activeTab?.panelId || activeTab?.conversationId || '';
+    // 只要是真实 UUID 就记录 active，排除占位符和本地面板
+    if (activeConvId && activeConvId !== 'wechat-assistant' && !activeConvId.startsWith('local-')) {
+      conversationsApi.updateStatus(activeConvId, 'active').catch(() => {});
+    }
+    // [2026-05-19] 缓存当前激活会话的消息快照到 sessionStorage，刷新时秒级恢复
+    if (activeConvId) {
+      const panel = state.openPanels.find(p => p.id === activeConvId);
+      if (panel && panel.messages.length > 0) {
+        try {
+          const snapshot = JSON.stringify({
+            messages: panel.messages.slice(-50), // 只缓存最近 50 条
+            agentId: panel.agentId,
+            agentName: panel.agentName,
+            agentColor: panel.agentColor,
+            sessionCode: panel.sessionCode,
+          });
+          sessionStorage.setItem(`rc:msg-cache:${activeConvId}`, snapshot);
+        } catch {}
+      }
+    }
   },
 
   /**
@@ -1028,16 +1032,16 @@ export const useConversationStore = create<ConversationStore>()(
     const tab = sessionTabs.find(t => t.id === tabId);
     if (!tab) return;
     // 所有 tab 均可关闭
-    // 记录已关闭的会话 ID(刷新后不再恢复)
+    // [2026-05-19] 彻底删除：从 closedSessionIds 中移除（后端已通过 API 标记 closed，前端不再冗余记忆）
     const convId = tab.panelId || tab.conversationId || tab.id;
-    const newClosedIds = !closedSessionIds.includes(convId)
-      ? [...closedSessionIds, convId]
-      : closedSessionIds;
+    const newClosedIds = closedSessionIds.filter(id => id !== convId);
 
     // [2026-05-18] 调后端 API 标记会话为 closed，重新登录后不再出现
     if (convId && convId !== 'home') {
       conversationsApi.updateStatus(convId, 'closed').catch(() => {});
     }
+    // [2026-05-19] 清除关闭会话的消息缓存
+    try { sessionStorage.removeItem(`rc:msg-cache:${convId}`); } catch {}
 
     const remaining = sessionTabs.filter(t => t.id !== tabId);
 
@@ -1065,6 +1069,8 @@ export const useConversationStore = create<ConversationStore>()(
 
   /** 重命名 Tab */
   renameTab: (tabId, newTitle) => {
+    // [2026-05-19] 微信助手标题不允许修改
+    if (tabId === 'wechat') return;
     const targetTab = get().sessionTabs.find(t => t.id === tabId);
     set(s => ({
       sessionTabs: s.sessionTabs.map(t =>
@@ -1295,9 +1301,8 @@ export const useConversationStore = create<ConversationStore>()(
   /** 永久关闭指定会话(不通过 UI 关闭,直接标记为已关闭) */
   permanentlyCloseSession: (conversationId) => {
     const { closedSessionIds, sessionTabs, activeTabId, openPanels } = get();
-    const newClosedIds = closedSessionIds.includes(conversationId)
-      ? closedSessionIds
-      : [...closedSessionIds, conversationId];
+    // [2026-05-19] 彻底删除：从 closedSessionIds 中移除（后端已标记，前端不再冗余记忆）
+    const newClosedIds = closedSessionIds.filter(id => id !== conversationId);
 
     const relatedTabs = sessionTabs.filter((t) =>
       t.conversationId === conversationId || t.panelId === conversationId || t.id === conversationId
@@ -1359,333 +1364,122 @@ export const useConversationStore = create<ConversationStore>()(
     });
     set({ sessionTabs: updated });
   },
-
-  /**
-   * 刷新后从 persist 恢复会话状态
-   *
-   * Day 2 改造后恢复策略:
-   * 1) 从 sessionStorage 恢复 sessionTabs(UI 布局,秒级)
-   * 2) 对每个 tab 调 API 拉取 messages → 在内存中重建 openPanels
-   * 3) 不再依赖 persisted openPanels 快照(已移除持久化)
-   *
-   * ⚠️ 历史回归 BUG:
-   * - 2026-04-13:restoreFromPersist 只恢复 sessionTabs 不恢复 openPanels → Panel/消息全丢
-   * - 2026-04-29:只恢复 sessionTabs 不恢复 openPanels → 刷新后 Tab 在但 Panel 空
-   * - 2026-05-01:第二优先/兜底路径为 API 返回的每个会话都创建 tab → 新用户看到一堆空 tab
-   * - 2026-05-05:Day 2 改造:openPanels 不再持久化,改为 API 重建
-   * - 2026-05-06:第一优先分支只要看到 persistedTabs 就直接 return,
-   *               即使这些 tabs 全部恢复失败/被过滤,也不会继续走 API 回补,
-   *               表现为"刷新后会话全丢"。
-   */
+  // [2026-05-19] 恢复会话：后端 DB status 为唯一真相源
+  // ① 同步加载 active ② 没有则同步加载第一个 in_progress 并标记 active
+  // ③ 剩余 in_progress 异步加载 ④ 微信助手始终存在
   restoreFromPersist: async () => {
-    // [2026-05-18] 防重入锁，避免多次调用导致死循环
     if ((get() as any)._restoring) return;
     set({ _restoring: true } as any);
     try {
-    const { sessionTabs: persistedTabs, activeTabId: persistedActiveId, closedSessionIds } = get();
+      const { useAgentStore } = await import('@/stores/agentStore');
+      const agents = useAgentStore.getState().agents;
 
-    // ━━━ 第一优先:从 sessionStorage 恢复 sessionTabs(UI 布局)━━━━━━━━━━
-    // Day 2 改造后:openPanels 不再持久化,这里只做两件事:
-    //   1) 恢复 sessionTabs + activeTabId(秒级 UI 恢复)
-    //   2) 对每个 tab 调 API 重建 openPanels(后台异步)
-    if (persistedTabs && persistedTabs.length > 0) {
-      const restoredPanels: ConversationPanel[] = [];
-      const restoredTabs: SessionTab[] = [];
-      // 允许同一会话恢复多个 tab,但 panel 只恢复一份并复用
-      const panelCache = new Map<string, ConversationPanel>();
-      for (const tab of persistedTabs) {
-        // 🔧 Bug修复 (2026-05-12): 微信助手 Tab 的 panelId 可能为 null(占位符状态)
-        // 根因: 微信助手 Tab 初始 panelId=null,用户点击后才绑定真实 UUID
-        //       但如果用户刷新时 panelId 已经被绑定为真实 UUID,则正常恢复
-        //       如果 panelId 仍为 null,则跳过此 Tab,由初始化逻辑单独处理
-        if (!tab.panelId) {
-          // [2026-05-18] 微信助手 panelId 为空时直接调 API 获取真实 ID
-          if (tab.id === 'wechat') {
-            try {
-              const conv = await conversationsApi.getWechatAssistant();
-              if (conv?.id) {
-                restoredTabs.push({ ...tab, type: 'wechat' as const, panelId: conv.id, conversationId: conv.id });
-              } else {
-                restoredTabs.push({ ...tab, type: 'wechat' as const, panelId: null });
-              }
-            } catch {
-              restoredTabs.push({ ...tab, type: 'wechat' as const, panelId: null });
-            }
+      // 辅助函数：根据 convId 构建 panel + tab，优先读缓存
+      async function buildPanelAndTab(convId: string, conv?: Conversation) {
+        // [2026-05-19] 优先从 sessionStorage 缓存恢复消息（秒级渲染）
+        let messages: Message[] = [];
+        let usedCache = false;
+        try {
+          const cached = sessionStorage.getItem(`rc:msg-cache:${convId}`);
+          if (cached) {
+            const parsed = JSON.parse(cached);
+            messages = parsed.messages || [];
+            usedCache = true;
           }
-          continue;
+        } catch {}
+        if (!usedCache) {
+          messages = await conversationsApi.getMessages(convId);
         }
-        // 平台助手是独立入口服务,不参与工作台 tab 恢复。
-        if (isPlatformAssistantAgent(tab.agentId)) continue;
-        // 跳过本地面板(API 不可用时创建的临时面板)
-        if (tab.panelId.startsWith('local-')) continue;
-        // ⚠️ 关键业务规则:如果一个会话已经重新出现在 persistedTabs 里,
-        // 说明它当前是"打开状态",此时 persistedTabs 的事实优先级高于 closedSessionIds。
-        // 否则会出现这种回归:用户曾关闭过某会话 -> 又重新打开并继续使用 ->
-        // 刷新时仍被 closedSessionIds 误判为"应隐藏",表现为会话再次丢失。
-        // 🔧 关键修复 (2026-05-12):convId 优先用 panelId,防止 conversationId 为占位符(如 'wechat-assistant')
-        // 根因:bindPanelToTab 此前只更新 panelId,conversationId 仍为初始占位符
-        // 新逻辑:panelId 是真实 UUID 时优先使用,conversationId 仅作兜底
-        const convId = (tab.panelId && !tab.panelId.startsWith('local-')) ? tab.panelId : (tab.conversationId || tab.id);
-
-        let panel = panelCache.get(convId);
-        if (!panel) {
-          // Day 2:不再依赖 persistedPanel,面板完全由 API 数据 + tab 元数据构建
-          let conv: Conversation | undefined;
-          let messages: Message[] = [];
-
-          // 🔧 关键修复 (2026-05-12): 特殊处理微信助手会话
-          if (convId === 'wechat-assistant') {
-            // 微信助手需要通过专用 API 获取真实会话
-            try {
-              const { conversationsApi } = await import('@/api/conversations');
-              const wechatConv = await conversationsApi.getWechatAssistant();
-              messages = wechatConv.messages || [];
-              conv = wechatConv;
-            } catch (err) {
-              console.warn('[restoreFromPersist] 微信助手会话获取失败:', err);
-              // API 不可用时,用 tab 元数据创建最小面板(无消息)
-              messages = [];
+        if (!messages || messages.length === 0) return null;
+        const agentId = conv?.currentAgentId || conv?.agentId || conv?.agentIds?.[0] || '';
+        const agent = agents.find(a => a.id === agentId);
+        const agentName = agent?.name || conv?.title || '会话';
+        const agentColor = agent?.color || '#6366f1';
+        const panel: ConversationPanel = {
+          id: convId, conversationId: convId, sessionCode: conv?.sessionCode,
+          agentId: agentId || '', currentAgentCode: conv?.currentAgentCode,
+          agentIds: conv?.agentIds?.length ? conv.agentIds : (agentId ? [agentId] : []),
+          agentName, agentColor, messages, isStreaming: false,
+        };
+        const tab: SessionTab = {
+          id: convId, type: 'session', title: conv?.title || agentName,
+          panelId: convId, color: agentColor, conversationId: convId,
+          sessionCode: conv?.sessionCode, agentId, currentAgentCode: conv?.currentAgentCode, agentName,
+        };
+        // 缓存命中后，后台增量更新消息
+        if (usedCache) {
+          conversationsApi.getMessages(convId).then(freshMsgs => {
+            if (freshMsgs && freshMsgs.length > 0) {
+              set((s) => ({
+                openPanels: s.openPanels.map(p =>
+                  p.id === convId ? { ...p, messages: freshMsgs } : p
+                ),
+              }));
             }
-          } else {
-            // 普通会话:通过标准 API 获取消息
-            try {
-              messages = await conversationsApi.getMessages(convId);
+          }).catch(() => {});
+        }
+        return { panel, tab };
+      }
 
-              // 尝试获取会话详情
-              try {
-                const convList = await conversationsApi.list();
-                conv = convList.find((c) => c.id === convId);
-              } catch {}
-            } catch (err) {
-              // 会话已被后端删除时,不能再恢复成本地空 panel,
-              // 否则刷新后这个失效会话会永久残留,并持续触发 404。
-              if (isConversationNotFoundError(err)) {
-                get().permanentlyCloseSession(convId);
-                continue;
-              }
-              // API 不可用时,用 tab 元数据创建最小面板(无消息)
-              messages = [];
-            }
+      // ① 同步加载 active 会话（第一优先级）
+      const activeConvs = await conversationsApi.list(undefined, 'active');
+      let hasActive = false;
+      if (activeConvs.length > 0) {
+        const activeConv = activeConvs[0];
+        try {
+          const result = await buildPanelAndTab(activeConv.id, activeConv);
+          if (result) {
+            set({ openPanels: [result.panel], sessionTabs: [result.tab], activeTabId: activeConv.id });
+            hasActive = true;
           }
+        } catch {}
+      }
 
-          // 构建面板
-          const agentId = resolveConversationCurrentAgent(conv, tab.agentId || '');
-          const agentIds = resolveConversationAgentIds(conv, agentId ? [agentId] : []);
+      // 没有 active 时，微信助手就是 active
+      if (!hasActive) {
+        try {
+          const conv = await conversationsApi.getWechatAssistant();
+          if (conv?.id) {
+            const messages = await conversationsApi.getMessages(conv.id).catch(() => [] as Message[]);
+            const panel: ConversationPanel = {
+              id: conv.id, conversationId: conv.id,
+              agentId: 'rc-wechat-agent', agentIds: ['rc-wechat-agent'],
+              agentName: '微信助手', agentColor: '#2563eb',
+              messages: messages || [], isStreaming: false,
+            };
+            const tab: SessionTab = {
+              id: 'wechat', type: 'wechat', title: '微信助手',
+              panelId: conv.id, conversationId: conv.id, color: '#2563eb',
+              agentId: 'rc-wechat-agent', agentName: '微信助手', agentColor: '#2563eb',
+            };
+            set({ openPanels: [panel], sessionTabs: [tab], activeTabId: 'wechat' });
+            conversationsApi.updateStatus(conv.id, 'active').catch(() => {});
+            hasActive = true;
+          }
+        } catch {}
+      }
 
-          // ⚠️ 防回归:agentName 只能来自 agent 元数据/已持久化的 agentName,
-          // 绝不能再从 tab.title 回填。
-          // 根因:title 是"会话标题",不是"智能体名称"。
-          // 一旦混用,用户改过会话标题或恢复旧 tab 后,UI 会表现成"智能体名字被改了"。
-          let agentName = tab.agentName || '智能体';
-          let agentColor = tab.color || tab.agentColor || '#9ca3af';
-          if (agentId) {
+      // [2026-05-19] in_progress 会话异步加载为 Tab（打开但未激活的会话）
+      setTimeout(async () => {
+        try {
+          const inProgressConvs = await conversationsApi.list(undefined, 'in_progress');
+          const currentState = get();
+          const existingIds = new Set(currentState.sessionTabs.map(t => t.panelId || t.id));
+          for (const conv of inProgressConvs) {
+            if (existingIds.has(conv.id)) continue;
+            if (isGlobalAssistantConversationLike({ agentId: conv.currentAgentId || conv.agentIds?.[0], title: conv.title })) continue;
             try {
-              const { useAgentStore } = await import('@/stores/agentStore');
-              const agent = useAgentStore.getState().agents.find(a => a.id === agentId);
-              if (agent) {
-                agentName = agent.name;
-                agentColor = agent.color || tab.color || '#9ca3af';
+              const result = await buildPanelAndTab(conv.id, conv);
+              if (result) {
+                set((s) => ({
+                  openPanels: [...s.openPanels, result.panel],
+                  sessionTabs: [...s.sessionTabs, result.tab],
+                }));
               }
             } catch {}
           }
-
-          panel = {
-            id: tab.panelId,
-            conversationId: convId,
-            sessionCode: conv?.sessionCode,
-            agentId: agentId || tab.agentId || '',
-            currentAgentCode: conv?.currentAgentCode || tab.currentAgentCode,
-            agentIds: agentIds?.length ? agentIds : (tab.agentId ? [tab.agentId] : []),
-            agentName: agentName || tab.agentName || '智能体',
-            agentColor: agentColor || tab.color || tab.agentColor || '#9ca3af',
-            messages: messages?.length ? messages : [],
-            isStreaming: false,
-          };
-
-          panelCache.set(convId, panel);
-          restoredPanels.push(panel);
-        }
-
-        // ⚠️ 防回归:restoredTabs 的 agentName 也要从 agent store 查,不能只依赖 tab/panel.agentName
-        // 注意:useAgentStore 需要动态导入,因为 try 块里的 import 作用域不覆盖此处
-        let finalAgentName = tab.agentName || panel.agentName;
-        let finalAgentColor = tab.agentColor || panel.agentColor;
-        const finalAgentId = tab.agentId || panel.agentId;
-        if (finalAgentId && (finalAgentName === '智能体' || !finalAgentName)) {
-          try {
-            const { useAgentStore } = await import('@/stores/agentStore');
-            const agent = useAgentStore.getState().agents.find(a => a.id === finalAgentId);
-            if (agent) {
-              finalAgentName = agent.name;
-              finalAgentColor = agent.color;
-            }
-          } catch {}
-        }
-
-        // 🔧 关键修复 (2026-05-12): 确保微信助手Tab的conversationId为真实ID
-        let finalConversationId = convId;
-        if (convId === 'wechat-assistant') {
-          // 对于微信助手占位符ID,需要通过专用API获取真实ID
-          try {
-            const { conversationsApi } = await import('@/api/conversations');
-            const wechatConv = await conversationsApi.getWechatAssistant();
-            finalConversationId = wechatConv.id;
-
-            // 同时更新panel的conversationId和messages
-            const updatedPanel = {
-              ...panel,
-              conversationId: wechatConv.id,
-              messages: wechatConv.messages || [],
-            };
-
-            // 更新openPanels中的对应面板
-            set((s) => ({
-              openPanels: s.openPanels.map(p => p.id === panel.id ? updatedPanel : p),
-            }));
-          } catch (err) {
-            console.warn('[restoreFromPersist] 无法获取微信助手真实ID:', err);
-            // 如果API失败,保留原始ID
-            finalConversationId = convId;
-          }
-        }
-
-        restoredTabs.push({
-          ...tab,
-          type: tab.type || 'session',
-          panelId: panel.id,
-          conversationId: finalConversationId, // 使用修正后的conversationId
-          sessionCode: tab.sessionCode || panel.sessionCode,
-          agentId: finalAgentId,
-          currentAgentCode: tab.currentAgentCode || panel.currentAgentCode,
-          agentName: finalAgentName,
-          agentColor: finalAgentColor,
-        });
-      }
-      // 关键修复:不能因为"persistedTabs 数组非空"就盲目 return。
-      // 如果这些 tab 在恢复过程中全部被跳过/恢复失败,必须继续走后面的 API 回补分支,
-      // 否则刷新后会看到整个工作区会话全丢。
-      if (restoredTabs.length > 0) {
-        set((state) => {
-          // Day 2:不再合并 persistedPanels,只合并当前内存中已有的 panels
-          const mergedPanels = [...restoredPanels];
-          for (const p of state.openPanels) {
-            if (!mergedPanels.some(x => x.id === p.id)) mergedPanels.push(p);
-          }
-          const mergedTabs = [...restoredTabs];
-          for (const t of state.sessionTabs) {
-            if (!mergedTabs.some(x => x.id === t.id)) mergedTabs.push(t);
-          }
-          return {
-            openPanels: mergedPanels,
-            sessionTabs: mergedTabs,
-            activeTabId: state.activeTabId || persistedActiveId || (mergedTabs.length > 0 ? mergedTabs[0].id : null),
-          };
-        });
-        // 🔧 关键修复 (2026-05-12): 即使已恢复部分tabs,也要确保微信助手Tab存在
-        const { sessionTabs: currentTabs } = get();
-        const hasWechat = currentTabs.some(t => t.id === 'wechat');
-        if (!hasWechat) {
-          // [2026-05-18] 直接获取真实 panelId
-          let wPanelId: string | null = null;
-          try {
-            const conv = await conversationsApi.getWechatAssistant();
-            if (conv?.id) wPanelId = conv.id;
-          } catch {}
-          set((state) => ({
-            sessionTabs: [
-              ...state.sessionTabs,
-              {
-                id: 'wechat',
-                type: 'wechat' as const,
-                title: '微信助手',
-                conversationId: wPanelId || 'wechat-assistant',
-                agentId: 'rc-wechat-agent',
-                agentName: '微信助手',
-                agentColor: '#2563eb',
-                panelId: wPanelId,
-              },
-            ],
-          }));
-        }
-        return;
-      }
-    }
-
-    // [2026-05-18] 登录时恢复退出前的会话：先同步加载激活会话，再异步加载其他
-    try {
-      const raw = localStorage.getItem('rc:last-session-state');
-      // 兼容旧格式
-      const oldKey = localStorage.getItem('rc:last-active-conversation');
-      let activeConvId = '';
-      let openConvIds: string[] = [];
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        activeConvId = parsed.activeConvId || '';
-        openConvIds = parsed.openConvIds || [];
-      } else if (oldKey) {
-        activeConvId = oldKey;
-        openConvIds = [oldKey];
-      }
-
-      if (activeConvId || openConvIds.length > 0) {
-        const { useAgentStore } = await import('@/stores/agentStore');
-        const agents = useAgentStore.getState().agents;
-        // 会话列表只调一次
-        let convList: Conversation[] = [];
-        try { convList = await conversationsApi.list(); } catch {}
-
-        // 辅助函数：根据 convId 构建 panel + tab
-        async function buildPanelAndTab(convId: string) {
-          const messages = await conversationsApi.getMessages(convId);
-          if (!messages || messages.length === 0) return null;
-          const conv = convList.find(c => c.id === convId);
-          const agentId = conv?.currentAgentId || conv?.agentId || conv?.agentIds?.[0] || '';
-          const agent = agents.find(a => a.id === agentId);
-          const agentName = agent?.name || conv?.title || '会话';
-          const agentColor = agent?.color || '#6366f1';
-          const panel: ConversationPanel = {
-            id: convId, conversationId: convId, sessionCode: conv?.sessionCode,
-            agentId: agentId || '', currentAgentCode: conv?.currentAgentCode,
-            agentIds: conv?.agentIds?.length ? conv.agentIds : (agentId ? [agentId] : []),
-            agentName, agentColor, messages, isStreaming: false,
-          };
-          const tab: SessionTab = {
-            id: convId, type: 'session', title: conv?.title || agentName,
-            panelId: convId, color: agentColor, conversationId: convId,
-            sessionCode: conv?.sessionCode, agentId, currentAgentCode: conv?.currentAgentCode, agentName,
-          };
-          return { panel, tab };
-        }
-
-        // ① 同步加载激活会话
-        if (activeConvId) {
-          try {
-            const result = await buildPanelAndTab(activeConvId);
-            if (result) {
-              set({ openPanels: [result.panel], sessionTabs: [result.tab], activeTabId: activeConvId });
-            }
-          } catch {}
-        }
-
-        // ② 异步加载其他非激活会话
-        const otherIds = openConvIds.filter(id => id !== activeConvId);
-        if (otherIds.length > 0) {
-          setTimeout(async () => {
-            for (const convId of otherIds) {
-              try {
-                const result = await buildPanelAndTab(convId);
-                if (result) {
-                  set((s) => ({
-                    openPanels: [...s.openPanels, result.panel],
-                    sessionTabs: [...s.sessionTabs, result.tab],
-                  }));
-                }
-              } catch {}
-            }
-          }, 500);
-        }
-      }
-    } catch {}
+        } catch {}
+      }, 500);
     // ━━━ 收尾:确保微信助手 Tab 始终存在，直接拿真实 ID ━━━━━━━━━━
     const { sessionTabs: finalTabs } = get();
     const hasWechat = finalTabs.some(t => t.id === 'wechat');
@@ -1712,22 +1506,25 @@ export const useConversationStore = create<ConversationStore>()(
         isStreaming: false,
       } : null;
 
-      set((state) => ({
-        openPanels: wechatPanel ? [...state.openPanels, wechatPanel] : state.openPanels,
-        sessionTabs: [
-          ...state.sessionTabs,
-          {
-            id: 'wechat',
-            type: 'wechat' as const,
-            title: '微信助手',
-            conversationId: wechatPanelId || 'wechat-assistant',
-            agentId: 'rc-wechat-agent',
-            agentName: '微信助手',
-            agentColor: '#2563eb',
-            panelId: wechatPanelId,
-          },
-        ],
-      }));
+      // [2026-05-19] 只有拿到真实 UUID 才创建 wechat Tab，不用占位符
+      if (wechatPanelId) {
+        set((state) => ({
+          openPanels: wechatPanel ? [...state.openPanels, wechatPanel] : state.openPanels,
+          sessionTabs: [
+            ...state.sessionTabs,
+            {
+              id: 'wechat',
+              type: 'wechat' as const,
+              title: '微信助手',
+              conversationId: wechatPanelId,
+              agentId: 'rc-wechat-agent',
+              agentName: '微信助手',
+              agentColor: '#2563eb',
+              panelId: wechatPanelId,
+            },
+          ],
+        }));
+      }
     }
     } finally {
       set({ _restoring: false } as any);
@@ -1741,11 +1538,10 @@ export const useConversationStore = create<ConversationStore>()(
     // - 迁移到 sessionStorage,配合 Day 1 auth tab 隔离
     // - 关键修复(2026-05-06):不能在模块初始化时把 key 固定成 anonymous
     name: CONV_STORE_BASENAME,
-    version: 5, // 版本升级:移除 openPanels 持久化,业务数据改由 API 重建
+    version: 6, // [2026-05-19] 不再持久化 sessionTabs，强制重置旧数据
     storage: createJSONStorage(() => convPersistStorage),
     migrate: (persistedState: any, version: number) => {
-      // 无条件重置:v4→v5 移除了 openPanels 持久化,旧数据完全不兼容
-      // 同时兼容 v4 及更旧版本的全量 reset
+      // v5→v6: 不再持久化，全量重置
       return {
         sessionTabs: [],
         activeTabId: '',
@@ -1757,15 +1553,8 @@ export const useConversationStore = create<ConversationStore>()(
     // Day 2 改造:只持久化 UI 状态,不持久化业务数据
     // - sessionTabs: 用户打开的 Tab 列表(UI 布局)
     // - activeTabId: 当前激活的 Tab(UI 状态)
-    // - closedSessionIds: 用户关闭的会话(UI 偏好)
-    // - currentAgentId: 当前会话 Agent(可从 activeTab 推导,保留用于快速读取)
-    // - openPanels: ❌ 不再持久化,含 messages 是后端业务真相,刷新后从 API 重建
-    partialize: (state) => ({
-      sessionTabs: state.sessionTabs,
-      activeTabId: state.activeTabId,
-      closedSessionIds: state.closedSessionIds,
-      currentAgentId: state.currentAgentId,
-    }),
+    // [2026-05-19] 不再持久化 sessionTabs，会话状态完全由后端 DB 决定
+    partialize: () => ({}),
   }
 )
 );

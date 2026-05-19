@@ -33,20 +33,9 @@ export const useAuthStore = create<AuthStore>()(
       },
 
       logout: () => {
-        // [2026-05-18] 退出前记录所有打开的会话 + 激活会话，登录时恢复
+        // [2026-05-19] 退出时清空前端状态，不再写 localStorage（改用后端 active 状态恢复）
         try {
           const { useConversationStore } = require('../stores/conversationStore');
-          const state = useConversationStore.getState();
-          const activeTab = state.sessionTabs.find((t: any) => t.id === state.activeTabId);
-          const activeConvId = activeTab?.panelId || activeTab?.conversationId || '';
-          // 收集所有有效会话 tab 的 ID
-          const openConvIds = state.sessionTabs
-            .filter((t: any) => t.panelId && t.id !== 'home' && t.id !== 'wechat' && t.panelId !== 'wechat-assistant')
-            .map((t: any) => t.panelId || t.conversationId);
-          localStorage.setItem('rc:last-session-state', JSON.stringify({
-            activeConvId: activeConvId || '',
-            openConvIds: openConvIds || [],
-          }));
           useConversationStore.setState({
             openPanels: [],
             sessionTabs: [],

@@ -143,7 +143,7 @@ function resolveBusinessAgentId(agentId: string): string {
 }
 
 export const ConversationService = {
-  list(userId?: string, projectId?: string): Conversation[] {
+  list(userId?: string, projectId?: string, status?: string): Conversation[] {
     const db = getDb();
     let sql = "SELECT * FROM conversations";
     const params: any[] = [];
@@ -156,8 +156,19 @@ export const ConversationService = {
       conditions.push("project_id = ?");
       params.push(projectId);
     }
-    // [2026-05-18] 过滤已关闭和已删除的会话，前端只显示有效会话
-    conditions.push("status NOT IN ('closed', 'deleted')");
+    // [2026-05-19] 支持按状态筛选，默认返回进行中的会话（active + in_progress）
+    if (status === 'in_progress') {
+      // 进行中 = active + in_progress
+      conditions.push("status IN ('active', 'in_progress')");
+    } else if (status === 'active') {
+      conditions.push("status = 'active'");
+    } else if (status && ['closed', 'deleted'].includes(status)) {
+      conditions.push("status = ?");
+      params.push(status);
+    } else {
+      // 默认：排除已关闭和已删除
+      conditions.push("status NOT IN ('closed', 'deleted')");
+    }
     if (conditions.length) {
       sql += " WHERE " + conditions.join(" AND ");
     }
@@ -377,7 +388,9 @@ export const ConversationService = {
     const existing = db.exec("SELECT id FROM conversations WHERE id=?", [id]);
     if (!existing.length || !existing[0].values.length) return false;
 
-    // sql.js 的 db.run() 不返回 changes,用 getRowsModified() 确认
+    // [2026-05-19] 彻底删除：先删消息，再删会话
+    db.run("DELETE FROM messages WHERE conversation_id=?", [id]);
+    db.run("DELETE FROM conversation_agents WHERE conversation_id=?", [id]);
     db.run("DELETE FROM conversations WHERE id=?", [id]);
     const changes = db.getRowsModified();
     saveDb();
@@ -442,12 +455,17 @@ export const ConversationService = {
   },
 
   /**
-   * 更新会话状态：in_progress | completed | archived
+   * 更新会话状态
+   * [2026-05-19] 新增 active 状态：设为 active 时自动把同用户其他 active 会话降为 in_progress
    */
-  updateStatus(id: string, status: 'in_progress' | 'completed' | 'archived' | 'deleted' | 'closed'): Conversation | null {
+  updateStatus(id: string, status: 'active' | 'in_progress' | 'completed' | 'archived' | 'deleted' | 'closed'): Conversation | null {
     const db = getDb();
     const existing = this.getById(id);
     if (!existing) return null;
+    // 设为 active 时，先把同用户其他 active 会话降为 in_progress
+    if (status === 'active' && existing.userId) {
+      db.run("UPDATE conversations SET status='in_progress' WHERE user_id=? AND status='active' AND id!=?", [existing.userId, id]);
+    }
     db.run("UPDATE conversations SET status=? WHERE id=?", [status, id]);
     saveDb();
     return this.getById(id);

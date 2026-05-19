@@ -79,7 +79,11 @@ const CreateConvSchema = z.object({
 router.get("/", (req: Request, res: Response) => {
   const userId = (req as any).user?.id;
   const projectId = req.query.projectId as string | undefined;
-  res.json({ data: ConversationService.list(userId, projectId) });
+  const status = req.query.status as string | undefined;
+  console.log(`[conversations.list] userId=${userId} status=${status} projectId=${projectId}`);
+  const data = ConversationService.list(userId, projectId, status);
+  console.log(`[conversations.list] returned ${data.length} items: ${data.map(c => c.title + '(' + c.status + ')').join(', ')}`);
+  res.json({ data });
 });
 
 /**
@@ -344,15 +348,23 @@ router.patch("/:id/status", (req: Request, res: Response) => {
   const userId = (req as any).user?.id;
   const userRole = (req as any).user?.role;
   const { status } = req.body;
-  if (!status || !['in_progress', 'completed', 'archived', 'deleted', 'closed'].includes(status)) {
-    return res.status(400).json({ error: "status must be one of: in_progress, completed, archived, deleted, closed" });
+  if (!status || !['active', 'in_progress', 'completed', 'archived', 'deleted', 'closed'].includes(status)) {
+    return res.status(400).json({ error: "status must be one of: active, in_progress, completed, archived, deleted, closed" });
   }
   const conv = resolveConversationOr404(req.params.id, userId);
   if (!conv) return res.status(404).json({ error: "Conversation not found" });
   if (!canAccessConversation(conv, userId, userRole)) {
     return res.status(403).json({ error: "无权操作此会话" });
   }
-  const updated = ConversationService.updateStatus(conv.id, status as 'in_progress' | 'completed' | 'archived' | 'deleted' | 'closed');
+  // [2026-05-19] 微信助手/平台助手只允许 active 和 in_progress 两种状态
+  const isGlobalAssistant = conv.agentIds.some(id => AgentService.isPlatformAssistantId(id))
+    || conv.title === 'RepaceClaw 平台助手'
+    || conv.title === '微信助手'
+    || (conv as any).conversationType === 'wechat_assistant';
+  if (isGlobalAssistant && !['active', 'in_progress'].includes(status)) {
+    return res.status(400).json({ error: "全局助手会话只允许 active/in_progress 状态" });
+  }
+  const updated = ConversationService.updateStatus(conv.id, status as any);
   if (!updated) return res.status(404).json({ error: "Conversation not found" });
   res.json({ data: updated });
 });
@@ -362,10 +374,7 @@ router.get("/:id/messages", (req: Request, res: Response) => {
   const userRole = (req as any).user?.role;
   const conv = resolveConversationOr404(req.params.id, userId);
   if (!conv) return res.status(404).json({ error: "Conversation not found" });
-  // [2026-05-18] 已关闭/删除的会话不再返回消息，前端恢复时会跳过
-  if (conv.status === 'closed' || conv.status === 'deleted') {
-    return res.status(404).json({ error: "Conversation not found" });
-  }
+  // [2026-05-19] 已关闭/删除的会话也允许查看消息（用户从看板点击查看）
   if (!canAccessConversation(conv, userId, userRole)) {
     return res.status(403).json({ error: "无权限访问此会话消息" });
   }

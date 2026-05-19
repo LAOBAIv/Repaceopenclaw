@@ -57,8 +57,8 @@ export interface SessionCard {
   agentIds: string[];
   /** 当前活跃智能体 ID */
   currentAgentId: string;
-  /** 会话状态：'in_progress' | 'completed' | 'archived' | 'deleted' */
-  status: 'in_progress' | 'completed' | 'archived' | 'deleted';
+  /** 会话状态：'in_progress' | 'closed' | 'deleted' */
+  status: 'in_progress' | 'closed' | 'deleted';
   /** 创建时间 */
   createdAt: string;
   /** 创建者 ID */
@@ -75,6 +75,11 @@ export interface SessionCard {
 
 export type SessionColumn = 'progress' | 'done' | 'deleted';
 export type SessionBoard = Record<SessionColumn, SessionCard[]>;
+
+/* ─── 列名与状态映射（前端展示用）───────────────── */
+// progress = in_progress（进行中）
+// done = closed（已关闭）
+// deleted = deleted（已删除，可彻底删除）
 
 /* ─── 初始数据（空数组，从 API 加载）───────────────────────── */
 const EMPTY_BOARD: SessionBoard = {
@@ -100,7 +105,7 @@ interface SessionKanbanState {
   /** 删除会话 */
   removeSession: (sessionId: string) => void;
   /** 更新会话状态并同步看板分组 */
-  updateSessionStatus: (sessionId: string, status: 'in_progress' | 'completed' | 'archived' | 'deleted') => void;
+  updateSessionStatus: (sessionId: string, status: 'in_progress' | 'closed' | 'deleted') => void;
 }
 
 /* ─── Store 实现 ───────────────────────────────────────────── */
@@ -122,8 +127,13 @@ export const useSessionKanbanStore = create<SessionKanbanState>()(
       restoreFromPersist: async () => {
         set({ loading: true, error: null });
         try {
-          // 获取会话列表
-          const conversations = await conversationsApi.list();
+          // [2026-05-19] 分别拉取三种状态的会话
+          const [activeConvs, closedConvs, deletedConvs] = await Promise.all([
+            conversationsApi.list(undefined, 'in_progress'),
+            conversationsApi.list(undefined, 'closed'),
+            conversationsApi.list(undefined, 'deleted'),
+          ]);
+          const conversations = [...activeConvs, ...closedConvs, ...deletedConvs];
           const result: SessionBoard = { progress: [], done: [], deleted: [] };
           const agents = useAgentStore.getState().agents;
 
@@ -168,7 +178,7 @@ export const useSessionKanbanStore = create<SessionKanbanState>()(
               taskId: conv.taskId || conv.id,
               agentIds: convAgentIds,
               currentAgentId: conv.currentAgentId || agentId,
-              status: conv.status || 'in_progress',
+              status: (conv.status === 'closed' ? 'closed' : conv.status === 'deleted' ? 'deleted' : 'in_progress') as SessionCard['status'],
               createdAt: conv.createdAt,
               createdBy: (conv as any).createdBy || null,
               lastMessage,
@@ -177,14 +187,13 @@ export const useSessionKanbanStore = create<SessionKanbanState>()(
               agentColor,
             };
 
-            // 按后端返回的 status 字段分组
-            // in_progress → progress 栏；completed → done 栏；archived/deleted → deleted 栏
+            // [2026-05-19] 按状态分组：in_progress → progress；closed → done；deleted → deleted
             if (card.status === 'in_progress') {
               result.progress.push(card);
-            } else if (card.status === 'completed') {
+            } else if (card.status === 'closed') {
               result.done.push(card);
             } else {
-              // archived / deleted 统一归入 deleted
+              // deleted / archived 统一归入 deleted
               result.deleted.push(card);
             }
           }
@@ -235,7 +244,7 @@ export const useSessionKanbanStore = create<SessionKanbanState>()(
             const s = isTarget ? status : card.status;
             if (s === 'in_progress') {
               newSessions.progress.push(isTarget ? { ...card, status: s } : card);
-            } else if (s === 'completed') {
+            } else if (s === 'closed') {
               newSessions.done.push(isTarget ? { ...card, status: s } : card);
             } else {
               newSessions.deleted.push(isTarget ? { ...card, status: s } : card);

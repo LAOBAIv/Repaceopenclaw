@@ -2,8 +2,11 @@ import apiClient from "./client";
 import { Conversation, Message } from "../types";
 
 export const conversationsApi = {
-  list: async (projectId?: string): Promise<Conversation[]> => {
-    const res = await apiClient.get("/conversations", { params: projectId ? { projectId } : {} });
+  list: async (projectId?: string, status?: string): Promise<Conversation[]> => {
+    const params: Record<string, string> = {};
+    if (projectId) params.projectId = projectId;
+    if (status) params.status = status;
+    const res = await apiClient.get("/conversations", { params });
     return res.data.data;
   },
 
@@ -87,7 +90,7 @@ export const conversationsApi = {
   },
 
   /** 更新会话状态 */
-  updateStatus: async (conversationId: string, status: 'in_progress' | 'completed' | 'archived' | 'deleted' | 'closed') => {
+  updateStatus: async (conversationId: string, status: 'active' | 'in_progress' | 'completed' | 'archived' | 'deleted' | 'closed') => {
     const res = await apiClient.patch(`/conversations/${conversationId}/status`, { status });
     return res.data?.data;
   },
