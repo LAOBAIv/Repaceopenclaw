@@ -268,14 +268,19 @@ function createTables(db: any) {
       extension TEXT NOT NULL DEFAULT '',
       size_bytes INTEGER NOT NULL DEFAULT 0,
       storage_path TEXT NOT NULL,
+      scope_type TEXT NOT NULL DEFAULT 'user',
+      scope_id TEXT NOT NULL DEFAULT '',
       status TEXT NOT NULL DEFAULT 'uploaded',
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     )
   `);
+  try { db.run("ALTER TABLE file_assets ADD COLUMN scope_type TEXT NOT NULL DEFAULT 'user'"); } catch {}
+  try { db.run("ALTER TABLE file_assets ADD COLUMN scope_id TEXT NOT NULL DEFAULT ''"); } catch {}
   try { db.run("CREATE INDEX IF NOT EXISTS idx_file_assets_user_created ON file_assets(user_id, created_at)"); } catch {}
   try { db.run("CREATE INDEX IF NOT EXISTS idx_file_assets_project ON file_assets(project_id)"); } catch {}
   try { db.run("CREATE INDEX IF NOT EXISTS idx_file_assets_conversation ON file_assets(conversation_id)"); } catch {}
+  try { db.run("CREATE INDEX IF NOT EXISTS idx_file_assets_scope ON file_assets(scope_type, scope_id)"); } catch {}
 
   db.run(`
     CREATE TABLE IF NOT EXISTS conversations (

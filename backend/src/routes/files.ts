@@ -18,10 +18,12 @@ const UploadSchema = z.object({
   base64: z.string().min(1, '文件内容不能为空'),
   projectId: z.string().optional(),
   conversationId: z.string().optional(),
+  scopeType: z.enum(['user', 'department', 'enterprise']).default('user'),
+  scopeId: z.string().optional(),
 });
 
 const MAX_SIZE_BYTES = 50 * 1024 * 1024;
-const ALLOWED_EXTENSIONS = new Set(['.xlsx', '.xls', '.csv', '.pdf', '.docx', '.md', '.txt', '.json']);
+const ALLOWED_EXTENSIONS = new Set(['.xlsx', '.xls', '.csv', '.pdf', '.docx', '.md', '.txt', '.json', '.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.bmp']);
 const UPLOAD_ROOT = path.join(__dirname, '../../uploads');
 
 function sanitizeFileName(name: string): string {
@@ -87,7 +89,7 @@ router.post(
     }
 
     const userId = req.user?.id || '';
-    const { fileName, mimeType, base64, projectId = '', conversationId = '' } = parsed.data;
+    const { fileName, mimeType, base64, projectId = '', conversationId = '', scopeType = 'user', scopeId = '' } = parsed.data;
     const safeName = sanitizeFileName(fileName);
     const ext = path.extname(safeName).toLowerCase();
     if (!ALLOWED_EXTENSIONS.has(ext)) {
@@ -106,7 +108,15 @@ router.post(
     const now = new Date();
     const nowIso = now.toISOString();
     const dateDir = nowIso.slice(0, 10);
-    const userDir = path.join(UPLOAD_ROOT, userId, dateDir);
+    // [2026-05-19] 多用户文件体系：按 scope 分目录
+    let userDir: string;
+    if (scopeType === 'department' && scopeId) {
+      userDir = path.join(UPLOAD_ROOT, 'shared', scopeId, dateDir);
+    } else if (scopeType === 'enterprise') {
+      userDir = path.join(UPLOAD_ROOT, 'shared', 'enterprise', dateDir);
+    } else {
+      userDir = path.join(UPLOAD_ROOT, userId, dateDir);
+    }
     ensureDir(userDir);
 
     const storedName = `${fileId}${ext}`;
@@ -117,8 +127,8 @@ router.post(
     const db = getDb();
     db.run(
       `INSERT INTO file_assets (
-        id, user_id, project_id, conversation_id, original_name, stored_name, mime_type, extension, size_bytes, storage_path, status, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        id, user_id, project_id, conversation_id, original_name, stored_name, mime_type, extension, size_bytes, storage_path, scope_type, scope_id, status, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         fileId,
         userId,
@@ -130,6 +140,8 @@ router.post(
         ext,
         buffer.length,
         relPath,
+        scopeType,
+        scopeId || userId,
         'uploaded',
         nowIso,
         nowIso,
