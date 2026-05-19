@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { SetupAccountModal } from '../SetupAccountModal';
 import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom';
 import {
   Bot, Layers,
@@ -271,6 +272,16 @@ export function AppShell() {
   const location = useLocation();
   const { user, isAuthenticated } = useAuthStore();
   const isAdmin = user?.role === 'super_admin' || user?.role === 'admin';
+  // [2026-05-19] 微信扫码用户补全信息弹窗
+  const [needSetup, setNeedSetup] = useState(false);
+
+  useEffect(() => {
+    if (!isAuthenticated || !user?.id) return;
+    // 检测是否需要补全信息
+    if ((user as any).needSetup || (user as any).email?.endsWith('@wechat.local')) {
+      setNeedSetup(true);
+    }
+  }, [isAuthenticated, user]);
 
   /* ─── Plan C 接入点 1：sync 生命周期管理 ──────────────────── */
   // 登录成功后初始化 BroadcastChannel + WebSocket 同步

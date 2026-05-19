@@ -4,6 +4,7 @@ import { authenticate, requireRole } from "../middleware/auth";
 import { AuditService } from "../services/AuditService";
 import { ConversationService } from "../services/ConversationService";
 import { AgentService } from "../services/AgentService";
+import { getDb, saveDb } from "../db/client";
 import { logger } from "../utils/logger";
 
 const router = Router();
@@ -109,7 +110,9 @@ router.post("/login", async (req: Request, res: Response) => {
 router.get("/me", authenticate, (req: Request, res: Response) => {
   const user = UserService.getUserById((req as any).user.id);
   if (!user) return res.status(404).json({ error: "用户不存在" });
-  res.json(user);
+  // [2026-05-19] 微信扫码登录用户需要补全信息
+  const needSetup = user.email?.endsWith('@wechat.local') || false;
+  res.json({ ...user, needSetup });
 });
 
 // PUT /api/auth/me — 当前用户修改个人资料
@@ -163,6 +166,49 @@ router.put("/users/:id/reset-password", authenticate, requireRole(["super_admin"
     res.json({ message: "密码重置成功" });
   } catch (err: any) {
     res.status(400).json({ error: err.message });
+  }
+});
+
+// [2026-05-19] POST /api/auth/complete-setup — 微信扫码用户补全账号信息
+router.post("/complete-setup", authenticate, async (req: Request, res: Response) => {
+  const userId = (req as any).user.id;
+  const { username, email, password } = req.body;
+
+  if (!username || !email || !password) {
+    return res.status(400).json({ error: "账号、邮箱、密码不能为空" });
+  }
+  if (password.length < 6) {
+    return res.status(400).json({ error: "密码至少 6 位" });
+  }
+
+  try {
+    const db = getDb();
+    const now = new Date().toISOString();
+
+    // 检查用户名是否已存在
+    const existUsername = db.exec("SELECT id FROM users WHERE username=? AND id<>?", [username, userId]);
+    if (existUsername.length && existUsername[0].values.length) {
+      return res.status(400).json({ error: "该用户名已被使用" });
+    }
+    // 检查邮箱是否已存在
+    const existEmail = db.exec("SELECT id FROM users WHERE email=? AND id<>?", [email, userId]);
+    if (existEmail.length && existEmail[0].values.length) {
+      return res.status(400).json({ error: "该邮箱已被注册" });
+    }
+
+    const bcrypt = require('bcryptjs');
+    const passwordHash = await bcrypt.hash(password, 10);
+
+    db.run(
+      "UPDATE users SET username=?, email=?, password_hash=?, updated_at=? WHERE id=?",
+      [username.trim(), email.trim(), passwordHash, now, userId]
+    );
+    saveDb();
+
+    const user = UserService.getUserById(userId);
+    res.json({ ...user, needSetup: false });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message || '设置失败' });
   }
 });
 

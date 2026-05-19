@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { authApi } from "../api/auth";
 import { useAuthStore } from "../stores/authStore";
 import { initTabSession, clearUserData, clearAllRcStorage } from "../lib/storageScope";
+import apiClient from "../api/client";
 
 type Mode = "login" | "register";
 
@@ -13,6 +14,11 @@ export function AuthPage() {
   const [mode, setMode] = useState<Mode>("login");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  // [2026-05-19] 微信扫码登录
+  const [showQrcode, setShowQrcode] = useState(false);
+  const [qrcodeUrl, setQrcodeUrl] = useState('');
+  const [qrLoading, setQrLoading] = useState(false);
+  const qrPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
 
   const [form, setForm] = useState({
@@ -80,6 +86,66 @@ export function AuthPage() {
       setLoading(false);
     }
   };
+
+  // [2026-05-19] 微信扫码登录
+  async function handleWechatLogin() {
+    setQrLoading(true);
+    setError('');
+    try {
+      const res: any = await apiClient.post('/wechat-clawbot/qrcode');
+      const d = res.data?.data;
+      if (!d?.qrcode_url) { setError('获取二维码失败'); setQrLoading(false); return; }
+      setQrcodeUrl(d.qrcode_url);
+      setShowQrcode(true);
+      const qrToken = d.qrcode;
+      // 轮询扫码状态
+      qrPollRef.current = setInterval(async () => {
+        try {
+          const r: any = await apiClient.post('/wechat-clawbot/qrcode/status', { qrcode: qrToken });
+          const status = r.data?.data?.status;
+          if (status === 'confirmed') {
+            const ilinkUserId = r.data?.data?.credentials?.ilink_user_id;
+            if (ilinkUserId) {
+              // 调用后端扫码登录接口
+              const loginRes: any = await apiClient.post('/auth/wechat/callback', { openid: ilinkUserId });
+              const loginData = loginRes.data?.data || loginRes.data;
+              if (loginData?.token && loginData?.user) {
+                login(loginData.user, loginData.token);
+                sessionStorage.setItem('repaceclaw-auth', JSON.stringify({
+                  state: { user: loginData.user, token: loginData.token, isAuthenticated: true },
+                  version: 0,
+                }));
+                initTabSession();
+                clearUserData();
+                clearAllRcStorage();
+                window.location.replace('/workspace');
+              }
+            }
+            if (qrPollRef.current) clearInterval(qrPollRef.current);
+            setShowQrcode(false);
+          } else if (status === 'expired') {
+            if (qrPollRef.current) clearInterval(qrPollRef.current);
+            setShowQrcode(false);
+            setError('二维码已过期，请重新获取');
+          }
+        } catch {}
+      }, 3000);
+      // 3分钟超时
+      setTimeout(() => {
+        if (qrPollRef.current) { clearInterval(qrPollRef.current); qrPollRef.current = null; }
+        setShowQrcode(false);
+      }, 180000);
+    } catch (e: any) {
+      setError('获取微信二维码失败');
+    } finally {
+      setQrLoading(false);
+    }
+  }
+
+  // 清理轮询
+  useEffect(() => {
+    return () => { if (qrPollRef.current) clearInterval(qrPollRef.current); };
+  }, []);
 
   return (
     <div style={{
@@ -203,8 +269,25 @@ export function AuthPage() {
           </form>
 
           {mode === "login" && (
-            <p style={{ textAlign: "center", fontSize: 13, color: "#6b7280", marginTop: 16 }}>
-              还没有账号？
+            <>
+              {/* [2026-05-19] 微信扫码登录 */}
+              <div style={{ textAlign: 'center', margin: '18px 0 10px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, justifyContent: 'center', marginBottom: 14 }}>
+                  <div style={{ flex: 1, height: 1, background: '#374151' }} />
+                  <span style={{ fontSize: 12, color: '#6b7280' }}>或</span>
+                  <div style={{ flex: 1, height: 1, background: '#374151' }} />
+                </div>
+                <button
+                  onClick={handleWechatLogin}
+                  disabled={qrLoading}
+                  style={{ width: '100%', padding: '10px', borderRadius: 8, border: '1px solid #374151', background: '#1f2937', color: '#10b981', fontSize: 14, fontWeight: 500, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}
+                >
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="#10b981"><path d="M8.691 2.188C3.891 2.188 0 5.476 0 9.53c0 2.212 1.17 4.203 3.002 5.55a.59.59 0 0 1 .213.665l-.39 1.48c-.019.07-.048.141-.048.213 0 .163.13.295.29.295a.326.326 0 0 0 .167-.054l1.903-1.114a.864.864 0 0 1 .717-.098 10.16 10.16 0 0 0 2.837.403c.276 0 .543-.027.811-.05-.857-2.578.157-4.972 1.932-6.446 1.703-1.415 3.882-1.98 5.853-1.838-.576-3.583-4.196-6.348-8.596-6.348zM5.785 5.991c.642 0 1.162.529 1.162 1.18a1.17 1.17 0 0 1-1.162 1.178A1.17 1.17 0 0 1 4.623 7.17c0-.651.52-1.18 1.162-1.18zm5.813 0c.642 0 1.162.529 1.162 1.18a1.17 1.17 0 0 1-1.162 1.178 1.17 1.17 0 0 1-1.162-1.178c0-.651.52-1.18 1.162-1.18zm5.34 2.867c-1.797-.052-3.746.512-5.28 1.786-1.72 1.428-2.687 3.72-1.78 6.22.942 2.453 3.666 4.229 6.884 4.229.826 0 1.622-.12 2.361-.336a.722.722 0 0 1 .598.082l1.584.926a.272.272 0 0 0 .14.045c.134 0 .24-.111.24-.247 0-.06-.023-.12-.038-.177l-.327-1.233a.582.582 0 0 1-.023-.156.49.49 0 0 1 .201-.398C23.024 18.48 24 16.82 24 14.98c0-3.21-2.931-5.837-6.656-6.088V8.89c-.135-.01-.27-.03-.407-.03zm-2.53 3.274c.535 0 .969.44.969.982a.976.976 0 0 1-.969.983.976.976 0 0 1-.969-.983c0-.542.434-.982.97-.982zm4.844 0c.535 0 .969.44.969.982a.976.976 0 0 1-.969.983.976.976 0 0 1-.969-.983c0-.542.434-.982.969-.982z"/></svg>
+                  {qrLoading ? '加载中...' : '微信扫码登录'}
+                </button>
+              </div>
+              <p style={{ textAlign: "center", fontSize: 13, color: "#6b7280", marginTop: 12 }}>
+                还没有账号？
               <button
                 onClick={() => { setMode("register"); setError(""); }}
                 style={{ color: "#818cf8", background: "none", border: "none", cursor: "pointer", marginLeft: 4 }}
@@ -212,6 +295,19 @@ export function AuthPage() {
                 立即注册
               </button>
             </p>
+
+            {/* 微信扫码弹窗 */}
+            {showQrcode && (
+              <div style={{ position: 'fixed', inset: 0, zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.6)' }} onClick={() => { setShowQrcode(false); if (qrPollRef.current) clearInterval(qrPollRef.current); }}>
+                <div style={{ background: '#fff', borderRadius: 16, padding: '32px', textAlign: 'center', minWidth: 300 }} onClick={e => e.stopPropagation()}>
+                  <h3 style={{ margin: '0 0 8px', fontSize: 18, color: '#1f2937' }}>微信扫码登录</h3>
+                  <p style={{ margin: '0 0 16px', fontSize: 13, color: '#6b7280' }}>请用微信扫描下方二维码</p>
+                  <img src={qrcodeUrl} alt="扫码登录" style={{ width: 200, height: 200, borderRadius: 8 }} />
+                  <p style={{ margin: '12px 0 0', fontSize: 12, color: '#9ca3af' }}>扫码后自动登录，3分钟内有效</p>
+                </div>
+              </div>
+            )}
+            </>
           )}
         </div>
       </div>

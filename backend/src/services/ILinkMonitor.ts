@@ -156,44 +156,114 @@ async function getConfig(config: ILinkConfig, ilinkUserId: string, contextToken?
 // ── 图片下载工具 ─────────────────────────────────────────────
 /**
  * [2026-05-19] 下载图片并转换为 base64
- * 支持 URL 或 media_id
+ * iLink 图片是加密的 CDN 资源，需要：
+ *   1. 从 media.full_url 或拼接 CDN URL 下载加密文件
+ *   2. 用 AES-128-ECB 解密
+ *   3. 转为 base64 data URL
  */
 async function downloadImageAsBase64(config: ILinkConfig, imageItem: any): Promise<string | null> {
   try {
-    let imageUrl = '';
+    // 调试：打印完整的 image_item 结构
+    logger.info(`[iLink] image_item structure: ${JSON.stringify(imageItem).slice(0, 500)}`);
 
-    // 优先使用 image_url
-    if (imageItem.image_url) {
-      imageUrl = imageItem.image_url;
-    } else if (imageItem.url) {
-      imageUrl = imageItem.url;
-    }
-    // media_id 需要调用 API 获取 URL
-    else if (imageItem.media_id) {
-      try {
-        const body = JSON.stringify({
-          media_id: imageItem.media_id,
-          base_info: buildBaseInfo(),
-        });
-        const resp = await apiPost(config.baseUrl, 'ilink/bot/getmessage', body, config.token, 10000);
-        const data = JSON.parse(resp);
-        imageUrl = data.url || data.image_url || '';
-      } catch (e) {
-        logger.error('[iLink] Failed to get image URL from media_id');
-      }
-    }
-
-    if (!imageUrl) {
-      logger.warn('[iLink] No image URL found in image_item');
+    const media = imageItem.media;
+    if (!media) {
+      logger.warn('[iLink] No media field in image_item');
       return null;
     }
 
-    // 下载图片
-    return downloadImage(imageUrl);
-  } catch (e) {
-    logger.error('[iLink] Failed to download image');
+    // 获取下载 URL
+    let downloadUrl = '';
+    if (media.full_url) {
+      downloadUrl = media.full_url;
+    } else if (media.encrypt_query_param) {
+      // 拼接 CDN 下载 URL
+      downloadUrl = `${config.baseUrl}/download?encrypted_query_param=${encodeURIComponent(media.encrypt_query_param)}`;
+    }
+
+    if (!downloadUrl) {
+      logger.warn('[iLink] No download URL for image');
+      return null;
+    }
+
+    // 获取 AES 密钥
+    let aesKeyBase64 = '';
+    if (imageItem.aeskey) {
+      // aeskey 是 hex 格式，转为 base64
+      aesKeyBase64 = Buffer.from(imageItem.aeskey, 'hex').toString('base64');
+    } else if (media.aes_key) {
+      aesKeyBase64 = media.aes_key;
+    }
+
+    logger.info(`[iLink] Downloading image: url=${downloadUrl.slice(0, 80)}... hasAesKey=${!!aesKeyBase64}`);
+
+    // 下载文件
+    const encryptedBuf = await downloadBuffer(downloadUrl);
+    logger.info(`[iLink] Downloaded ${encryptedBuf.length} bytes`);
+
+    let imageBuf: Buffer;
+    if (aesKeyBase64) {
+      // AES-128-ECB 解密
+      imageBuf = decryptAesEcb(encryptedBuf, aesKeyBase64);
+      logger.info(`[iLink] Decrypted to ${imageBuf.length} bytes`);
+    } else {
+      // 无密钥，直接使用
+      imageBuf = encryptedBuf;
+    }
+
+    // 转为 base64 data URL
+    const base64 = imageBuf.toString('base64');
+    return `data:image/jpeg;base64,${base64}`;
+  } catch (e: any) {
+    logger.error(`[iLink] Failed to download/decrypt image: ${e.message}`);
     return null;
   }
+}
+
+/**
+ * AES-128-ECB 解密
+ */
+function decryptAesEcb(encrypted: Buffer, aesKeyBase64: string): Buffer {
+  const crypto = require('crypto');
+  // 解析 key：base64 解码后可能是 16 字节或 32 字符 hex
+  let keyBuf = Buffer.from(aesKeyBase64, 'base64');
+  if (keyBuf.length === 32 && /^[0-9a-fA-F]{32}$/.test(keyBuf.toString('ascii'))) {
+    keyBuf = Buffer.from(keyBuf.toString('ascii'), 'hex');
+  }
+  if (keyBuf.length !== 16) {
+    throw new Error(`AES key must be 16 bytes, got ${keyBuf.length}`);
+  }
+  const decipher = crypto.createDecipheriv('aes-128-ecb', keyBuf, null);
+  decipher.setAutoPadding(true);
+  return Buffer.concat([decipher.update(encrypted), decipher.final()]);
+}
+
+/**
+ * 下载 URL 内容为 Buffer
+ */
+function downloadBuffer(url: string): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    const urlObj = new URL(url);
+    const lib = urlObj.protocol === 'https:' ? https : http;
+    const req = lib.get({
+      hostname: urlObj.hostname,
+      port: urlObj.port || (urlObj.protocol === 'https:' ? 443 : 80),
+      path: urlObj.pathname + urlObj.search,
+      timeout: 30000,
+      headers: { 'Authorization': `Bearer ${loadConfig()?.token || ''}`, 'AuthorizationType': 'ilink_bot_token' },
+    }, (res) => {
+      if (res.statusCode && res.statusCode >= 400) {
+        reject(new Error(`HTTP ${res.statusCode}`));
+        return;
+      }
+      const chunks: Buffer[] = [];
+      res.on('data', (chunk: Buffer) => chunks.push(chunk));
+      res.on('end', () => resolve(Buffer.concat(chunks)));
+      res.on('error', reject);
+    });
+    req.on('timeout', () => { req.destroy(); reject(new Error('TIMEOUT')); });
+    req.on('error', reject);
+  });
 }
 
 /**
@@ -246,8 +316,8 @@ async function handleIncomingMessage(config: ILinkConfig, msg: any): Promise<voi
       if (item.type === 1 && item.text_item?.text) {
         text += item.text_item.text;
       }
-      // 图片消息 (type=2 或 type=3)
-      if ((item.type === 2 || item.type === 3) && item.image_item) {
+      // 图片消息 (type=2, IMAGE)
+      if (item.type === 2 && item.image_item) {
         try {
           const base64 = await downloadImageAsBase64(config, item.image_item);
           if (base64) {
