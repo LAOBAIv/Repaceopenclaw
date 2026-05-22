@@ -1,20 +1,16 @@
 import React from 'react';
 import type { ProjectPriority } from '@/stores/projectKanbanStore';
+import { PRIORITY_OPTIONS } from './constants';
 
-const PRIORITY_OPTIONS: { value: ProjectPriority; label: string; color: string; bg: string }[] = [
-  { value: 'high', label: '高优先级', color: '#ef4444', bg: '#fef2f2' },
-  { value: 'mid',  label: '中优先级', color: '#f59e0b', bg: '#fffbeb' },
-  { value: 'low',  label: '低优先级', color: '#22c55e', bg: '#f0fdf4' },
-];
-
-interface PriorityModalProps {
+export function PriorityModal({
+  priority, onSetPriority, onClose,
+}: {
   priority: ProjectPriority | null;
   onSetPriority: (p: ProjectPriority) => void;
   onClose: () => void;
-}
-
-export function PriorityModal({ priority, onSetPriority, onClose }: PriorityModalProps) {
+}) {
   return (
+    /* 遮罩层 */
     <div
       onClick={onClose}
       style={{
@@ -27,6 +23,7 @@ export function PriorityModal({ priority, onSetPriority, onClose }: PriorityModa
         overflowY: 'auto',
       }}
     >
+      {/* 弹窗主体 */}
       <div
         onClick={e => e.stopPropagation()}
         style={{
@@ -42,7 +39,7 @@ export function PriorityModal({ priority, onSetPriority, onClose }: PriorityModa
           marginBottom: 32,
         }}
       >
-        {/* Header */}
+        {/* ── 头部标题栏 ── */}
         <div style={{
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
           padding: '22px 28px 18px',
@@ -83,16 +80,17 @@ export function PriorityModal({ priority, onSetPriority, onClose }: PriorityModa
             onMouseLeave={e => { e.currentTarget.style.background = '#f3f4f6'; e.currentTarget.style.color = '#9ca3af'; }}
           >×</button>
         </div>
-
-        {/* Content */}
+        {/* ── 内容区：优先级标签与选项并排 ── */}
         <div style={{ padding: '24px 28px 32px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+            {/* 左侧标签 */}
             <div style={{
               fontSize: 13, fontWeight: 600, color: '#374151',
               whiteSpace: 'nowrap', width: 56, flexShrink: 0,
             }}>
               优先级
             </div>
+            {/* 右侧三个选项按钮并排 */}
             <div style={{ display: 'flex', gap: 10, flex: 1 }}>
               {PRIORITY_OPTIONS.map(opt => {
                 const isActive = priority === opt.value;
@@ -138,7 +136,6 @@ export function PriorityModal({ priority, onSetPriority, onClose }: PriorityModa
           </div>
         </div>
       </div>
-
       <style>{`
         @keyframes priorityModalIn {
           from { opacity: 0; transform: scale(0.9) translateY(12px); }
@@ -148,3 +145,4 @@ export function PriorityModal({ priority, onSetPriority, onClose }: PriorityModa
     </div>
   );
 }
+/* ─── 消息渠道配置 Modal ───────────────────────────────────── */
