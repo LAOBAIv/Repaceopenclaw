@@ -29,18 +29,7 @@ interface BrowserTab {
 }
 
 /** 可用的模型列表（用于 Tab 模型切换） */
-const AVAILABLE_MODELS = [
-  { id: 'claude-opus-4-6', label: 'Claude Opus 4.6', provider: 'anthropic' },
-  { id: 'glm-5', label: 'GLM-5', provider: 'zhipu' },
-  { id: 'glm-5.1', label: 'GLM-5.1', provider: 'zhipu' },
-  { id: 'qwen3-max-2026-01-23', label: 'Qwen3 Max', provider: 'alibaba' },
-  { id: 'qwen3.6-plus', label: 'Qwen3.6 Plus', provider: 'alibaba' },
-  { id: 'kimi-k2.5', label: 'Kimi K2.5', provider: 'moonshot' },
-  { id: 'minimax-m2.5', label: 'MiniMax M2.5', provider: 'minimax' },
-  { id: 'doubao-pro-32k', label: 'Doubao Pro 32K', provider: 'doubao' },
-  { id: 'qwen-max', label: 'Qwen Max', provider: 'alibaba' },
-  { id: 'auto', label: '自动选择', provider: 'auto' },
-];
+const AVAILABLE_MODELS: { id: string; label: string; provider: string }[] = [];
 import {
   SkillPanel,
   SchedulePanel,
@@ -217,7 +206,8 @@ function AgentPickerModal({
         </div>
         {/* 列表 */}
         <div style={{ flex: 1, overflowY: 'auto', padding: '8px 12px', display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 6 }}>
-          {agentList.map(agent => {
+          {/* [2026-05-21] 过滤系统助手 */}
+          {agentList.filter(a => !a.isSystem).map(agent => {
             const sel = draft.has(agent.id);
             const ac = agent.color ?? '#6366f1';
             return (
@@ -468,7 +458,8 @@ function AgentPanel({
               gridTemplateColumns: 'repeat(2, 1fr)',
               gap: 8,
             }}>
-              {agentList.map(agent => {
+              {/* [2026-05-21] 过滤系统助手，用户不可选 */}
+              {agentList.filter(a => !a.isSystem).map(agent => {
                 const statusInfo = agentStatusMap[agent.status ?? 'idle'] ?? { label: '离线', color: '#9ca3af' };
                 const currentSessionPanel = openPanels.find(p => p.id === activePanelId) ?? openPanels[0] ?? null;
                 const isCurrentAgent = currentSessionPanel?.agentId === agent.id;
@@ -2087,6 +2078,25 @@ export function ProjectWorkspace() {
   const [showModelDropdown, setShowModelDropdown] = useState(false);
   const [modelDropdownTabId, setModelDropdownTabId] = useState<string | null>(null);
   const modelDropdownRef = useRef<HTMLDivElement>(null);
+  const [availableModels, setAvailableModels] = useState<{ id: string; label: string; provider: string }[]>([]);
+
+  // 动态加载模型列表
+  useEffect(() => {
+    (async () => {
+      try {
+        const authRaw = sessionStorage.getItem('repaceclaw-auth') || localStorage.getItem('repaceclaw-auth');
+        const token = authRaw ? JSON.parse(authRaw)?.state?.token : '';
+        const headers: any = token ? { Authorization: `Bearer ${token}` } : {};
+        const [mRes, pRes] = await Promise.all([fetch('/api/models', { headers }).then(r => r.json()), fetch('/api/model-providers', { headers }).then(r => r.json())]);
+        const provs = pRes.data || [];
+        const models = (mRes.data || []).filter((m: any) => m.enabled).map((m: any) => {
+          const prov = provs.find((p: any) => p.id === m.providerId);
+          return { id: m.name, label: `${m.name} · ${prov?.name || ''}`, provider: prov?.name || '' };
+        });
+        setAvailableModels([{ id: 'auto', label: '自动选择', provider: 'auto' }, ...models]);
+      } catch { setAvailableModels([{ id: 'auto', label: '自动选择', provider: 'auto' }]); }
+    })();
+  }, []);
 
   /** 点击外部关闭模型切换下拉 */
   useEffect(() => {
@@ -3162,7 +3172,7 @@ export function ProjectWorkspace() {
                     当前: {targetAgent.modelName || '未设置'}
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                    {AVAILABLE_MODELS.map(model => {
+                    {availableModels.map(model => {
                       const isSelected = targetAgent.modelName === model.id;
                       return (
                         <button

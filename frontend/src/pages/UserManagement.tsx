@@ -255,10 +255,10 @@ export function UserManagement() {
             <tr style={{ background: '#f9fafb' }}>
               <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: 12, color: '#6b7280', borderBottom: '1px solid #e5e7eb' }}>用户名</th>
               <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: 12, color: '#6b7280', borderBottom: '1px solid #e5e7eb' }}>邮箱</th>
-              <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: 12, color: '#6b7280', borderBottom: '1px solid #e5e7eb' }}>角色</th>
               <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: 12, color: '#6b7280', borderBottom: '1px solid #e5e7eb' }}>状态</th>
               <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: 12, color: '#6b7280', borderBottom: '1px solid #e5e7eb' }}>所属组织</th>
               <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: 12, color: '#6b7280', borderBottom: '1px solid #e5e7eb' }}>微信绑定</th>
+              <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: 12, color: '#6b7280', borderBottom: '1px solid #e5e7eb' }}>注册时间</th>
               <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: 12, color: '#6b7280', borderBottom: '1px solid #e5e7eb' }}>最后登录</th>
               <th style={{ padding: '12px 16px', textAlign: 'right', fontSize: 12, color: '#6b7280', borderBottom: '1px solid #e5e7eb' }}>操作</th>
             </tr>
@@ -285,11 +285,6 @@ export function UserManagement() {
                   </td>
                   <td style={{ padding: '12px 16px', fontSize: 12, color: '#6b7280' }}>{user.email}</td>
                   <td style={{ padding: '12px 16px' }}>
-                    <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 4, background: roleInfo.bg, color: roleInfo.color, fontWeight: 500 }}>
-                      {roleInfo.label}
-                    </span>
-                  </td>
-                  <td style={{ padding: '12px 16px' }}>
                     <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 4, background: statusInfo.bg, color: statusInfo.color, fontWeight: 500 }}>
                       {statusInfo.label}
                     </span>
@@ -305,6 +300,9 @@ export function UserManagement() {
                     ) : (
                       <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 4, background: '#f3f4f6', color: '#9ca3af' }}>未绑定</span>
                     )}
+                  </td>
+                  <td style={{ padding: '12px 16px', fontSize: 11, color: '#9ca3af' }}>
+                    {user.createdAt ? new Date(user.createdAt).toLocaleString('zh-CN') : '-'}
                   </td>
                   <td style={{ padding: '12px 16px', fontSize: 11, color: '#9ca3af' }}>
                     {user.lastLoginAt ? new Date(user.lastLoginAt).toLocaleString('zh-CN') : '-'}
@@ -528,8 +526,9 @@ export function UserManagement() {
                   style={{ width: '100%', padding: '8px 12px', borderRadius: 8, border: '1px solid #e5e7eb', fontSize: 14 }}
                 >
                   <option value="">未分配</option>
-                  {departments.map(dept => (
-                    <option key={dept.id} value={dept.id}>{dept.name}</option>
+                  {/* [2026-05-21] 用 flattenDepts 展开树形结构，支持分配到子部门 */}
+                  {flattenDepts(departments).map(dept => (
+                    <option key={dept.id} value={dept.id}>{'\u00A0\u00A0'.repeat(dept.level)}{dept.level > 0 ? '└ ' : ''}{dept.name}</option>
                   ))}
                 </select>
               </div>

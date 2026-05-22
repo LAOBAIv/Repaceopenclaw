@@ -1103,14 +1103,14 @@ export function AgentConsole() {
 
       {/* 智能体弹窗 */}
       {pickerNode && (
-        <AgentPicker agentList={agentList} selected={pickerNode.agentIds}
+        <AgentPicker agentList={agentList.filter(a => !a.isSystem)} selected={pickerNode.agentIds}
           onClose={() => setPickerNodeId(null)}
           onConfirm={ids => confirmAgents(pickerNode.id, ids)} />
       )}
 
       {/* 决策人弹窗 */}
       {showDecisionPicker && (
-        <DecisionPicker agentList={agentList} current={decisionMaker}
+        <DecisionPicker agentList={agentList.filter(a => !a.isSystem)} current={decisionMaker}
           onClose={() => setShowDecisionPicker(false)}
           onConfirm={v => { setDecisionMaker(v); setShowDecisionPicker(false); }} />
       )}

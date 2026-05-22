@@ -384,6 +384,7 @@ export async function startILinkMonitor(): Promise<void> {
   }
 
   isRunning = true;
+  markStarted();
   abortController = new AbortController();
   let syncBuf = loadSyncBuf();
   let consecutiveFailures = 0;
@@ -426,6 +427,7 @@ export async function startILinkMonitor(): Promise<void> {
       }
 
       consecutiveFailures++;
+      updatePollError(e.message);
       logger.error(`[iLink] Poll error (${consecutiveFailures}/${MAX_CONSECUTIVE_FAILURES}): ${e.message}`);
 
       if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
@@ -453,18 +455,36 @@ export function stopILinkMonitor(): void {
 // [2026-05-18] 替代 WechatMessageBridge 的状态接口
 let lastPollAt = '';
 let pollMessageCount = 0;
+let pollCycleCount = 0;
+let lastMessageAt = '';
+let lastError = '';
+let startedAt = '';
 
 export function getILinkStatus() {
   return {
     running: isRunning,
+    startedAt,
     lastPollAt,
+    lastMessageAt,
     pollMessageCount,
+    pollCycleCount,
+    lastError,
   };
 }
 
 export function updatePollStatus(messageCount: number) {
   lastPollAt = new Date().toISOString();
+  pollCycleCount++;
   pollMessageCount += messageCount;
+  if (messageCount > 0) lastMessageAt = lastPollAt;
+}
+
+export function updatePollError(err: string) {
+  lastError = err;
+}
+
+export function markStarted() {
+  startedAt = new Date().toISOString();
 }
 
 function sleep(ms: number): Promise<void> {

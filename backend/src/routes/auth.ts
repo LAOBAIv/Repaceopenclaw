@@ -141,6 +141,24 @@ router.put("/password", authenticate, async (req: Request, res: Response) => {
   }
 });
 
+// ── 组织成员列表（所有登录用户可用） ──────────────────────────────────────
+// [2026-05-21] 群聊功能需要获取组织成员列表，不限制管理员
+router.get("/members", authenticate, (_req: Request, res: Response) => {
+  const users = UserService.listUsers();
+  // 只返回安全字段，不暴露密码哈希
+  const safeUsers = users.map((u: any) => ({
+    id: u.id,
+    username: u.username,
+    email: u.email,
+    nickname: u.nickname,
+    role: u.role,
+    status: u.status,
+    avatar: u.avatar,
+    created_at: u.created_at,
+  }));
+  res.json({ data: safeUsers });
+});
+
 // ── 用户管理（管理员） ────────────────────────────────────────────────────────
 
 // GET /api/auth/users — 获取用户列表

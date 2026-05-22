@@ -194,6 +194,15 @@ async function main(): Promise<void> {
       logger.warn('[Server] Failed to stop ILinkMonitor during shutdown: ' + err.message);
     }
 
+    // [2026-05-21] 关闭前必须保存内存数据库到磁盘，否则 sql.js 内存数据丢失
+    try {
+      const { saveDb } = require('./db/client');
+      saveDb();
+      logger.info('[Server] Database saved to disk before shutdown');
+    } catch (err: any) {
+      logger.error('[Server] Failed to save database on shutdown: ' + err.message);
+    }
+
     // 不等待 server.close 回调，避免长连接/SSE 卡住退出
     server.close(() => {
       logger.info('[Server] HTTP server closed');

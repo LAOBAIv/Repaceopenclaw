@@ -33,6 +33,7 @@ const PAGE_TITLE_MAP: Record<string, string> = {
 
 const NAV_ITEMS = [
   { to: '/workspace',      icon: Sparkles,   label: 'RepaceClaw',  exact: false },
+  { to: '/Projects',       icon: Layers,     label: '项目列表',     exact: false },
   { to: '/agent-library',  icon: Library,    label: 'Agent 模板库', exact: false },
   { to: '/agent-create',   icon: PlusCircle, label: '智能体创建',   exact: false },
   { to: '/agents',         icon: Bot,        label: '智能体管理',   exact: false },
@@ -108,7 +109,7 @@ function UserHeader() {
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             color: '#fff', fontSize: 12, fontWeight: 600,
           }}>
-            {(user.username || 'U').charAt(0).toUpperCase()}
+            {(user.nickname || user.username || 'U').charAt(0).toUpperCase()}
           </div>
           {/* 顶栏只保留头像入口，不再显示用户名，减少横向占用和视觉干扰 */}
           <ChevronDown size={14} color="#9ca3af" />
@@ -152,7 +153,7 @@ function UserHeader() {
                     overflow: 'hidden',
                     textOverflow: 'ellipsis',
                   }}>
-                    {user.username}
+                    {user.nickname || user.username}
                   </div>
                   <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
                     {ROLE_LABEL[user.role] || user.role}
@@ -177,17 +178,17 @@ function UserHeader() {
                     color: '#fff', fontSize: 14, fontWeight: 600,
                     flexShrink: 0,
                   }}>
-                    {(user.username || 'U').charAt(0).toUpperCase()}
+                    {(user.nickname || user.username || 'U').charAt(0).toUpperCase()}
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#6b7280', minWidth: 0 }}>
                     <Mail size={12} style={{ flexShrink: 0 }} />
                     <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{user.email || '-'}</span>
                   </div>
                 </div>
-                {user.id && (
+                {user.username && (
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: '#9ca3af' }}>
                     <Shield size={11} style={{ flexShrink: 0 }} />
-                    <span style={{ fontFamily: 'monospace' }}>ID: {user.id.slice(0, 8)}...</span>
+                    <span>@{user.username}</span>
                   </div>
                 )}
                 {/* Plan C: Tab ID 显示 */}
@@ -277,8 +278,8 @@ export function AppShell() {
 
   useEffect(() => {
     if (!isAuthenticated || !user?.id) return;
-    // 检测是否需要补全信息
-    if ((user as any).needSetup || (user as any).email?.endsWith('@wechat.local')) {
+    // 检测是否需要补全信息（微信登录未设置账号，或未设置昵称）
+    if ((user as any).needSetup || (user as any).email?.endsWith('@wechat.local') || !user.nickname) {
       setNeedSetup(true);
     }
   }, [isAuthenticated, user]);

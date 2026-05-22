@@ -38,38 +38,39 @@ export function AgentCreate() {
   const [presetChannel, setPresetChannel] = useState<TokenChannel | null>(null);
 
   useEffect(() => {
-    apiClient.get('/token-channels')
-      .then(res => {
-        const rawChannels: Array<{ id: string; provider: string; modelName: string; baseUrl: string; apiKey: string; authType: string; enabled: boolean; priority: number; isPreset?: boolean }> = res.data.data || [];
+    Promise.all([
+      apiClient.get('/token-channels'),
+      apiClient.get('/models'),
+      apiClient.get('/model-providers'),
+    ]).then(([chRes, mRes, pRes]) => {
+        const rawChannels: Array<{ id: string; provider: string; modelName: string; baseUrl: string; apiKey: string; authType: string; enabled: boolean; priority: number; isPreset?: boolean }> = chRes.data.data || [];
         if (!rawChannels.length) return;
         const backendChannels = rawChannels.filter(c => c.enabled);
         if (!backendChannels.length) return;
 
-        // 直接使用后端配置的渠道，不再合并静态列表
-        const channels: CodeChannel[] = backendChannels.map(bc => ({
-          id: bc.provider,
-          name: bc.provider,
-          provider: bc.provider,
-          badge: bc.isPreset ? '预设' : undefined,
-          isPreset: !!bc.isPreset,
-          hasBackendKey: !!bc.apiKey,
-          desc: `由管理员在后台配置的渠道（${bc.baseUrl || 'OpenAI 兼容格式'}）`,
-          baseUrl: bc.baseUrl,
-          authType: (bc.authType as 'Bearer' | 'ApiKey' | 'Basic') || 'Bearer',
-          keyLabel: 'API Key',
-          keyPlaceholder: '使用后台配置的 Key（如需覆盖请重新填写）',
-          models: bc.modelName
-            ? [{
-                id: bc.modelName,
-                name: bc.modelName,
-                contextWindow: '-',
-                maxTokens: 4096,
+        const allModels = mRes.data.data || [];
+        const allProviders = pRes.data.data || [];
+
+        const channels: CodeChannel[] = backendChannels.map(bc => {
+          // 通过 baseUrl 匹配 provider，再找对应模型
+          const chBase = (bc.baseUrl || '').replace(/\/$/, '');
+          const matchedProv = allProviders.find((p: any) => (p.baseUrl || '').replace(/\/$/, '') === chBase);
+          const chModels = matchedProv
+            ? allModels.filter((m: any) => m.providerId === matchedProv.id && m.enabled)
+            : [];
+
+          const modelList = chModels.length > 0
+            ? chModels.map((m: any) => ({
+                id: m.name,
+                name: m.name,
+                contextWindow: m.contextWindow || '-',
+                maxTokens: m.maxTokens || 4096,
                 temperature: 0.7,
                 topP: 0.95,
                 frequencyPenalty: 0,
                 presencePenalty: 0,
-                desc: `后台管理员配置的模型`,
-              }]
+                desc: `${m.name}`,
+              }))
             : [{
                 id: 'auto',
                 name: 'Auto（后台调度）',
@@ -79,9 +80,24 @@ export function AgentCreate() {
                 topP: 0.95,
                 frequencyPenalty: 0,
                 presencePenalty: 0,
-                desc: `使用后台配置的默认模型`,
-              }],
-        }));
+                desc: '使用后台配置的默认模型',
+              }];
+
+          return {
+            id: bc.provider,
+            name: bc.provider,
+            provider: bc.provider,
+            badge: bc.isPreset ? '预设' : undefined,
+            isPreset: !!bc.isPreset,
+            hasBackendKey: !!bc.apiKey,
+            desc: `${bc.baseUrl || 'OpenAI 兼容格式'}`,
+            baseUrl: bc.baseUrl,
+            authType: (bc.authType as 'Bearer' | 'ApiKey' | 'Basic') || 'Bearer',
+            keyLabel: 'API Key',
+            keyPlaceholder: '使用后台配置的 Key（如需覆盖请重新填写）',
+            models: modelList,
+          };
+        });
 
         setDynamicChannels(channels);
 

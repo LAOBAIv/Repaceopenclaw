@@ -1037,7 +1037,8 @@ export function MobileWorkspace() {
             <div style={{ textAlign: 'center', color: COLORS.textMuted, padding: 24 }}>暂无智能体</div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              {agents.map(agent => (
+              {/* [2026-05-21] 过滤系统助手，用户不可选 */}
+              {agents.filter(a => !a.isSystem).map(agent => (
                 <button
                   key={agent.id}
                   onClick={() => handleCreateSession(agent.id, agent.name, agent.color || COLORS.accent)}

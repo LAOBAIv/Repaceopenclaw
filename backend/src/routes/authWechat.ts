@@ -102,15 +102,13 @@ router.get("/status/:scene", (req: Request, res: Response) => {
 router.post("/callback", async (req: Request, res: Response) => {
   const { code, state: scene, openid, userInfo } = req.body;
 
-  if (!scene || !loginStates.has(scene)) {
+  // [2026-05-22] 支持无 scene 的直接 openid 登录（前端 iLink 扫码确认后直接传 openid）
+  const loginState = (scene && loginStates.has(scene)) ? loginStates.get(scene)! : null;
+  if (!loginState && !openid) {
     return res.status(400).json({ error: "无效的登录请求" });
   }
 
-  const loginState = loginStates.get(scene)!;
-
   try {
-    // 如果有 openid，直接使用（微信网页授权会返回）
-    // 否则需要通过 code 换取 openid（需要调用微信 API）
     let wechatOpenid = openid;
 
     if (!wechatOpenid && code) {
@@ -132,18 +130,18 @@ router.post("/callback", async (req: Request, res: Response) => {
           wechatOpenid = data.openid;
         } catch (err: any) {
           logger.error(`[WechatLogin] Failed to exchange code for openid: ${err.message}`);
-          loginState.status = 'expired';
+          if (loginState) loginState.status = 'expired';
           return res.status(500).json({ error: "微信授权失败" });
         }
       } else {
         logger.warn('[WechatLogin] WECHAT_APP_ID or WECHAT_APP_SECRET not configured');
-        loginState.status = 'expired';
+        if (loginState) loginState.status = 'expired';
         return res.status(500).json({ error: "微信配置不完整" });
       }
     }
 
     if (!wechatOpenid) {
-      loginState.status = 'expired';
+      if (loginState) loginState.status = 'expired';
       return res.status(400).json({ error: "缺少微信标识" });
     }
 
@@ -166,7 +164,7 @@ router.post("/callback", async (req: Request, res: Response) => {
       const user = UserService.getUserById(userId);
 
       if (!user || user.status !== 'active') {
-        loginState.status = 'expired';
+        if (loginState) loginState.status = 'expired';
         return res.status(403).json({ error: "账号已被禁用" });
       }
 
@@ -243,9 +241,9 @@ router.post("/callback", async (req: Request, res: Response) => {
     }
 
     // 更新登录状态
-    loginState.status = 'success';
-    loginState.userId = userId;
-    loginState.token = token;
+    if (loginState) loginState.status = 'success';
+    if (loginState) loginState.userId = userId;
+    if (loginState) loginState.token = token;
 
     res.json({
       data: {
@@ -256,7 +254,7 @@ router.post("/callback", async (req: Request, res: Response) => {
     });
   } catch (err: any) {
     logger.error(`[WechatLogin] Callback error: ${err.message}`);
-    loginState.status = 'expired';
+    if (loginState) loginState.status = 'expired';
     res.status(500).json({ error: "登录失败" });
   }
 });

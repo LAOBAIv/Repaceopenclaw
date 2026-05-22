@@ -11,6 +11,8 @@ interface AgentStore {
   updateAgent: (id: string, data: Partial<Omit<Agent, "id" | "createdAt">>) => Promise<void>;
   deleteAgent: (id: string) => Promise<void>;
   getAgentById: (id: string) => Agent | undefined;
+  /** [2026-05-21] 用户可选智能体（过滤掉 isSystem，用于选择列表展示） */
+  getUserAgents: () => Agent[];
   toggleTeamAgent: (id: string) => void;
   setTeamAgents: (ids: string[]) => void;
 }
@@ -49,6 +51,10 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
   },
 
   getAgentById: (id) => get().agents.find((a) => a.id === id),
+
+  /** [2026-05-21] 用户可选智能体：过滤掉 isSystem 的系统助手（平台助手、微信助手）
+   *  仅用于用户选择列表展示，不影响 find/lookup 逻辑 */
+  getUserAgents: () => get().agents.filter((a) => !a.isSystem),
 
   toggleTeamAgent: (id) => {
     const ids = get().teamAgentIds;

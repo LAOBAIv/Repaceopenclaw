@@ -255,7 +255,7 @@ function callGateway(
           "X-OpenClaw-Session-Key": sessionKey,
           "Content-Length": Buffer.byteLength(body),
         },
-        timeout: 120000,
+        timeout: 300000, // [2026-05-21] 从120s提高到300s，大文件分析需要更长时间
       },
       (res) => {
         let fullText = "";
@@ -288,7 +288,7 @@ function callGateway(
     req.on("error", (err: Error) => reject(new Error(`Gateway 连接失败: ${err.message}`)));
     req.on("timeout", () => {
       req.destroy();
-      reject(new Error("Gateway 请求超时 (120s)"));
+      reject(new Error("Gateway 请求超时 (300s)"));
     });
 
     req.write(body);

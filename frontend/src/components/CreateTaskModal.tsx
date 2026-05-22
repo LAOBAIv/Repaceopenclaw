@@ -376,7 +376,8 @@ export function CreateTaskModal({ open, onClose }: CreateTaskModalProps) {
               borderRadius: 8,
               border: '1.5px solid #e5e7eb',
             }}>
-              {agents.map(agent => {
+              {/* [2026-05-21] 过滤系统助手，用户不可选 */}
+              {agents.filter(a => !a.isSystem).map(agent => {
                 const isSelected = selectedAgentIds.includes(agent.id);
                 const ac = agent.color ?? '#6366f1';
                 return (

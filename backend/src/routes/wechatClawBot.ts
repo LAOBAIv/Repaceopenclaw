@@ -16,6 +16,7 @@ import { logger } from '../utils/logger';
 import { resolveOpenClawGateway } from '../utils/openclawGateway';
 import { clawBotClient } from '../services/ClawBotGatewayClient';
 import { wechatMessageBridge, loadWechatAccounts } from '../services/WechatMessageBridge';
+import { getDb, execToRows } from '../db/client';
 import http from 'http';
 import https from 'https';
 import crypto from 'crypto';
@@ -717,15 +718,38 @@ router.get('/events', (req: Request, res: Response) => {
 router.get('/accounts', (_req: Request, res: Response) => {
   try {
     const accounts = getWeixinAccounts();
+    // [2026-05-22] 关联 user_wechat_bindings + users + departments 表，返回 RC 用户名和组织
+    const db = getDb();
+    const bindingsResult = execToRows(db,
+      `SELECT b.wechat_openid, b.bot_id, u.username, u.nickname,
+              COALESCE(root_d.name, d.name) as department
+       FROM user_wechat_bindings b
+       LEFT JOIN users u ON b.user_id = u.id
+       LEFT JOIN user_org_scope uos ON uos.user_id = u.id AND uos.is_primary = 1 AND uos.status = 'active'
+       LEFT JOIN departments d ON d.id = uos.department_id
+       LEFT JOIN departments root_d ON root_d.id = d.parent_id AND d.parent_id IS NOT NULL`);
+    const bindingMap = new Map<string, { username: string; nickname: string; department: string }>();
+    for (const row of bindingsResult) {
+      const key = row.bot_id || row.wechat_openid;
+      const info = { username: row.username || '', nickname: row.nickname || '', department: row.department || '' };
+      bindingMap.set(key, info);
+      if (row.wechat_openid) bindingMap.set(row.wechat_openid, info);
+    }
     res.json({
       success: true,
       data: {
-        accounts: accounts.map(a => ({
-          accountId: a.accountId,
-          userId: a.userId,
-          hasToken: a.hasToken,
-          savedAt: a.savedAt,
-        })),
+        accounts: accounts.map(a => {
+          const binding = bindingMap.get(a.accountId) || bindingMap.get(a.userId);
+          return {
+            accountId: a.accountId,
+            userId: a.userId,
+            hasToken: a.hasToken,
+            savedAt: a.savedAt,
+            rcUsername: binding?.username || '',
+            rcNickname: binding?.nickname || '',
+            rcDepartment: binding?.department || '',
+          };
+        }),
       },
     });
   } catch (err: any) {
@@ -789,16 +813,42 @@ router.delete('/accounts/:accountId', (req: Request, res: Response) => {
 });
 
 /**
- * GET /api/wechat-clawbot/sync-status
+ * GET /api/wechat-clawbot/stats
+ * 消息统计
+ */
+router.get('/stats', (_req: Request, res: Response) => {
+  try {
+    const db = getDb();
+    // 微信Bot来源（iLink）
+    const botUser = execToRows(db, "SELECT COUNT(*) as cnt FROM messages WHERE conversation_id IN (SELECT id FROM conversations WHERE conversation_type = 'wechat_assistant') AND id LIKE 'wechat-msg%' AND role = 'user'");
+    const botAgent = execToRows(db, "SELECT COUNT(*) as cnt FROM messages WHERE conversation_id IN (SELECT id FROM conversations WHERE conversation_type = 'wechat_assistant') AND id LIKE 'wechat-msg%' AND role = 'agent'");
+    // RC微信助手来源
+    const rcUser = execToRows(db, "SELECT COUNT(*) as cnt FROM messages WHERE conversation_id IN (SELECT id FROM conversations WHERE conversation_type = 'wechat_assistant') AND id NOT LIKE 'wechat-msg%' AND role = 'user'");
+    const rcAgent = execToRows(db, "SELECT COUNT(*) as cnt FROM messages WHERE conversation_id IN (SELECT id FROM conversations WHERE conversation_type = 'wechat_assistant') AND id NOT LIKE 'wechat-msg%' AND role = 'agent'");
+    // 总计
+    const total = execToRows(db, "SELECT COUNT(*) as cnt FROM messages WHERE conversation_id IN (SELECT id FROM conversations WHERE conversation_type = 'wechat_assistant')");
+    res.json({
+      success: true,
+      data: {
+        total: total[0]?.cnt || 0,
+        wechatBot: { received: botUser[0]?.cnt || 0, replied: botAgent[0]?.cnt || 0 },
+        rcAssistant: { sent: rcUser[0]?.cnt || 0, replied: rcAgent[0]?.cnt || 0 },
+      },
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
+* GET /api/wechat-clawbot/sync-status
  * 获取消息同步状态
  */
 router.get('/sync-status', (_req: Request, res: Response) => {
   try {
-    const status = wechatMessageBridge.getSyncStatus();
-    res.json({
-      success: true,
-      data: { syncStates: status },
-    });
+    const { ILinkMonitor } = require('../services/ILinkMonitor');
+    const status = ILinkMonitor.getStatus();
+    res.json({ success: true, data: status });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });
   }
@@ -824,18 +874,19 @@ router.post('/sync-now', async (_req: Request, res: Response) => {
 router.get('/conversations', (_req: Request, res: Response) => {
   try {
     const db = require('../db/client').getDb();
-    const result = db.exec(
-      `SELECT id, title, oc_session_key, created_at, last_message_at, status
-       FROM conversations
-       WHERE scope_type = 'wechat'
-       ORDER BY last_message_at DESC`
-    );
-    const conversations = result.length > 0
-      ? result[0].values.map(row => ({
-          id: row[0], title: row[1], oc_session_key: row[2],
-          created_at: row[3], last_message_at: row[4], status: row[5],
-        }))
-      : [];
+    const { execToRows } = require('../db/client');
+    const rows = execToRows(db,
+      `SELECT c.id, c.title, c.oc_session_key, c.created_at, c.last_message_at, c.status,
+              u.username, u.nickname
+       FROM conversations c
+       LEFT JOIN users u ON c.user_id = u.id
+       WHERE c.conversation_type = 'wechat_assistant' OR c.scope_type = 'wechat'
+       ORDER BY c.last_message_at DESC`);
+    const conversations = rows.map((row: any) => ({
+      id: row.id, title: row.title, oc_session_key: row.oc_session_key,
+      created_at: row.created_at, last_message_at: row.last_message_at, status: row.status,
+      username: row.nickname || row.username || '',
+    }));
     res.json({ success: true, data: { conversations } });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });

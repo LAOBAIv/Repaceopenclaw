@@ -103,6 +103,12 @@ export class UserService {
     );
     saveDb();
 
+    // [2026-05-21] 持久化验证：确认用户数据已写入磁盘
+    const verifyResult = db.exec("SELECT id FROM users WHERE id=?", [id]);
+    if (!verifyResult.length || !verifyResult[0].values.length) {
+      throw new Error("用户注册失败：数据未持久化");
+    }
+
     const user: User = {
       id, user_code: userCode, username: input.username, email: input.email,
       role, status: "active", avatar: "", last_login_at: "", created_at: now, updated_at: now,
@@ -119,7 +125,7 @@ export class UserService {
     const identifier = input.identifier.trim();
 
     const res = db.exec(
-      `SELECT id, user_code, username, email, password_hash, role, status, avatar, last_login_at, created_at, updated_at
+      `SELECT id, user_code, username, email, password_hash, role, status, avatar, last_login_at, created_at, updated_at, nickname
        FROM users
        WHERE lower(email)=lower(?) OR username=?
        LIMIT 1`,
@@ -146,7 +152,7 @@ export class UserService {
     db.run("UPDATE users SET last_login_at=?, updated_at=? WHERE id=?", [now, now, row[0]]);
     saveDb();
 
-    const user = rowToUser([row[0], row[1], row[2], row[3], row[5], row[6], row[7], now, row[9], row[10]]);
+    const user = rowToUser([row[0], row[1], row[2], row[3], row[5], row[6], row[7], now, row[9], row[10], null, null, null, row[11]]);
     
     // 确保用户有微信助手会话
     const wechatConversations = execToRows(db, 

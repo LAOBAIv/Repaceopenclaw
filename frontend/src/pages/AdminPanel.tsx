@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ShieldCheck, Cpu, Users, FileText, Route, LayoutTemplate, Bot } from 'lucide-react';
+import { ShieldCheck, Cpu, Users, FileText, Route, LayoutTemplate, Bot, MessageCircle } from 'lucide-react';
 import { ModelChannels } from './ModelChannels';
 import { AgentChannelOverview } from '../components/AgentChannelOverview';
 import { UserManagement } from './UserManagement';
@@ -7,9 +7,10 @@ import { AuditLogs } from './AuditLogs';
 import { TemplatesAdmin } from './TemplatesAdmin';
 import { UserAgentsAdmin } from './UserAgentsAdmin';
 import { useAuthStore } from '../stores/authStore';
+import { WechatClawBot } from './WechatClawBot';
 import { Navigate } from 'react-router-dom';
 
-type AdminTab = 'model-channels' | 'agent-routing' | 'templates' | 'user-agents' | 'users' | 'audit-logs';
+type AdminTab = 'model-channels' | 'agent-routing' | 'templates' | 'user-agents' | 'users' | 'audit-logs' | 'wechat-bot';
 
 const TABS = [
   { id: 'model-channels' as AdminTab, label: '模型渠道', icon: Cpu },
@@ -18,6 +19,7 @@ const TABS = [
   { id: 'user-agents' as AdminTab,    label: '用户智能体', icon: Bot },
   { id: 'users' as AdminTab,          label: '用户管理', icon: Users },
   { id: 'audit-logs' as AdminTab,     label: '审计日志', icon: FileText },
+  { id: 'wechat-bot' as AdminTab,     label: '微信Bot', icon: MessageCircle },
 ];
 
 export function AdminPanel() {
@@ -84,6 +86,7 @@ export function AdminPanel() {
         {activeTab === 'user-agents' && <UserAgentsAdmin />}
         {activeTab === 'users' && <UserManagement />}
         {activeTab === 'audit-logs' && <AuditLogs />}
+        {activeTab === 'wechat-bot' && <WechatClawBot />}
       </div>
     </div>
   );

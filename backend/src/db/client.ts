@@ -1,9 +1,10 @@
-// Database client using sql.js (pure JS SQLite, no native build needed)
-import initSqlJs, { Database } from "sql.js";
+// Database client - [2026-05-22] 切换到 better-sqlite3 via SqliteCompat 兼容层
+// 原 sql.js 内存模式导致生产数据丢失，现改为磁盘直写 + WAL
 import path from "path";
 import fs from "fs";
 import { dbConfig } from "./config";
 import { IdGenerator } from "../utils/IdGenerator";
+import { SqliteCompat } from "./sqlite-compat";
 
 let db: any;
 const DB_PATH = path.join(__dirname, "../../data/platform.db");
@@ -19,28 +20,11 @@ export async function initDb(): Promise<any> {
     return pgDb;
   }
 
-  // SQLite 模式（默认）
+  // SQLite 模式（默认）— 使用 better-sqlite3 兼容层
   if (db) return db;
 
-  const SQL = await initSqlJs();
-
-  // Ensure data directory exists
-  const dataDir = path.dirname(DB_PATH);
-  if (!fs.existsSync(dataDir)) {
-    fs.mkdirSync(dataDir, { recursive: true });
-  }
-
-  // Load existing DB or create new
-  if (fs.existsSync(DB_PATH)) {
-    const fileBuffer = fs.readFileSync(DB_PATH);
-    db = new SQL.Database(fileBuffer);
-  } else {
-    db = new SQL.Database();
-  }
-
-  // Enable WAL mode (journaling for sql.js not needed, skip)
-  db.run("PRAGMA journal_mode = MEMORY;");
-  db.run("PRAGMA foreign_keys = ON;");
+  db = new SqliteCompat(DB_PATH);
+  // WAL + foreign_keys 已在 SqliteCompat 构造函数中设置
 
   createTables(db);
   // Seed default skills & plugins on first run (idempotent — skips if already present)
@@ -49,6 +33,7 @@ export async function initDb(): Promise<any> {
   // 目标是让“新数据开始双写、老数据尽快可读”，同时避免一次性大迁移把现网跑挂。
   backfillBusinessCodes(db);
   saveDb();
+
   return db;
 }
 
@@ -378,7 +363,9 @@ function createTables(db: any) {
   try { db.run("ALTER TABLE messages ADD COLUMN user_id TEXT NOT NULL DEFAULT ''"); } catch {}
   // Dual-code Phase 1: message_code 作为业务消息编码，底层主键仍为 id(UUID)
   try { db.run("ALTER TABLE messages ADD COLUMN message_code TEXT NOT NULL DEFAULT ''"); } catch {}
-  try { db.run("CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_message_code ON messages(message_code)"); } catch {}
+  // [2026-05-22] partial index: 只对非空 message_code 做唯一约束，避免空值冲突导致消息丢失
+  try { db.run("DROP INDEX IF EXISTS idx_messages_message_code"); } catch {}
+  try { db.run("CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_message_code ON messages(message_code) WHERE message_code != ''"); } catch {}
   // Migrate: add token_count to existing messages table (idempotent)
   try { db.run("ALTER TABLE messages ADD COLUMN token_count INTEGER NOT NULL DEFAULT 0"); } catch {}
 
@@ -1192,14 +1179,9 @@ export const SessionTabService = {
 };
 
 export function saveDb() {
-  if (dbConfig.type === "postgres") return; // PostgreSQL 不需要手动 save
-  if (!db) return;
-  const data = db.export();
-  const dataDir = path.dirname(DB_PATH);
-  if (!fs.existsSync(dataDir)) {
-    fs.mkdirSync(dataDir, { recursive: true });
-  }
-  fs.writeFileSync(DB_PATH, Buffer.from(data));
+  // [2026-05-22] better-sqlite3 每次写入自动持久化，不再需要手动 export
+  // 保留函数签名避免修改 500+ 处调用
+  return;
 }
 
 /**

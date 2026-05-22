@@ -33,7 +33,8 @@ router.get("/tree", ...adminOnly, (_req: Request, res: Response) => {
 });
 
 router.get("/departments", ...adminOnly, (_req: Request, res: Response) => {
-  res.json({ data: OrganizationService.listDepartments() });
+  // [2026-05-21] 返回树形结构，前端按层级展示
+  res.json({ data: OrganizationService.buildDepartmentTree() });
 });
 
 router.post("/departments", ...adminOnly, (req: Request, res: Response) => {

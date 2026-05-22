@@ -10,15 +10,37 @@ import { AgentKanban } from './pages/AgentKanban';
 import { SkillSettings } from './pages/SkillSettings';
 import { PluginSettings } from './pages/PluginSettings';
 import AccountSettings from './pages/AccountSettings';
-import { PlatformAssistant } from './pages/PlatformAssistant';
-import { WechatClawBot } from './pages/WechatClawBot';
+import { ProjectsPage } from './pages/ProjectsPage';
 import { AuthPage } from './pages/AuthPage';
 import { AdminPanel } from './pages/AdminPanel';
 import { MobileWorkspace } from './pages/MobileWorkspace';
 import { MobileAgentCreate } from './pages/MobileAgentCreate';
 import { MobileAgentManager } from './pages/MobileAgentManager';
 import { MobileAgentLibrary } from './pages/MobileAgentLibrary';
+import { PlatformAssistant } from './pages/PlatformAssistant';
+import { WechatClawBot } from './pages/WechatClawBot';
+import GroupChat from './pages/GroupChat';
 import { useAuthStore } from './stores/authStore';
+
+// 浏览器类型检测
+function detectIsMobile(): boolean {
+  return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)
+    || window.innerWidth <= 768;
+}
+
+// 在 React Router 初始化之前就执行跳转，避免渲染冲突
+(function immediateRedirect() {
+  if (window.location.pathname === '/login') return;
+  const isMobile = detectIsMobile();
+  const isAlreadyMobile = window.location.pathname.startsWith('/mobile');
+
+  if (isMobile && !isAlreadyMobile) {
+    window.location.replace('/mobile');
+  } else if (!isMobile && isAlreadyMobile) {
+    // PC 端访问 /mobile → 直接跳 /workspace
+    window.location.replace('/workspace');
+  }
+})();
 
 // 路由守卫：未登录跳转到 /login
 // Plan C 登录恢复兜底：首屏加载瞬间，zustand persist 可能还没来得及把
@@ -39,17 +61,6 @@ function PrivateRoute({ children }: { children: React.ReactNode }) {
 }
 
 function App() {
-  // [2026-05-19] 自动识别移动端浏览器，跳转到移动端路由
-  useEffect(() => {
-    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)
-      || window.innerWidth <= 768;
-    const isAlreadyMobile = window.location.pathname.startsWith('/mobile');
-    const isLogin = window.location.pathname === '/login';
-    if (isMobile && !isAlreadyMobile && !isLogin) {
-      window.location.replace('/mobile');
-    }
-  }, []);
-
   return (
     <BrowserRouter>
       <Routes>
@@ -78,6 +89,13 @@ function App() {
           </PrivateRoute>
         } />
 
+        {/* 群聊页面（独立全屏，不走 AppShell） */}
+        <Route path="/group-chat" element={
+          <PrivateRoute>
+            <GroupChat />
+          </PrivateRoute>
+        } />
+
         {/* 需要登录的页面 */}
         <Route element={
           <PrivateRoute>
@@ -97,6 +115,7 @@ function App() {
           <Route path="/account" element={<AccountSettings />} />
           <Route path="/platform-assistant" element={<PlatformAssistant />} />
           <Route path="/wechat-clawbot" element={<WechatClawBot />} />
+          <Route path="/Projects" element={<ProjectsPage />} />
           <Route path="*" element={<Navigate to="/workspace" replace />} />
         </Route>
       </Routes>
