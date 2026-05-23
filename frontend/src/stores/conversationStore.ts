@@ -7,6 +7,7 @@ import { getCurrentUserId, getOrCreateTabId } from "../lib/storageScope";
 import type { WsSync } from "../lib/sync";
 import type { BroadcastSync } from "../lib/sync";
 import { restoreTabs, isGlobalAssistant as isGlobalAssistantCheck } from "./conversation/tabRestore";
+import { isConversationNotFoundError } from "./conversation/helpers";
 
 // 平台助手 UUID(DB 真实 id)+ 兼容旧别名
 const PLATFORM_ASSISTANT_IDS = new Set([
@@ -98,9 +99,7 @@ function resolveConversationAgentIds(conv?: Partial<Conversation> | null, fallba
   return fallback || [];
 }
 
-function isConversationNotFoundError(err: any): boolean {
-  return err?.response?.status === 404 || err?.response?.data?.error === 'Conversation not found';
-}
+// isConversationNotFoundError imported from ./conversation/helpers
 
 export interface ConversationPanel {
   id: string;
