@@ -104,6 +104,12 @@ router.get("/platform-assistant", (req: Request, res: Response) => {
 
   if (existingList.length > 0) {
     const conv = existingList[0];
+    // [2026-05-23] 确保已有会话也绑定 OC session key（和微信助手一致）
+    const paAgent = AgentService.getByIdOrCode('repaceclaw-platform-assistant', userId);
+    if (paAgent) {
+      const ocSessionKey = `agent:repaceclaw-platform-assistant:rc:${conv.id}`;
+      ConversationService.bindOpenClawSession(conv.id, ocSessionKey, paAgent.id, [paAgent.id]);
+    }
     const messages = ConversationService.getMessages(conv.id);
     return res.json({ data: { ...conv, messages } });
   }
@@ -122,6 +128,10 @@ router.get("/platform-assistant", (req: Request, res: Response) => {
     scopeId: userId,
     memoryPolicy: 'private',
   });
+
+  // [2026-05-23] 绑定 OC session key，和微信助手一致的逻辑
+  const ocSessionKey = `agent:repaceclaw-platform-assistant:rc:${conv.id}`;
+  ConversationService.bindOpenClawSession(conv.id, ocSessionKey, paAgent.id, [paAgent.id]);
 
   logger.info(`[Platform Assistant] Created conversation ${conv.id} for user ${userId}`);
   const messages = ConversationService.getMessages(conv.id);

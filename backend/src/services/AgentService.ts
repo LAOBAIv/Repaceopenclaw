@@ -178,8 +178,9 @@ function buildWechatAssistantAgent(): Agent {
   // 特征：visibility=public, 所有用户可见
   // 执行端：OpenClaw rc-wechat-agent（独立 workspace）
   // 会话 Key：agent:rc-wechat-agent:rc:{conversationId}
+  // [2026-05-23] 修复：用 agent_code 查询（稳定），不依赖 openclaw_agent_id（会被 syncAllAgents 重置）
   const db = getDb();
-  const result = db.exec(`SELECT * FROM agents WHERE openclaw_agent_id = 'rc-wechat-agent' LIMIT 1`);
+  const result = db.exec(`SELECT * FROM agents WHERE agent_code = 'rc-wechat-agent' LIMIT 1`);
   if (!result.length || !result[0].values.length) {
     return null;
   }
@@ -225,9 +226,11 @@ function buildWechatAssistantAgent(): Agent {
 export const AgentService = {
   isWechatAssistantId(id?: string | null) {
     if (!id) return false;
-    if (id === 'rc-wechat-agent' || id === 'wechat-assistant') return true;
+    // [2026-05-23] 增加硬编码 UUID 匹配，避免 buildWechatAssistantAgent 返回 null 时漏判
+    if (id === 'rc-wechat-agent' || id === 'wechat-assistant' || id === '151194a0-385e-4fc6-8aca-c1622e5967f8') return true;
     try {
       const runtime = buildWechatAssistantAgent();
+      if (!runtime) return false;
       return id === runtime.id || id === runtime.agentCode || id === runtime.openclawAgentId;
     } catch {
       return false;

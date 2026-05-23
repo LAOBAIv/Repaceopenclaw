@@ -32,6 +32,8 @@ const AGENT_TYPE_MAP: Record<string, string> = {
   decision: 'rc-decision-agent',
   general: 'rc-general-agent',
   wechat: 'rc-wechat-agent',
+  // [2026-05-23] 补全平台助手映射，纳入正式体系
+  platform: 'repaceclaw-platform-assistant',
 };
 
 /**

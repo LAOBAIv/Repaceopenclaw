@@ -107,7 +107,18 @@ router.get(
       let effectiveModel = "";
       let source: "private" | "global" | "gateway" | "none" = "none";
 
-      if (hasPrivateToken) {
+      // [2026-05-23] 系统智能体（平台助手、微信助手）统一走全局渠道
+      // 它们的 token/模型是平台级配置，不是用户私有 Key
+      if (agent.isSystem) {
+        // 微信助手实际走 linkApi 渠道，平台助手走 OpenClaw Gateway
+        const providerName = agent.tokenProvider || agent.modelProvider || 'OpenClaw';
+        const modelName = (agent.modelName && agent.modelName !== 'auto')
+          ? agent.modelName
+          : (agent.tokenProvider ? `${providerName} 默认模型` : '平台默认');
+        effectiveChannel = providerName;
+        effectiveModel = modelName;
+        source = 'global';
+      } else if (hasPrivateToken) {
         effectiveChannel = agent.tokenProvider || "custom";
         effectiveModel = (agent.modelName && agent.modelName.toLowerCase() !== "auto")
           ? agent.modelName
@@ -157,35 +168,143 @@ router.get(
         source,
         effectiveChannel,
         effectiveModel,
-        hasPrivateToken,
-        tokenProvider: agent.tokenProvider || null,
+        // [2026-05-23] 系统智能体的 token 是平台级配置，不算“私有 Key”
+        hasPrivateToken: agent.isSystem ? false : hasPrivateToken,
+        tokenProvider: agent.isSystem ? ('平台配置') : (agent.tokenProvider || null),
         modelName: agent.modelName || null,
         modelProvider: agent.modelProvider || null,
+        isSystem: agent.isSystem || false,
       };
     });
 
-    // 追加系统级智能体（运行时动态构建，不在 DB 中）
+    // [2026-05-23] 系统智能体置顶 + 去重
+    // 平台助手和微信助手是全局通用智能体，不区分用户，始终置顶展示
     const systemAgentIds = ['repaceclaw-platform-assistant', 'rc-wechat-agent'];
+    const existingIds = new Set(overview.map(a => a.id));
+    const systemOverview: typeof overview = [];
     for (const sysId of systemAgentIds) {
       const sysAgent = AgentService.getByIdOrCode(sysId);
-      if (sysAgent) {
-        overview.push({
+      if (sysAgent && !existingIds.has(sysAgent.id)) {
+        // DB 中不存在，追加
+        systemOverview.push({
           id: sysAgent.id,
           name: sysAgent.name,
           color: sysAgent.color,
           status: sysAgent.status,
-          source: 'gateway' as const,
-          effectiveChannel: 'openclaw',
-          effectiveModel: sysAgent.modelName || '默认',
+          source: 'global' as const,
+          effectiveChannel: sysAgent.tokenProvider || sysAgent.modelProvider || 'OpenClaw',
+          effectiveModel: sysAgent.modelName || '平台默认',
           hasPrivateToken: false,
-          tokenProvider: sysAgent.modelProvider || null,
+          tokenProvider: '平台配置',
           modelName: sysAgent.modelName || null,
           modelProvider: sysAgent.modelProvider || null,
+          isSystem: true,
         });
+      } else if (sysAgent) {
+        // DB 中已存在，从 overview 中提取到顶部
+        const idx = overview.findIndex(a => a.id === sysAgent.id);
+        if (idx >= 0) {
+          systemOverview.push(overview.splice(idx, 1)[0]);
+        }
       }
     }
 
-    sendSuccess(res, overview);
+    sendSuccess(res, [...systemOverview, ...overview]);
+  })
+);
+
+
+/**
+ * GET /api/agents/channel-overview
+ * [2026-05-23] 智能体通道管理：展示 OC agent 通道列表 + 关联的 RC 智能体
+ */
+router.get(
+  '/channel-overview',
+  authenticate,
+  asyncHandler(async (_req: Request, res: Response) => {
+    const db = getDb();
+    const fs = require('fs');
+
+    // 读取 openclaw.json 中的 OC agent 配置
+    let ocAgents: any[] = [];
+    try {
+      const raw = fs.readFileSync('/root/.openclaw/openclaw.json', 'utf-8');
+      const data = JSON.parse(raw);
+      ocAgents = (data?.agents?.list || []).filter((a: any) =>
+        a.id?.startsWith('rc-') || a.id === 'repaceclaw-platform-assistant'
+      );
+    } catch {}
+
+    // 从 DB 获取所有 RC 智能体的映射关系
+    const allAgents = AgentService.list();
+
+    // 构建通道列表
+    const { getAllAgentTypes, toOpenClawAgentId, fromOpenClawAgentId } = require('../services/AgentBridge/AgentMapper');
+
+    const TYPE_LABELS: Record<string, string> = {
+      dev: '工程开发类', data: '数据分析类', creative: '内容生成类',
+      pm: '项目管理类', research: '知识推理类', ops: '平台策略类',
+      decision: '决策支持类', general: '通用助手类', wechat: '微信助手',
+      platform: '平台助手',
+    };
+
+    const channels = ocAgents.map((oc: any) => {
+      const agentType = fromOpenClawAgentId(oc.id) || 'unknown';
+      // 找到关联的 RC 智能体
+      const rcAgents = allAgents.filter(a => a.openclawAgentId === oc.id).map(a => ({
+        id: a.id, name: a.name, color: a.color,
+        userId: a.userId, visibility: a.visibility,
+      }));
+      const isSystem = oc.id === 'rc-wechat-agent' || oc.id === 'repaceclaw-platform-assistant';
+      return {
+        ocAgentId: oc.id,
+        type: agentType,
+        label: TYPE_LABELS[agentType] || agentType,
+        model: oc.model || '',
+        workspace: oc.workspace || '',
+        rcAgents,
+        rcAgentCount: rcAgents.length,
+        isSystem,
+        editable: isSystem && oc.id !== 'repaceclaw-platform-assistant',
+      };
+    });
+
+    sendSuccess(res, channels);
+  })
+);
+
+/**
+ * PUT /api/agents/channel/:ocAgentId/model
+ * [2026-05-23] 修改 OC agent 的模型配置（写入 openclaw.json）
+ */
+router.put(
+  '/channel/:ocAgentId/model',
+  authenticate,
+  asyncHandler(async (req: Request, res: Response) => {
+    const role = (req as any).user?.role;
+    if (role !== 'admin' && role !== 'super_admin') {
+      throw Errors.forbidden('仅管理员可修改通道模型');
+    }
+    const { ocAgentId } = req.params;
+    const { model } = req.body;
+    if (!model || typeof model !== 'string') {
+      throw Errors.validation('缺少 model 参数');
+    }
+
+    const fs = require('fs');
+    const configPath = '/root/.openclaw/openclaw.json';
+    const raw = fs.readFileSync(configPath, 'utf-8');
+    const data = JSON.parse(raw);
+    const agents = data?.agents?.list || [];
+    const idx = agents.findIndex((a: any) => a.id === ocAgentId);
+    if (idx < 0) {
+      throw Errors.notFound('OC 通道');
+    }
+    agents[idx].model = model;
+    data.agents.list = agents;
+    fs.writeFileSync(configPath, JSON.stringify(data, null, 2), 'utf-8');
+
+    sendSuccess(res, { ocAgentId, model }, '通道模型已更新');
   })
 );
 
