@@ -9,6 +9,8 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism';
+import type { Agent, Message } from '../../types';
+import type { ConversationPanel } from '../../stores/conversationStore';
 
 /**
  * ChatArea — 消息展示区
@@ -32,9 +34,9 @@ export function ChatArea({
   messagesEndRef,
   formatMessageTime,
 }: {
-  openPanels: any[];
-  activePanel: any | null;
-  agents: any[];
+  openPanels: ConversationPanel[];
+  activePanel: ConversationPanel | null;
+  agents: Agent[];
   expandedPanels: Set<string>;
   onExpandPanel: (panelId: string) => void;
   welcomeAreaRef: React.RefObject<HTMLDivElement | null>;
@@ -94,7 +96,7 @@ export function ChatArea({
                   </div>
                 )}
                 {/* 消息列表 */}
-                {visibleMessages.map((msg: any) => {
+                {visibleMessages.map((msg: Message) => {
                   const isStreamingMessage = Boolean(msg.streaming || panel.streamingMessageId === msg.id);
                   const msgAgent = msg.role === 'user'
                     ? null

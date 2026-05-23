@@ -28,7 +28,7 @@ function ProjectModal({
   onClose,
 }: {
   initial?: Project;
-  onSave: (data: any) => Promise<void>;
+  onSave: (data: Partial<Project>) => Promise<void>;
   onClose: () => void;
 }) {
   const [title, setTitle] = useState(initial?.title || '');
@@ -222,12 +222,12 @@ export function ProjectsPage() {
     return true;
   });
 
-  const handleCreate = async (data: any) => {
+  const handleCreate = async (data: Partial<Project>) => {
     await projectsApi.create(data);
     fetchProjects();
   };
 
-  const handleEdit = async (data: any) => {
+  const handleEdit = async (data: Partial<Project>) => {
     if (!modal?.project) return;
     await projectsApi.update(modal.project.id, data);
     fetchProjects();

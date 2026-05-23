@@ -5,6 +5,21 @@ import { Channel, TestResult, PRESETS, emptyForm, FormState } from './constants'
 import { ChannelList } from './ChannelList';
 import { ChannelModal } from './ChannelModal';
 
+interface ModelItem {
+  id: string;
+  modelId: string;
+  providerId: string;
+  enabled: boolean;
+  providerName?: string;
+  providerBaseUrl?: string;
+}
+
+interface Provider {
+  id: string;
+  name: string;
+  baseUrl: string;
+}
+
 export function ModelChannels() {
   const [channels, setChannels] = useState<Channel[]>([]);
   const [loading, setLoading] = useState(true);
@@ -18,8 +33,8 @@ export function ModelChannels() {
   const [showApiKey, setShowApiKey] = useState(true);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [isCustom, setIsCustom] = useState(false);
-  const [models, setModels] = useState<any[]>([]);
-  const [editingModel, setEditingModel] = useState<any>(null);
+  const [models, setModels] = useState<ModelItem[]>([]);
+  const [editingModel, setEditingModel] = useState<ModelItem | null>(null);
   const [showModelModal, setShowModelModal] = useState(false);
 
   const fetchChannels = async () => {
@@ -31,8 +46,8 @@ export function ModelChannels() {
       const [mRes, pRes] = await Promise.all([apiClient.get('/models'), apiClient.get('/model-providers')]);
       const provs = pRes.data.data || [];
       // 建立 provider baseUrl -> channel id 的映射
-      setModels((mRes.data.data || []).map((m: any) => {
-        const prov = provs.find((p: any) => p.id === m.providerId);
+      setModels((mRes.data.data || []).map((m: Record<string, any>) => {
+        const prov = provs.find((p: Provider) => p.id === m.providerId);
         return { ...m, providerName: prov?.name || '', providerBaseUrl: prov?.baseUrl || '' };
       }));
     } catch { setModels([]); }
@@ -97,14 +112,14 @@ export function ModelChannels() {
     }
   };
 
-  const handleToggleModel = async (model: any) => {
+  const handleToggleModel = async (model: ModelItem) => {
     try { await apiClient.put(`/models/${model.id}`, { enabled: !model.enabled }); fetchModels(); } catch (e) { console.warn("[ModelChannels]", e); }
   };
-  const handleDeleteModel = async (model: any) => {
+  const handleDeleteModel = async (model: ModelItem) => {
     if (!confirm(`确定删除模型 "${model.displayName || model.name}" 吗？`)) return;
     try { await apiClient.delete(`/models/${model.id}`); fetchModels(); } catch (e) { console.warn("[ModelChannels]", e); }
   };
-  const handleEditModel = (model: any) => {
+  const handleEditModel = (model: ModelItem) => {
     setEditingModel(model);
     setShowModelModal(true);
   };
@@ -113,7 +128,7 @@ export function ModelChannels() {
     try {
       const pRes = await apiClient.get('/model-providers');
       const provs = pRes.data.data || [];
-      const prov = provs.find((p: any) => p.baseUrl.replace(/\/$/, '') === channelBaseUrl.replace(/\/$/, ''));
+      const prov = provs.find((p: Provider) => p.baseUrl.replace(/\/$/, '') === channelBaseUrl.replace(/\/$/, ''));
       if (!prov) { setSaveMsg('❌ 找不到对应的 Provider'); setTimeout(() => setSaveMsg(''), 3000); return; }
       await apiClient.post('/models', { providerId: prov.id, name: modelName, displayName: modelName, contextWindow: 128000, maxTokens: 8192, capabilities: ['text'], enabled: true });
       fetchModels();

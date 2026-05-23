@@ -44,7 +44,7 @@ export interface MobileChatMessagesProps {
 /* ─────────────────────────────────────────────
  * 代码块组件（带复制按钮 + 自动换行）
  * ───────────────────────────────────────────── */
-function CodeBlock({ codeText, language, isUser, props }: { codeText: string; language: string; isUser: boolean; props: any }) {
+function CodeBlock({ codeText, language, isUser, props }: { codeText: string; language: string; isUser: boolean; props: Record<string, unknown> }) {
   const [copied, setCopied] = useState(false);
   const handleCopy = () => {
     navigator.clipboard.writeText(codeText).then(() => {
@@ -93,7 +93,7 @@ function CodeBlock({ codeText, language, isUser, props }: { codeText: string; la
 /* ─────────────────────────────────────────────
  * 表格组件（小屏卡片视图 + 兜底横向滚动）
  * ───────────────────────────────────────────── */
-function MobileTable({ children, isUser, ...props }: any) {
+function MobileTable({ children, isUser, ...props }: { children?: React.ReactNode; isUser: boolean; [key: string]: unknown }) {
   const [headers, setHeaders] = useState<string[]>([]);
   const [rows, setRows] = useState<string[][]>([]);
   const containerRef = useRef<HTMLDivElement>(null);
