@@ -5,6 +5,19 @@ import fs from "fs";
 import { dbConfig } from "./config";
 import { IdGenerator } from "../utils/IdGenerator";
 import { SqliteCompat } from "./sqlite-compat";
+import logger from "../utils/logger";
+
+/** 安全执行 ALTER/CREATE 等幂等 DDL，只静默 "duplicate column" 类错误，其他异常打日志 */
+function safeAlter(db: any, sql: string): void {
+  try {
+    db.run(sql);
+  } catch (e: any) {
+    const msg = (e?.message || '').toLowerCase();
+    // SQLite: "duplicate column name" / "already exists"
+    if (msg.includes('duplicate column') || msg.includes('already exists')) return;
+    logger.warn(`[DB Migration] DDL failed: ${sql.slice(0, 80)}... | ${e.message}`);
+  }
+}
 
 let db: any;
 const DB_PATH = path.join(__dirname, "../../data/platform.db");
@@ -72,41 +85,41 @@ function createTables(db: any) {
   `);
 
   // Migrate: add columns if they don't exist (idempotent)
-  try { db.run("ALTER TABLE agents ADD COLUMN description TEXT NOT NULL DEFAULT ''"); } catch {}
-  try { db.run("ALTER TABLE agents ADD COLUMN status TEXT NOT NULL DEFAULT 'idle'"); } catch {}
-  try { db.run("ALTER TABLE agents ADD COLUMN model_name TEXT NOT NULL DEFAULT ''"); } catch {}
-  try { db.run("ALTER TABLE agents ADD COLUMN model_provider TEXT NOT NULL DEFAULT ''"); } catch {}
-  try { db.run("ALTER TABLE agents ADD COLUMN temperature REAL NOT NULL DEFAULT 0.7"); } catch {}
-  try { db.run("ALTER TABLE agents ADD COLUMN max_tokens INTEGER NOT NULL DEFAULT 4096"); } catch {}
-  try { db.run("ALTER TABLE agents ADD COLUMN top_p REAL NOT NULL DEFAULT 1"); } catch {}
-  try { db.run("ALTER TABLE agents ADD COLUMN frequency_penalty REAL NOT NULL DEFAULT 0"); } catch {}
-  try { db.run("ALTER TABLE agents ADD COLUMN presence_penalty REAL NOT NULL DEFAULT 0"); } catch {}
+  safeAlter(db, "ALTER TABLE agents ADD COLUMN description TEXT NOT NULL DEFAULT ''");
+  safeAlter(db, "ALTER TABLE agents ADD COLUMN status TEXT NOT NULL DEFAULT 'idle'");
+  safeAlter(db, "ALTER TABLE agents ADD COLUMN model_name TEXT NOT NULL DEFAULT ''");
+  safeAlter(db, "ALTER TABLE agents ADD COLUMN model_provider TEXT NOT NULL DEFAULT ''");
+  safeAlter(db, "ALTER TABLE agents ADD COLUMN temperature REAL NOT NULL DEFAULT 0.7");
+  safeAlter(db, "ALTER TABLE agents ADD COLUMN max_tokens INTEGER NOT NULL DEFAULT 4096");
+  safeAlter(db, "ALTER TABLE agents ADD COLUMN top_p REAL NOT NULL DEFAULT 1");
+  safeAlter(db, "ALTER TABLE agents ADD COLUMN frequency_penalty REAL NOT NULL DEFAULT 0");
+  safeAlter(db, "ALTER TABLE agents ADD COLUMN presence_penalty REAL NOT NULL DEFAULT 0");
   // Migrate: add user_id to agents (Phase 1: 多租户隔离)
-  try { db.run("ALTER TABLE agents ADD COLUMN user_id TEXT NOT NULL DEFAULT ''"); } catch {}
+  safeAlter(db, "ALTER TABLE agents ADD COLUMN user_id TEXT NOT NULL DEFAULT ''");
   // Dual-code Phase 1: agent_code 作为业务智能体编码，底层主键仍保留 id(UUID)
-  try { db.run("ALTER TABLE agents ADD COLUMN agent_code TEXT NOT NULL DEFAULT ''"); } catch {}
-  try { db.run("CREATE UNIQUE INDEX IF NOT EXISTS idx_agents_user_agent_code ON agents(user_id, agent_code)"); } catch {}
+  safeAlter(db, "ALTER TABLE agents ADD COLUMN agent_code TEXT NOT NULL DEFAULT ''");
+  safeAlter(db, "CREATE UNIQUE INDEX IF NOT EXISTS idx_agents_user_agent_code ON agents(user_id, agent_code)");
   // Token 接入字段：用户为该智能体配置的私有 API Key
-  try { db.run("ALTER TABLE agents ADD COLUMN token_provider TEXT NOT NULL DEFAULT ''"); } catch {}
-  try { db.run("ALTER TABLE agents ADD COLUMN token_api_key TEXT NOT NULL DEFAULT ''"); } catch {}
-  try { db.run("ALTER TABLE agents ADD COLUMN token_base_url TEXT NOT NULL DEFAULT ''"); } catch {}
+  safeAlter(db, "ALTER TABLE agents ADD COLUMN token_provider TEXT NOT NULL DEFAULT ''");
+  safeAlter(db, "ALTER TABLE agents ADD COLUMN token_api_key TEXT NOT NULL DEFAULT ''");
+  safeAlter(db, "ALTER TABLE agents ADD COLUMN token_base_url TEXT NOT NULL DEFAULT ''");
   // 输出格式 & 能力边界（2026-03 新增）
-  try { db.run("ALTER TABLE agents ADD COLUMN output_format TEXT NOT NULL DEFAULT '纯文本'"); } catch {}
-  try { db.run("ALTER TABLE agents ADD COLUMN boundary TEXT NOT NULL DEFAULT ''"); } catch {}
+  safeAlter(db, "ALTER TABLE agents ADD COLUMN output_format TEXT NOT NULL DEFAULT '纯文本'");
+  safeAlter(db, "ALTER TABLE agents ADD COLUMN boundary TEXT NOT NULL DEFAULT ''");
   // 对话记忆轮数（0 = 不限）；temperature_override 为简单温度快捷覆盖（空字符串表示使用模型默认）
-  try { db.run("ALTER TABLE agents ADD COLUMN memory_turns INTEGER NOT NULL DEFAULT 0"); } catch {}
-  try { db.run("ALTER TABLE agents ADD COLUMN temperature_override REAL DEFAULT NULL"); } catch {}
+  safeAlter(db, "ALTER TABLE agents ADD COLUMN memory_turns INTEGER NOT NULL DEFAULT 0");
+  safeAlter(db, "ALTER TABLE agents ADD COLUMN temperature_override REAL DEFAULT NULL");
   // Token 用量统计：累计该智能体消耗的 token 总数（每次 agent 回复后累加）
-  try { db.run("ALTER TABLE agents ADD COLUMN token_used INTEGER NOT NULL DEFAULT 0"); } catch {}
+  safeAlter(db, "ALTER TABLE agents ADD COLUMN token_used INTEGER NOT NULL DEFAULT 0");
 
   // Phase 3: Agent 可见性 / Skill 管控 / 配额
-  try { db.run("ALTER TABLE agents ADD COLUMN visibility TEXT NOT NULL DEFAULT 'private'"); } catch {}
-  try { db.run("ALTER TABLE agents ADD COLUMN skills_config TEXT NOT NULL DEFAULT '{}'"); } catch {}
-  try { db.run("ALTER TABLE agents ADD COLUMN quota_config TEXT NOT NULL DEFAULT '{}'"); } catch {}
+  safeAlter(db, "ALTER TABLE agents ADD COLUMN visibility TEXT NOT NULL DEFAULT 'private'");
+  safeAlter(db, "ALTER TABLE agents ADD COLUMN skills_config TEXT NOT NULL DEFAULT '{}'");
+  safeAlter(db, "ALTER TABLE agents ADD COLUMN quota_config TEXT NOT NULL DEFAULT '{}'");
   // Route C Phase 1: Agent 桥接层 — OpenClaw agentId 映射
-  try { db.run("ALTER TABLE agents ADD COLUMN openclaw_agent_id TEXT"); } catch {}
+  safeAlter(db, "ALTER TABLE agents ADD COLUMN openclaw_agent_id TEXT");
   // RC 分类 -> OC 执行桶。历史库若缺失此列，会导致 /api/agents/routing-overview 与编辑更新链直接报错。
-  try { db.run("ALTER TABLE agents ADD COLUMN agent_type TEXT NOT NULL DEFAULT 'general'"); } catch {}
+  safeAlter(db, "ALTER TABLE agents ADD COLUMN agent_type TEXT NOT NULL DEFAULT 'general'");
 
   // Route C Phase 1: Agent 注册日志表
 
@@ -136,9 +149,9 @@ function createTables(db: any) {
   }
 
   // Migrate: add user_id to token_channels (Phase 2: 多租户隔离)
-  try { db.run("ALTER TABLE token_channels ADD COLUMN user_id TEXT NOT NULL DEFAULT ''"); } catch {}
+  safeAlter(db, "ALTER TABLE token_channels ADD COLUMN user_id TEXT NOT NULL DEFAULT ''");
   // Migrate: add is_preset (标记平台预设渠道)
-  try { db.run("ALTER TABLE token_channels ADD COLUMN is_preset INTEGER NOT NULL DEFAULT 0"); } catch {}
+  safeAlter(db, "ALTER TABLE token_channels ADD COLUMN is_preset INTEGER NOT NULL DEFAULT 0");
 
   // Token channels: stores API keys for each LLM provider
   db.run(`
@@ -176,15 +189,15 @@ function createTables(db: any) {
   `);
 
   // Migrate: add user_id to projects (Phase 2: 多租户隔离)
-  try { db.run("ALTER TABLE projects ADD COLUMN user_id TEXT NOT NULL DEFAULT ''"); } catch {}
+  safeAlter(db, "ALTER TABLE projects ADD COLUMN user_id TEXT NOT NULL DEFAULT ''");
   // Migrate: add workflow columns to existing projects table (idempotent)
-  try { db.run("ALTER TABLE projects ADD COLUMN goal TEXT NOT NULL DEFAULT ''"); } catch {}
-  try { db.run("ALTER TABLE projects ADD COLUMN priority TEXT NOT NULL DEFAULT 'mid'"); } catch {}
-  try { db.run("ALTER TABLE projects ADD COLUMN start_time TEXT NOT NULL DEFAULT ''"); } catch {}
-  try { db.run("ALTER TABLE projects ADD COLUMN end_time TEXT NOT NULL DEFAULT ''"); } catch {}
-  try { db.run("ALTER TABLE projects ADD COLUMN decision_maker TEXT NOT NULL DEFAULT ''"); } catch {}
-  try { db.run("ALTER TABLE projects ADD COLUMN workflow_nodes TEXT NOT NULL DEFAULT '[]'"); } catch {}
-  try { db.run("ALTER TABLE projects ADD COLUMN created_by TEXT"); } catch {}
+  safeAlter(db, "ALTER TABLE projects ADD COLUMN goal TEXT NOT NULL DEFAULT ''");
+  safeAlter(db, "ALTER TABLE projects ADD COLUMN priority TEXT NOT NULL DEFAULT 'mid'");
+  safeAlter(db, "ALTER TABLE projects ADD COLUMN start_time TEXT NOT NULL DEFAULT ''");
+  safeAlter(db, "ALTER TABLE projects ADD COLUMN end_time TEXT NOT NULL DEFAULT ''");
+  safeAlter(db, "ALTER TABLE projects ADD COLUMN decision_maker TEXT NOT NULL DEFAULT ''");
+  safeAlter(db, "ALTER TABLE projects ADD COLUMN workflow_nodes TEXT NOT NULL DEFAULT '[]'");
+  safeAlter(db, "ALTER TABLE projects ADD COLUMN created_by TEXT");
 
   db.run(`
     CREATE TABLE IF NOT EXISTS tasks (
@@ -207,13 +220,13 @@ function createTables(db: any) {
     )
   `);
   // Migrate: add user_id to tasks (Phase 2: 多租户隔离)
-  try { db.run("ALTER TABLE tasks ADD COLUMN user_id TEXT NOT NULL DEFAULT ''"); } catch {}
+  safeAlter(db, "ALTER TABLE tasks ADD COLUMN user_id TEXT NOT NULL DEFAULT ''");
   // Dual-code Phase 1: task_code 作为业务任务编码（session_code 将与之对齐）
-  try { db.run("ALTER TABLE tasks ADD COLUMN task_code TEXT NOT NULL DEFAULT ''"); } catch {}
-  try { db.run("CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_task_code ON tasks(task_code)"); } catch {}
+  safeAlter(db, "ALTER TABLE tasks ADD COLUMN task_code TEXT NOT NULL DEFAULT ''");
+  safeAlter(db, "CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_task_code ON tasks(task_code)");
   // Migrate: add agent_id and created_by to existing tasks table (idempotent)
-  try { db.run("ALTER TABLE tasks ADD COLUMN agent_id TEXT NOT NULL DEFAULT ''"); } catch {}
-  try { db.run("ALTER TABLE tasks ADD COLUMN created_by TEXT"); } catch {}
+  safeAlter(db, "ALTER TABLE tasks ADD COLUMN agent_id TEXT NOT NULL DEFAULT ''");
+  safeAlter(db, "ALTER TABLE tasks ADD COLUMN created_by TEXT");
 
   db.run(`
     CREATE TABLE IF NOT EXISTS documents (
@@ -260,12 +273,12 @@ function createTables(db: any) {
       updated_at TEXT NOT NULL
     )
   `);
-  try { db.run("ALTER TABLE file_assets ADD COLUMN scope_type TEXT NOT NULL DEFAULT 'user'"); } catch {}
-  try { db.run("ALTER TABLE file_assets ADD COLUMN scope_id TEXT NOT NULL DEFAULT ''"); } catch {}
-  try { db.run("CREATE INDEX IF NOT EXISTS idx_file_assets_user_created ON file_assets(user_id, created_at)"); } catch {}
-  try { db.run("CREATE INDEX IF NOT EXISTS idx_file_assets_project ON file_assets(project_id)"); } catch {}
-  try { db.run("CREATE INDEX IF NOT EXISTS idx_file_assets_conversation ON file_assets(conversation_id)"); } catch {}
-  try { db.run("CREATE INDEX IF NOT EXISTS idx_file_assets_scope ON file_assets(scope_type, scope_id)"); } catch {}
+  safeAlter(db, "ALTER TABLE file_assets ADD COLUMN scope_type TEXT NOT NULL DEFAULT 'user'");
+  safeAlter(db, "ALTER TABLE file_assets ADD COLUMN scope_id TEXT NOT NULL DEFAULT ''");
+  safeAlter(db, "CREATE INDEX IF NOT EXISTS idx_file_assets_user_created ON file_assets(user_id, created_at)");
+  safeAlter(db, "CREATE INDEX IF NOT EXISTS idx_file_assets_project ON file_assets(project_id)");
+  safeAlter(db, "CREATE INDEX IF NOT EXISTS idx_file_assets_conversation ON file_assets(conversation_id)");
+  safeAlter(db, "CREATE INDEX IF NOT EXISTS idx_file_assets_scope ON file_assets(scope_type, scope_id)");
 
   db.run(`
     CREATE TABLE IF NOT EXISTS conversations (
@@ -280,35 +293,35 @@ function createTables(db: any) {
     )
   `);
   // Migrate: add user_id to conversations (Phase 1: 多租户隔离)
-  try { db.run("ALTER TABLE conversations ADD COLUMN user_id TEXT NOT NULL DEFAULT ''"); } catch {}
+  safeAlter(db, "ALTER TABLE conversations ADD COLUMN user_id TEXT NOT NULL DEFAULT ''");
   // Migrate: add task_id and created_by columns (idempotent)
-  try { db.run("ALTER TABLE conversations ADD COLUMN task_id TEXT UNIQUE"); } catch {}
-  try { db.run("ALTER TABLE conversations ADD COLUMN created_by TEXT"); } catch {}
+  safeAlter(db, "ALTER TABLE conversations ADD COLUMN task_id TEXT UNIQUE");
+  safeAlter(db, "ALTER TABLE conversations ADD COLUMN created_by TEXT");
   // 兼容旧服务层：当前仍有创建/更新逻辑会写 conversations.agent_id / agent_ids 快照列。
   // 历史某些库是先建了精简版 conversations 表，再逐步演进；如果这里只补 current_agent_id 而没补旧快照列，
   // 会在创建平台助手等新会话时直接报 “table conversations has no column named agent_id / agent_ids”，表现为前端发送按钮可点、但会话永远发不出去。
-  try { db.run("ALTER TABLE conversations ADD COLUMN agent_id TEXT NOT NULL DEFAULT ''"); } catch {}
-  try { db.run("ALTER TABLE conversations ADD COLUMN agent_ids TEXT NOT NULL DEFAULT '[]'"); } catch {}
-  try { db.run("ALTER TABLE conversations ADD COLUMN current_agent_id TEXT NOT NULL DEFAULT ''"); } catch {}
+  safeAlter(db, "ALTER TABLE conversations ADD COLUMN agent_id TEXT NOT NULL DEFAULT ''");
+  safeAlter(db, "ALTER TABLE conversations ADD COLUMN agent_ids TEXT NOT NULL DEFAULT '[]'");
+  safeAlter(db, "ALTER TABLE conversations ADD COLUMN current_agent_id TEXT NOT NULL DEFAULT ''");
   // Dual-code Phase 1: session_code / current_agent_code 作为业务会话编码与业务当前智能体编码
-  try { db.run("ALTER TABLE conversations ADD COLUMN session_code TEXT NOT NULL DEFAULT ''"); } catch {}
-  try { db.run("ALTER TABLE conversations ADD COLUMN current_agent_code TEXT NOT NULL DEFAULT ''"); } catch {}
-  try { db.run("CREATE INDEX IF NOT EXISTS idx_conversations_session_code ON conversations(session_code)"); } catch {}
-  try { db.run("CREATE INDEX IF NOT EXISTS idx_conversations_current_agent_code ON conversations(current_agent_code)"); } catch {}
+  safeAlter(db, "ALTER TABLE conversations ADD COLUMN session_code TEXT NOT NULL DEFAULT ''");
+  safeAlter(db, "ALTER TABLE conversations ADD COLUMN current_agent_code TEXT NOT NULL DEFAULT ''");
+  safeAlter(db, "CREATE INDEX IF NOT EXISTS idx_conversations_session_code ON conversations(session_code)");
+  safeAlter(db, "CREATE INDEX IF NOT EXISTS idx_conversations_current_agent_code ON conversations(current_agent_code)");
   // Status: 会话状态（in_progress | completed | archived）
-  try { db.run("ALTER TABLE conversations ADD COLUMN status TEXT NOT NULL DEFAULT 'in_progress'"); } catch {}
-  try { db.run("CREATE INDEX IF NOT EXISTS idx_conversations_status ON conversations(status)"); } catch {}
+  safeAlter(db, "ALTER TABLE conversations ADD COLUMN status TEXT NOT NULL DEFAULT 'in_progress'");
+  safeAlter(db, "CREATE INDEX IF NOT EXISTS idx_conversations_status ON conversations(status)");
   // V1 Session 基础字段：为后续共享/独享、组织作用域、摘要聚合预留，但当前先只在会话层落结构。
-  try { db.run("ALTER TABLE conversations ADD COLUMN scope_type TEXT NOT NULL DEFAULT 'user'"); } catch {}
-  try { db.run("ALTER TABLE conversations ADD COLUMN scope_id TEXT NOT NULL DEFAULT ''"); } catch {}
-  try { db.run("ALTER TABLE conversations ADD COLUMN memory_policy TEXT NOT NULL DEFAULT 'private'"); } catch {}
-  try { db.run("ALTER TABLE conversations ADD COLUMN summary TEXT NOT NULL DEFAULT ''"); } catch {}
-  try { db.run("ALTER TABLE conversations ADD COLUMN last_message_at TEXT NOT NULL DEFAULT ''"); } catch {}
+  safeAlter(db, "ALTER TABLE conversations ADD COLUMN scope_type TEXT NOT NULL DEFAULT 'user'");
+  safeAlter(db, "ALTER TABLE conversations ADD COLUMN scope_id TEXT NOT NULL DEFAULT ''");
+  safeAlter(db, "ALTER TABLE conversations ADD COLUMN memory_policy TEXT NOT NULL DEFAULT 'private'");
+  safeAlter(db, "ALTER TABLE conversations ADD COLUMN summary TEXT NOT NULL DEFAULT ''");
+  safeAlter(db, "ALTER TABLE conversations ADD COLUMN last_message_at TEXT NOT NULL DEFAULT ''");
   // RC -> OC 会话绑定真相源。历史部分库缺这列，会导致 bindOpenClawSession() 在用户消息入库后直接抛错，
   // 表现为“自己的消息能看到，但智能体永远没回复”。
-  try { db.run("ALTER TABLE conversations ADD COLUMN oc_session_key TEXT NOT NULL DEFAULT ''"); } catch {}
-  try { db.run("CREATE INDEX IF NOT EXISTS idx_conversations_oc_session_key ON conversations(oc_session_key)"); } catch {}
-  try { db.run("CREATE INDEX IF NOT EXISTS idx_conversations_scope ON conversations(scope_type, scope_id)"); } catch {}
+  safeAlter(db, "ALTER TABLE conversations ADD COLUMN oc_session_key TEXT NOT NULL DEFAULT ''");
+  safeAlter(db, "CREATE INDEX IF NOT EXISTS idx_conversations_oc_session_key ON conversations(oc_session_key)");
+  safeAlter(db, "CREATE INDEX IF NOT EXISTS idx_conversations_scope ON conversations(scope_type, scope_id)");
 
   // Migrate: drop old agent_id column (SQLite does not support DROP COLUMN before 3.35;
   // we simply ignore it — the column stays but is no longer used)
@@ -360,14 +373,14 @@ function createTables(db: any) {
     )
   `);
   // Migrate: add user_id to messages (Phase 1: 多租户隔离)
-  try { db.run("ALTER TABLE messages ADD COLUMN user_id TEXT NOT NULL DEFAULT ''"); } catch {}
+  safeAlter(db, "ALTER TABLE messages ADD COLUMN user_id TEXT NOT NULL DEFAULT ''");
   // Dual-code Phase 1: message_code 作为业务消息编码，底层主键仍为 id(UUID)
-  try { db.run("ALTER TABLE messages ADD COLUMN message_code TEXT NOT NULL DEFAULT ''"); } catch {}
+  safeAlter(db, "ALTER TABLE messages ADD COLUMN message_code TEXT NOT NULL DEFAULT ''");
   // [2026-05-22] partial index: 只对非空 message_code 做唯一约束，避免空值冲突导致消息丢失
-  try { db.run("DROP INDEX IF EXISTS idx_messages_message_code"); } catch {}
-  try { db.run("CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_message_code ON messages(message_code) WHERE message_code != ''"); } catch {}
+  safeAlter(db, "DROP INDEX IF EXISTS idx_messages_message_code");
+  safeAlter(db, "CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_message_code ON messages(message_code) WHERE message_code != ''");
   // Migrate: add token_count to existing messages table (idempotent)
-  try { db.run("ALTER TABLE messages ADD COLUMN token_count INTEGER NOT NULL DEFAULT 0"); } catch {}
+  safeAlter(db, "ALTER TABLE messages ADD COLUMN token_count INTEGER NOT NULL DEFAULT 0");
 
   // ── Audit Logs（操作审计日志）────────────────────────────────────────────
   db.run(`
@@ -488,11 +501,11 @@ function createTables(db: any) {
     )
   `);
   // Dual-code Phase 1: user_code 作为 10 位业务用户编码，底层主键仍为 id(UUID)
-  try { db.run("ALTER TABLE users ADD COLUMN user_code TEXT NOT NULL DEFAULT ''"); } catch {}
-  try { db.run("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_user_code ON users(user_code)"); } catch {}
+  safeAlter(db, "ALTER TABLE users ADD COLUMN user_code TEXT NOT NULL DEFAULT ''");
+  safeAlter(db, "CREATE UNIQUE INDEX IF NOT EXISTS idx_users_user_code ON users(user_code)");
   // [2026-05-17] 添加 nickname 字段（账号昵称，不可重复）
-  try { db.run("ALTER TABLE users ADD COLUMN nickname TEXT NOT NULL DEFAULT ''"); } catch {}
-  try { db.run("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_nickname ON users(nickname) WHERE nickname != ''"); } catch {}
+  safeAlter(db, "ALTER TABLE users ADD COLUMN nickname TEXT NOT NULL DEFAULT ''");
+  safeAlter(db, "CREATE UNIQUE INDEX IF NOT EXISTS idx_users_nickname ON users(nickname) WHERE nickname != ''");
 
   // ── V1 Organization / Permission Foundation ────────────────────────────────
   db.run(`
@@ -668,7 +681,7 @@ function createTables(db: any) {
       updated_at      TEXT NOT NULL
     )
   `);
-  try { db.run("ALTER TABLE session_mapping ADD COLUMN channel TEXT NOT NULL DEFAULT 'repaceclaw'"); } catch {}
+  safeAlter(db, "ALTER TABLE session_mapping ADD COLUMN channel TEXT NOT NULL DEFAULT 'repaceclaw'");
   db.run(`CREATE INDEX IF NOT EXISTS session_mapping_conv_id ON session_mapping(conversation_id)`);
 
   // ── 用量统计（配额限制基础）─────────────────────────────────────────────
@@ -766,7 +779,9 @@ function backfillBusinessCodes(db: any) {
       if (!msg.message_code) {
         try {
           db.run("UPDATE messages SET message_code=? WHERE id=?", [IdGenerator.messageCode(conv.session_code, seq), msg.id]);
-        } catch {}
+        } catch (e: any) {
+          logger.warn(`[DB Backfill] message_code update failed: ${e.message}`);
+        }
       }
       seq += 1;
     }
