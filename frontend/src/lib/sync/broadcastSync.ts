@@ -47,7 +47,7 @@ export class BroadcastSync {
 
     const channelName = getSyncChannel(this.userId);
     this.channel = new BroadcastChannel(channelName);
-    console.log(`[BroadcastSync] Joined channel: ${channelName}`);
+    console.debug(`[BroadcastSync] Joined channel: ${channelName}`);
 
     this.channel.onmessage = (event: MessageEvent) => {
       if (this.destroyed) return;
@@ -98,7 +98,7 @@ export class BroadcastSync {
       this.channel.close();
       this.channel = null;
     }
-    console.log(`[BroadcastSync] Destroyed (userId: ${this.userId.slice(0, 8)})`);
+    console.debug(`[BroadcastSync] Destroyed (userId: ${this.userId.slice(0, 8)})`);
   }
 
   /** 是否已销毁 */

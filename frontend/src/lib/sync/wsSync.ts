@@ -59,7 +59,7 @@ export class WsSync {
     // 在现有 WebSocket onmessage 上挂载同步事件监听
     // 由于 wsInstance 是 conversationStore 的内部变量，
     // 我们通过轮询 + 事件拦截的方式接入
-    console.log(`[WsSync] Initialized for userId: ${this.userId.slice(0, 8)}`);
+    console.debug(`[WsSync] Initialized for userId: ${this.userId.slice(0, 8)}`);
   }
 
   /**
@@ -141,7 +141,7 @@ export class WsSync {
       this.unsubWs();
       this.unsubWs = null;
     }
-    console.log(`[WsSync] Destroyed (userId: ${this.userId.slice(0, 8)})`);
+    console.debug(`[WsSync] Destroyed (userId: ${this.userId.slice(0, 8)})`);
   }
 
   /** 是否已销毁 */

@@ -302,7 +302,7 @@ export function AppShell() {
     //    复用 conversationStore 的 WS 连接
     getWsSync(() => getWsInstance(), user.id);
 
-    console.log(`[AppShell] Sync initialized for userId: ${user.id.slice(0, 8)}, tabId: ${getOrCreateTabId()}`);
+    console.debug(`[AppShell] Sync initialized for userId: ${user.id.slice(0, 8)}, tabId: ${getOrCreateTabId()}`);
 
     // 3. 注册同步事件订阅（收到其他 Tab 的事件后刷新本地数据）
     const unsubscribes: (() => void)[] = [];

@@ -62,7 +62,7 @@ const MultiTabsDemo: React.FC = () => {
     // 恢复缓存的状态
     const cachedState = tabStateCache.current.get(key);
     if (cachedState) {
-      console.log('恢复缓存状态:', key, cachedState);
+      console.debug('恢复缓存状态:', key, cachedState);
     }
   }, []);
 

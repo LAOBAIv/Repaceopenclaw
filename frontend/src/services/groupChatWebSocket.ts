@@ -24,7 +24,7 @@ class GroupChatWebSocketService {
       this.ws = new WebSocket(this.url);
       
       this.ws.onopen = () => {
-        console.log('WebSocket connected');
+        console.debug('WebSocket connected');
         resolve();
       };
       

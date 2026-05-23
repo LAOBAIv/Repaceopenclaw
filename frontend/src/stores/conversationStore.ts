@@ -384,7 +384,7 @@ export const useConversationStore = create<ConversationStore>()(
       const currentWs = new WebSocket(wsUrl);
       wsInstance = currentWs;
       currentWs.onopen = async () => {
-        console.log("[WS] Connected");
+        console.debug("[WS] Connected");
         if (wsReconnectTimer) {
           clearTimeout(wsReconnectTimer);
           wsReconnectTimer = null;
@@ -436,7 +436,7 @@ export const useConversationStore = create<ConversationStore>()(
         }
       };
       currentWs.onclose = () => {
-        console.log("[WS] Disconnected");
+        console.debug("[WS] Disconnected");
         set({ wsConnected: false });
 
         // 只允许存在一个待执行的重连定时器,避免多处 connect() 叠加触发重连风暴。
@@ -474,14 +474,14 @@ export const useConversationStore = create<ConversationStore>()(
           }
 
           if (data.type === "agent_start" && data.messageId && data.agentId) {
-          console.log("[WS] agent_start:", data.messageId, data.agentId, data.conversationId, "panels:", panels.map(p => ({ id: p.id, convId: p.conversationId, agentId: p.agentId })));
+          console.debug("[WS] agent_start:", data.messageId, data.agentId, data.conversationId, "panels:", panels.map(p => ({ id: p.id, convId: p.conversationId, agentId: p.agentId })));
             // 关键修复:流式回复必须优先按 conversationId 路由到 panel。
             // 原因:同一 agent 允许出现在多个会话里,如果只按 agentId 找 panel,
             // 就会把当前会话的回复挂到别的会话上,表现为"当前界面不刷新看不到回复,刷新后从 DB 重载才出现"。
             const panel = data.conversationId
               ? panels.find((p) => p.conversationId === data.conversationId)
               : panels.find((p) => p.agentId === data.agentId || p.agentIds.includes(data.agentId));
-            console.log("[WS] agent_start panel:", panel?.id); if (panel) get().startStreaming(panel.id, data.messageId);
+            console.debug("[WS] agent_start panel:", panel?.id); if (panel) get().startStreaming(panel.id, data.messageId);
           }
           if (data.type === "agent_chunk" && data.messageId && data.chunk) {
             // 先按 streamingMessageId 命中正在流式输出的消息;命不中再按 conversationId 兜底。
@@ -491,11 +491,11 @@ export const useConversationStore = create<ConversationStore>()(
             if (panel) get().appendStreamChunk(panel.id, data.messageId, data.chunk);
           }
           if (data.type === "agent_done" && data.messageId && data.message) {
-          console.log("[WS] agent_done:", data.messageId, data.conversationId, "content:", data.message?.content?.length);
+          console.debug("[WS] agent_done:", data.messageId, data.conversationId, "content:", data.message?.content?.length);
             // 与 agent_start / agent_chunk 保持同一归属规则:优先 messageId,其次 conversationId。
             const panel = panels.find((p) => p.streamingMessageId === data.messageId)
               || (data.conversationId ? panels.find((p) => p.conversationId === data.conversationId) : undefined);
-            console.log("[WS] agent_done panel:", panel?.id); if (panel) get().finishStreaming(panel.id, data.messageId, data.message);
+            console.debug("[WS] agent_done panel:", panel?.id); if (panel) get().finishStreaming(panel.id, data.messageId, data.message);
           }
 
           if (data.type === "error" && data.message) {
@@ -647,7 +647,7 @@ export const useConversationStore = create<ConversationStore>()(
             agentIds: panel.agentId ? [panel.agentId] : [],
             content,
           }));
-          console.log("[WS] Message sent after reconnect");
+          console.debug("[WS] Message sent after reconnect");
         } else if (retries > 15) {
           clearInterval(retryInterval);
           console.error("[WS] Failed to reconnect, message lost");

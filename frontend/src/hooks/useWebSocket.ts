@@ -33,7 +33,7 @@ export function useWebSocket() {
     wsRef.current = ws;
 
     ws.onopen = () => {
-      console.log("[WS hook] Connected");
+      console.debug("[WS hook] Connected");
       ws.send(JSON.stringify({ type: "ping" }));
     };
 
@@ -86,7 +86,7 @@ export function useWebSocket() {
     };
 
     ws.onclose = () => {
-      console.log("[WS hook] Disconnected, reconnecting in 3s...");
+      console.debug("[WS hook] Disconnected, reconnecting in 3s...");
       reconnectTimerRef.current = setTimeout(connect, 3000);
     };
   }, [startStreaming, appendStreamChunk, finishStreaming]);

@@ -80,9 +80,9 @@ router.get("/", (req: Request, res: Response) => {
   const userId = (req as any).user?.id;
   const projectId = req.query.projectId as string | undefined;
   const status = req.query.status as string | undefined;
-  console.log(`[conversations.list] userId=${userId} status=${status} projectId=${projectId}`);
+  logger.debug(`[conversations.list] userId=${userId} status=${status} projectId=${projectId}`);
   const data = ConversationService.list(userId, projectId, status);
-  console.log(`[conversations.list] returned ${data.length} items: ${data.map(c => c.title + '(' + c.status + ')').join(', ')}`);
+  logger.debug(`[conversations.list] returned ${data.length} items`);
   res.json({ data });
 });
 
