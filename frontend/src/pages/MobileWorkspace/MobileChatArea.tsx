@@ -8,12 +8,14 @@
 
 import MobileChatPanelContainer from '../../components/mobile/MobileChatPanelContainer';
 import { COLORS } from './constants';
+import type { Agent } from '../../types';
+import type { ConversationPanel } from '../../stores/conversationStore';
 
 interface MobileChatAreaProps {
-  activePanel: any;
-  openPanels: any[];
+  activePanel: ConversationPanel | null;
+  openPanels: ConversationPanel[];
   activePanelId: string | null;
-  agents: any[];
+  agents: Agent[];
 }
 
 export function MobileChatArea({

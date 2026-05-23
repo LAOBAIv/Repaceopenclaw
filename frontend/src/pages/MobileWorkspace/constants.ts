@@ -48,7 +48,7 @@ export const AVAILABLE_MODELS = [
 export type MobileNavItem = {
   action?: string;
   to?: string;
-  icon: any;
+  icon: React.ComponentType<{ size?: number; color?: string }>;
   label: string;
 };
 

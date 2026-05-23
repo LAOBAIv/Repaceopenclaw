@@ -7,11 +7,12 @@
 
 import { X } from 'lucide-react';
 import { COLORS } from './constants';
+import type { Agent } from '../../types';
 
 interface MobileAgentSelectorProps {
   isOpen: boolean;
   onClose: () => void;
-  agents: any[];
+  agents: Agent[];
   agentsLoading: boolean;
   onSelectAgent: (agentId: string, agentName: string, agentColor: string) => void;
 }
@@ -71,7 +72,7 @@ export function MobileAgentSelector({
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               {/* [2026-05-21] 过滤系统助手，用户不可选 */}
-              {agents.filter((a: any) => !a.isSystem).map((agent: any) => (
+              {agents.filter((a) => !(a as any).isSystem).map((agent) => (
                 <button
                   key={agent.id}
                   onClick={() => onSelectAgent(agent.id, agent.name, agent.color || COLORS.accent)}

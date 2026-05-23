@@ -5,6 +5,7 @@
  */
 
 import MobileBottomComposer from '../../components/mobile/MobileBottomComposer';
+import type { Agent } from '../../types';
 
 interface MobileChatInputProps {
   value: string;
@@ -13,7 +14,7 @@ interface MobileChatInputProps {
   conversationId: string | null;
   taskName: string;
   placeholder: string;
-  agents: any[];
+  agents: Agent[];
   currentAgentId?: string;
   currentAgentIds?: string[];
 }

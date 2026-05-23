@@ -7,12 +7,13 @@
 import { X, Plus } from 'lucide-react';
 import { COLORS } from './constants';
 import { MobileSessionList } from './MobileSessionList';
+import type { SessionTab } from '../../stores/conversationStore';
 
 interface MobileRightDrawerProps {
   isOpen: boolean;
   onClose: () => void;
   onNewSession: () => void;
-  tabs: any[];
+  tabs: SessionTab[];
   activeTabId: string | null;
   wsConnected: boolean;
   renamingTabId: string | null;

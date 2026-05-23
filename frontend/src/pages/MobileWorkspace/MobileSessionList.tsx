@@ -8,9 +8,10 @@
 
 import { MessageSquare, Pencil, X } from 'lucide-react';
 import { COLORS } from './constants';
+import type { SessionTab } from '../../stores/conversationStore';
 
 interface MobileSessionListProps {
-  tabs: any[];
+  tabs: SessionTab[];
   activeTabId: string | null;
   wsConnected: boolean;
   renamingTabId: string | null;
