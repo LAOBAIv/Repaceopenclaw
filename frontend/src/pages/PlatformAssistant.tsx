@@ -88,7 +88,7 @@ export function PlatformAssistant() {
         setConversation(conv);
         setMessages(conv.messages || []);
       }
-    } catch {}
+    } catch (e) { console.warn("[RC]", e); }
   }, [conversation?.id]);
 
   useEffect(() => {

@@ -43,7 +43,7 @@ export const useAuthStore = create<AuthStore>()(
             activeTabId: null,
             closedSessionIds: [],
           });
-        } catch {}
+        } catch (e) { console.warn("[RC]", e); }
         set({ user: null, token: null, isAuthenticated: false });
       },
 

@@ -1,3 +1,9 @@
+/**
+ * MessageBubble — 单条消息气泡组件
+ *
+ * 职责：渲染单条聊天消息，支持 Markdown 渲染、代码高亮、流式输出光标、
+ * 用户/AI 消息样式区分。从原 ProjectWorkspace.tsx 拆分。
+ */
 // [2026-05-18] 从 ProjectWorkspace.tsx 拆分出消息气泡组件
 import React from 'react';
 import ReactMarkdown from 'react-markdown';

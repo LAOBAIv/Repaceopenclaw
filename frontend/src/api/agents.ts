@@ -13,6 +13,7 @@ export interface AgentRoutingInfo {
   tokenProvider: string | null;
   modelName: string | null;
   modelProvider: string | null;
+  isSystem?: boolean;
 }
 
 export const agentsApi = {

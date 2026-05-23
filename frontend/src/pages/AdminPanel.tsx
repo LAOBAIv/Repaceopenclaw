@@ -16,7 +16,7 @@ const TABS = [
   { id: 'model-channels' as AdminTab, label: '模型渠道', icon: Cpu },
   { id: 'agent-routing' as AdminTab,  label: '智能体通道', icon: Route },
   { id: 'templates' as AdminTab,      label: '模板管理', icon: FileText },
-  { id: 'user-agents' as AdminTab,    label: '用户智能体', icon: Bot },
+  { id: 'user-agents' as AdminTab,    label: '用户会话', icon: Bot },
   { id: 'users' as AdminTab,          label: '用户管理', icon: Users },
   { id: 'audit-logs' as AdminTab,     label: '审计日志', icon: FileText },
   { id: 'wechat-bot' as AdminTab,     label: '微信Bot', icon: MessageCircle },
@@ -44,18 +44,6 @@ export function AdminPanel() {
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginRight: 24 }}>
           <ShieldCheck size={18} color="#d97706" />
           <span style={{ fontWeight: 700, fontSize: 15, color: '#1a202c' }}>管理后台</span>
-        </div>
-
-        {/* 角色标识 */}
-        <div style={{ marginRight: 24 }}>
-          <span style={{
-            fontSize: 11, padding: '2px 8px', borderRadius: 4,
-            background: user.role === 'super_admin' ? '#fef3c7' : '#eff6ff',
-            color: user.role === 'super_admin' ? '#d97706' : '#2563eb',
-            fontWeight: 500,
-          }}>
-            {user.role === 'super_admin' ? '超级管理员' : '管理员'}
-          </span>
         </div>
 
         {/* Tab 列表（横排） */}

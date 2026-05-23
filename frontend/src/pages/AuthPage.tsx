@@ -128,7 +128,7 @@ export function AuthPage() {
             setShowQrcode(false);
             setError('二维码已过期，请重新获取');
           }
-        } catch {}
+        } catch (e) { console.warn("[RC]", e); }
       }, 3000);
       // 3分钟超时
       setTimeout(() => {

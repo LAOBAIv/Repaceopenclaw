@@ -85,7 +85,7 @@ export async function buildPanelAndTab(
       messages = parsed.messages || [];
       usedCache = true;
     }
-  } catch {}
+  } catch (e) { console.warn("[RC]", e); }
 
   if (!usedCache) {
     messages = await conversationsApi.getMessages(convId);

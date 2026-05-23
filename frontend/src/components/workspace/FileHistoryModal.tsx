@@ -86,7 +86,7 @@ export function FileHistoryModal({ visible, onClose, onConfirm, excludeIds = [] 
       const { startDate, endDate } = getDateRange(timeFilter);
       const rows = await filesApi.list({ startDate, endDate, type: typeFilter || '' });
       setFiles(rows.filter(f => !excludeIds.includes(f.id)));
-    } catch {} finally { setLoading(false); }
+    } catch (e) { console.warn("[RC]", e); } finally { setLoading(false); }
   }, [timeFilter, typeFilter, excludeIds]);
 
   useEffect(() => { if (visible) { loadFiles(); setSelected(new Set()); } }, [visible, loadFiles]);

@@ -1,3 +1,10 @@
+/**
+ * types — ProjectWorkspace 共享类型和工具函数
+ *
+ * 职责：定义 FlowNode 流程节点类型、BrowserTab 浏览器标签类型，
+ * 提供 makeFlowNode 工厂函数和 AVAILABLE_MODELS 可用模型列表。
+ * 供 AgentPanel、TabPanel 等子组件共享使用。
+ */
 // [2026-05-18] 从 ProjectWorkspace.tsx 拆分出的共享类型和工具函数
 export type FlowNodeType = 'serial' | 'parallel';
 

@@ -98,11 +98,11 @@ export function ModelChannels() {
   };
 
   const handleToggleModel = async (model: any) => {
-    try { await apiClient.put(`/models/${model.id}`, { enabled: !model.enabled }); fetchModels(); } catch {}
+    try { await apiClient.put(`/models/${model.id}`, { enabled: !model.enabled }); fetchModels(); } catch (e) { console.warn("[ModelChannels]", e); }
   };
   const handleDeleteModel = async (model: any) => {
     if (!confirm(`确定删除模型 "${model.displayName || model.name}" 吗？`)) return;
-    try { await apiClient.delete(`/models/${model.id}`); fetchModels(); } catch {}
+    try { await apiClient.delete(`/models/${model.id}`); fetchModels(); } catch (e) { console.warn("[ModelChannels]", e); }
   };
   const handleEditModel = (model: any) => {
     setEditingModel(model);

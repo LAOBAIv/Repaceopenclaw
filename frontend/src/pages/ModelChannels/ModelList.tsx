@@ -50,12 +50,12 @@ export function ModelList() {
     try {
       await apiClient.put(`/models/${model.id}`, { enabled: !model.enabled });
       fetchData();
-    } catch {}
+    } catch (e) { console.warn("[ModelChannels]", e); }
   };
 
   const deleteModel = async (model: Model) => {
     if (!confirm(`确定删除模型 "${model.displayName || model.name}" 吗？`)) return;
-    try { await apiClient.delete(`/models/${model.id}`); fetchData(); } catch {}
+    try { await apiClient.delete(`/models/${model.id}`); fetchData(); } catch (e) { console.warn("[ModelChannels]", e); }
   };
 
   if (loading) return null;

@@ -1,3 +1,9 @@
+/**
+ * PriorityModal — 优先级设置弹窗组件
+ *
+ * 职责：提供高/中/低三级优先级选择界面，用于项目或任务的优先级设置。
+ * 从原 ProjectWorkspace.tsx 拆分。
+ */
 // [2026-05-18] 从 ProjectWorkspace.tsx 拆分
 import React from 'react';
 import type { ProjectPriority } from '@/stores/projectKanbanStore';

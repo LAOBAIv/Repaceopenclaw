@@ -13,17 +13,10 @@ const TAG_COLOR_POOL = [
 ];
 
 /** 可用模型列表 */
-const AVAILABLE_MODELS = [
-  { id: 'claude-opus-4-6', label: 'Claude Opus 4.6' },
-  { id: 'glm-5', label: 'GLM-5' },
-  { id: 'qwen3-max-2026-01-23', label: 'Qwen3 Max' },
-  { id: 'qwen3.6-plus', label: 'Qwen3.6 Plus' },
-  { id: 'kimi-k2.5', label: 'Kimi K2.5' },
-  { id: 'MiniMax-M2.5', label: 'MiniMax M2.5' },
-  { id: 'deepseek-chat', label: 'DeepSeek Chat' },
-  { id: 'deepseek-reasoner', label: 'DeepSeek Reasoner' },
-  { id: 'gpt-4o', label: 'GPT-4o' },
-  { id: 'gpt-4.1', label: 'GPT-4.1' },
+// [2026-05-23] 模型列表改为动态加载，关联后台模型渠道数据
+// 硬编码列表作为 fallback，实际数据从 /api/models + /api/model-providers 获取
+const FALLBACK_MODELS = [
+  { id: 'auto', label: '自动选择' },
 ];
 
 function getTagColor(tag: string) {
@@ -125,7 +118,7 @@ export function SessionAgentBar({
             setBindingCode(null);
             clearInterval(pollInterval);
           }
-        } catch {}
+        } catch (e) { console.warn("[RC]", e); }
       }, 3000);
       // 3分钟后停止轮询
       setTimeout(() => { clearInterval(pollInterval); setBindingCode(null); }, 180000);
@@ -137,6 +130,31 @@ export function SessionAgentBar({
   const [showModelDropdown, setShowModelDropdown] = useState(false);
   const [modelDropdownAgentId, setModelDropdownAgentId] = useState<string | null>(null);
   const modelDropdownRef = useRef<HTMLDivElement>(null);
+  // [2026-05-23] 动态加载模型列表，关联后台模型渠道数据
+  const [availableModels, setAvailableModels] = useState<{ id: string; label: string }[]>(FALLBACK_MODELS);
+
+  // 从 /api/models + /api/model-providers 动态加载可用模型
+  useEffect(() => {
+    (async () => {
+      try {
+        const authRaw = sessionStorage.getItem('repaceclaw-auth') || localStorage.getItem('repaceclaw-auth');
+        const token = authRaw ? JSON.parse(authRaw)?.state?.token : '';
+        const headers: any = token ? { Authorization: `Bearer ${token}` } : {};
+        const [mRes, pRes] = await Promise.all([
+          fetch('/api/models', { headers }).then(r => r.json()),
+          fetch('/api/model-providers', { headers }).then(r => r.json()),
+        ]);
+        const provs = pRes.data || [];
+        const models = (mRes.data || []).filter((m: any) => m.enabled).map((m: any) => {
+          const prov = provs.find((p: any) => p.id === m.providerId);
+          return { id: m.name, label: `${m.name} · ${prov?.name || ''}` };
+        });
+        setAvailableModels([{ id: 'auto', label: '自动选择' }, ...models]);
+      } catch {
+        setAvailableModels(FALLBACK_MODELS);
+      }
+    })();
+  }, []);
 
   /** 获取 agents 数据 */
   const { agents, fetchAgents } = useAgentStore();
@@ -397,7 +415,7 @@ export function SessionAgentBar({
               当前: {targetAgent.modelName || '未设置'}
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-              {AVAILABLE_MODELS.map(model => {
+              {availableModels.map(model => {
                 const isSelected = targetAgent.modelName === model.id;
                 return (
                   <button

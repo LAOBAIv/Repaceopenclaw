@@ -21,11 +21,14 @@ export function NewTabModal({ open, onClose, onCreated }: NewTabModalProps) {
   const { agents: allAgents } = useAgentStore();
   // ⚠️ 平台助手不在标签栏可选范围内（仅侧边栏入口可用）
   // ⚠️ 微信助手为全局智能体，不在新建会话列表中显示
+  // [2026-05-23] 修复：用 isSystem + agentCode 多条件过滤，避免 UUID 不匹配
   const agents = allAgents.filter(a =>
+    !a.isSystem &&
     !(a.id === '24cf6cc5-da0d-48df-814e-11582e398007'
       || a.id === 'platform-assistant'
       || a.id === 'repaceclaw-platform-assistant'
-      || a.id === 'rc-wechat-agent')
+      || a.id === 'rc-wechat-agent'
+      || (a as any).agentCode === 'rc-wechat-agent')
   );
 
   if (!open) return null;
@@ -57,10 +60,12 @@ export function NewTabModal({ open, onClose, onCreated }: NewTabModalProps) {
 
       // ⚠️ 平台助手不在标签栏可选范围内（仅侧边栏入口可用）
       const filteredAgents = agents.filter(a =>
+        !a.isSystem &&
         !(a.id === '24cf6cc5-da0d-48df-814e-11582e398007'
           || a.id === 'platform-assistant'
           || a.id === 'repaceclaw-platform-assistant'
-          || a.id === 'rc-wechat-agent')
+          || a.id === 'rc-wechat-agent'
+          || (a as any).agentCode === 'rc-wechat-agent')
       );
 
       if (selectedAgentIds.length === 1 && (mainAgent.id === '24cf6cc5-da0d-48df-814e-11582e398007' || mainAgent.id === 'platform-assistant' || mainAgent.id === 'repaceclaw-platform-assistant')) {

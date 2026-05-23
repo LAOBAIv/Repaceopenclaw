@@ -42,25 +42,25 @@ export function WechatClawBot() {
     try { const r = await fetch(API_BASE + '/status'); const j = await r.json(); if (j.success) { setStatus(j.data); setWsState(j.data.wsConnection); } } catch { setWsState('disconnected'); }
   }, []);
   const fetchAccounts = useCallback(async () => {
-    try { const r = await fetch(API_BASE + '/accounts'); const j = await r.json(); if (j.success) setBoundAccounts(j.data.accounts || []); } catch {}
+    try { const r = await fetch(API_BASE + '/accounts'); const j = await r.json(); if (j.success) setBoundAccounts(j.data.accounts || []); } catch (e) { console.warn("[WechatBot]", e); }
   }, []);
   const fetchConversations = useCallback(async () => {
-    try { const r = await fetch(API_BASE + '/conversations'); const j = await r.json(); if (j.success) setConversations(j.data.conversations || []); } catch {}
+    try { const r = await fetch(API_BASE + '/conversations'); const j = await r.json(); if (j.success) setConversations(j.data.conversations || []); } catch (e) { console.warn("[WechatBot]", e); }
   }, []);
   const fetchMessages = useCallback(async (id: string) => {
     setLoadingMsgs(true);
-    try { const r = await fetch(API_BASE + '/conversations/' + id + '/messages?limit=50'); const j = await r.json(); if (j.success) setMessages(j.data.messages || []); } catch {} finally { setLoadingMsgs(false); }
+    try { const r = await fetch(API_BASE + '/conversations/' + id + '/messages?limit=50'); const j = await r.json(); if (j.success) setMessages(j.data.messages || []); } catch (e) { console.warn("[WechatBot]", e); } finally { setLoadingMsgs(false); }
   }, []);
   const fetchSyncStatus = useCallback(async () => {
-    try { const r = await fetch(API_BASE + '/sync-status'); const j = await r.json(); if (j.success) setSyncStates(j.data || {}); } catch {}
-    try { const r = await fetch(API_BASE + '/stats'); const j = await r.json(); if (j.success) setStats(j.data); } catch {}
+    try { const r = await fetch(API_BASE + '/sync-status'); const j = await r.json(); if (j.success) setSyncStates(j.data || {}); } catch (e) { console.warn("[WechatBot]", e); }
+    try { const r = await fetch(API_BASE + '/stats'); const j = await r.json(); if (j.success) setStats(j.data); } catch (e) { console.warn("[WechatBot]", e); }
   }, []);
 
   useEffect(() => {
     const es = new EventSource(API_BASE + '/events');
     es.onopen = () => setSseConnected(true);
     es.onerror = () => setSseConnected(false);
-    es.addEventListener('state', (e) => { try { setWsState(JSON.parse(e.data).state); } catch {} });
+    es.addEventListener('state', (e) => { try { setWsState(JSON.parse(e.data).state); } catch (e) { console.warn("[WechatBot]", e); } });
     es.addEventListener('connected', () => fetchStatus());
     eventSourceRef.current = es;
     return () => { es.close(); setSseConnected(false); };
@@ -80,7 +80,7 @@ export function WechatClawBot() {
         pollScanStatus(j.data.qrcode);
         setTimeout(() => setScanStatus({ status: 'expired' }), 240000);
       }
-    } catch {} finally { setScanLoading(false); }
+    } catch (e) { console.warn("[WechatBot]", e); } finally { setScanLoading(false); }
   };
 
   const pollScanStatus = (token: string) => {
@@ -111,7 +111,7 @@ export function WechatClawBot() {
     } catch (e: any) { setPushResult('\u274c ' + e.message); } finally { setPushLoading(false); }
   };
 
-  const handleSyncNow = async () => { setSyncing(true); try { await fetch(API_BASE + '/sync-now', { method: 'POST' }); await fetchSyncStatus(); } catch {} finally { setSyncing(false); } };
+  const handleSyncNow = async () => { setSyncing(true); try { await fetch(API_BASE + '/sync-now', { method: 'POST' }); await fetchSyncStatus(); } catch (e) { console.warn("[WechatBot]", e); } finally { setSyncing(false); } };
   const copyText = (t: string) => navigator.clipboard.writeText(t);
 
   // Styles

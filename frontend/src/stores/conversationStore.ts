@@ -274,7 +274,7 @@ function notifyConversationWsSubscribers(event: ConversationWsEvent) {
   handlers.forEach((handler) => {
     try {
       handler(event);
-    } catch {}
+    } catch (e) { console.warn("[ConvStore]", e); }
   });
 }
 
@@ -377,7 +377,7 @@ export const useConversationStore = create<ConversationStore>()(
           const state = JSON.parse(raw);
           const token = state?.state?.token;
           if (token) tokenParam = `?token=${encodeURIComponent(token)}`;
-        } catch {}
+        } catch (e) { console.warn("[ConvStore]", e); }
       }
       // 方案 C: WS URL 携带 tabId,供后端回环防护使用
       const tabId = getOrCreateTabId();
@@ -594,8 +594,8 @@ export const useConversationStore = create<ConversationStore>()(
             import("../lib/sync").then(({ WsSync }) => {
               WsSync.handleIncomingMessage(data);
             }).catch(() => {});
-          } catch {}
-        } catch {}
+          } catch (e) { console.warn("[ConvStore]", e); }
+        } catch (e) { console.warn("[ConvStore]", e); }
       };
     } catch {
       // WS not available, ignore
@@ -936,7 +936,7 @@ export const useConversationStore = create<ConversationStore>()(
     if (activeConvId && activeConvId !== 'wechat-assistant' && !activeConvId.startsWith('local-')) {
       conversationsApi.updateStatus(activeConvId, 'active').catch(() => {});
       // [2026-05-19] 缓存最后激活的会话ID，用于刷新恢复
-      try { sessionStorage.setItem('rc:last-active-conv', activeConvId); } catch {}
+      try { sessionStorage.setItem('rc:last-active-conv', activeConvId); } catch (e) { console.warn("[ConvStore]", e); }
     }
     // [2026-05-19] 缓存当前激活会话的消息快照到 sessionStorage，刷新时秒级恢复
     if (activeConvId) {
@@ -951,7 +951,7 @@ export const useConversationStore = create<ConversationStore>()(
             sessionCode: panel.sessionCode,
           });
           sessionStorage.setItem(`rc:msg-cache:${activeConvId}`, snapshot);
-        } catch {}
+        } catch (e) { console.warn("[ConvStore]", e); }
       }
     }
   },
@@ -979,7 +979,7 @@ export const useConversationStore = create<ConversationStore>()(
       switchedAgentIds = result?.agentIds || null;
       switchedSessionCode = result?.sessionCode;
       switchedCurrentAgentCode = result?.currentAgentCode;
-    } catch {}
+    } catch (e) { console.warn("[ConvStore]", e); }
 
     let nextAgentName = '';
     let nextAgentColor = '#6366f1';
@@ -990,7 +990,7 @@ export const useConversationStore = create<ConversationStore>()(
         nextAgentName = agent.name;
         nextAgentColor = agent.color || '#6366f1';
       }
-    } catch {}
+    } catch (e) { console.warn("[ConvStore]", e); }
 
     set((state) => ({
       currentAgentId: agentId,
@@ -1044,7 +1044,7 @@ export const useConversationStore = create<ConversationStore>()(
       conversationsApi.updateStatus(convId, 'closed').catch(() => {});
     }
     // [2026-05-19] 清除关闭会话的消息缓存
-    try { sessionStorage.removeItem(`rc:msg-cache:${convId}`); } catch {}
+    try { sessionStorage.removeItem(`rc:msg-cache:${convId}`); } catch (e) { console.warn("[ConvStore]", e); }
 
     const remaining = sessionTabs.filter(t => t.id !== tabId);
 

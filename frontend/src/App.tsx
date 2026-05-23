@@ -54,7 +54,7 @@ function PrivateRoute({ children }: { children: React.ReactNode }) {
       const parsed = JSON.parse(raw);
       hasPersistedAuth = !!parsed?.state?.token;
     }
-  } catch {}
+  } catch (e) { console.warn("[RC]", e); }
   return (isAuthenticated || hasPersistedAuth)
     ? <>{children}</>
     : <Navigate to="/login" replace state={{ fromPath: window.location.pathname + window.location.search + window.location.hash }} />;
