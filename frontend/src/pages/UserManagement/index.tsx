@@ -81,8 +81,9 @@ export function UserManagement() {
       // 刷新列表
       loadUsers();
       setEditingUser(null);
-    } catch (e: any) {
-      alert(`更新失败: ${e.message}`);
+    // [2026-05-24] 类型安全
+    } catch (e: unknown) {
+      alert(`更新失败: ${e instanceof Error ? e.message : '未知错误'}`);
     }
   }
 
@@ -98,8 +99,9 @@ export function UserManagement() {
     try {
       await adminOrganizationsApi.deleteUser(id);
       loadUsers();
-    } catch (e: any) {
-      alert(`删除失败: ${e.message || '未知错误'}`);
+    // [2026-05-24] 类型安全
+    } catch (e: unknown) {
+      alert(`删除失败: ${e instanceof Error ? e.message : '未知错误'}`);
     }
   }
 
@@ -108,8 +110,9 @@ export function UserManagement() {
       await adminOrganizationsApi.userPermissions(userId);
       setSelectedUser(users.find(u => u.id === userId) || null);
       setShowUserDetail(true);
-    } catch (e: any) {
-      alert(`获取权限信息失败: ${e.message}`);
+    // [2026-05-24] 类型安全
+    } catch (e: unknown) {
+      alert(`获取权限信息失败: ${e instanceof Error ? e.message : '未知错误'}`);
     }
   }
 
@@ -126,8 +129,9 @@ export function UserManagement() {
       setNewDeptCode('');
       setNewDeptParentId(null);
       loadDepartments();
-    } catch (e: any) {
-      alert(`创建失败: ${e.message}`);
+    // [2026-05-24] 类型安全
+    } catch (e: unknown) {
+      alert(`创建失败: ${e instanceof Error ? e.message : '未知错误'}`);
     }
   }
 
@@ -140,8 +144,9 @@ export function UserManagement() {
       });
       setEditingDept(null);
       loadDepartments();
-    } catch (e: any) {
-      alert(`更新失败: ${e.message}`);
+    // [2026-05-24] 类型安全
+    } catch (e: unknown) {
+      alert(`更新失败: ${e instanceof Error ? e.message : '未知错误'}`);
     }
   }
 
@@ -150,8 +155,9 @@ export function UserManagement() {
     try {
       await adminOrganizationsApi.deleteDepartment(id);
       loadDepartments();
-    } catch (e: any) {
-      alert(`删除失败: ${e.message}`);
+    // [2026-05-24] 类型安全
+    } catch (e: unknown) {
+      alert(`删除失败: ${e instanceof Error ? e.message : '未知错误'}`);
     }
   }
 
@@ -163,8 +169,18 @@ export function UserManagement() {
     try {
       await authApi.resetPassword(userId, newPwd);
       alert(`用户「${username}」密码已重置`);
-    } catch (e: any) {
-      alert(`重置失败: ${e?.response?.data?.error || e.message}`);
+    // [2026-05-24] 类型安全
+    } catch (e: unknown) {
+      // [2026-05-24] 类型安全 — Axios 风格错误提取
+      const axiosData = (err: unknown): string | null => {
+        if (err && typeof err === 'object' && 'response' in err) {
+          const r = (err as { response?: { data?: { error?: string } } }).response;
+          return r?.data?.error ?? null;
+        }
+        return null;
+      };
+      const msg = axiosData(e) || (e instanceof Error ? e.message : '未知错误');
+      alert(`重置失败: ${msg}`);
     }
   }
 

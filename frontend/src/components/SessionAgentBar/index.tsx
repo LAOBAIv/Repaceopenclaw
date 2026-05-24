@@ -39,13 +39,15 @@ export function SessionAgentBar({
   // [2026-05-16] 微信助手模式下加载绑定状态
   useEffect(() => {
     if (!isWechatAssistant) return;
-    apiClient.get('/wechat/user-binding').then((res: any) => {
+    // [2026-05-24] 类型安全
+    apiClient.get('/wechat/user-binding').then((res: { data?: { data?: Partial<WechatBinding> } }) => {
       const d = res.data?.data;
       setWechatBinding(d || { bound: false });
     }).catch(() => {
       setWechatBinding({ bound: false });
     });
-    apiClient.get('/agents/rc-wechat-agent').then((res: any) => {
+    // [2026-05-24] 类型安全
+    apiClient.get('/agents/rc-wechat-agent').then((res: { data?: { data?: { modelName?: string } } }) => {
       setWechatAgentModel(res.data?.data?.modelName || res.data?.modelName || null);
     }).catch(() => {});
   }, [isWechatAssistant]);
@@ -64,7 +66,8 @@ export function SessionAgentBar({
   async function handleBindQrcode() {
     setBindingLoading(true);
     try {
-      const res: any = await apiClient.post('/wechat-clawbot/qrcode');
+      // [2026-05-24] 类型安全
+      const res: { data?: { data?: { qrcode_url?: string; qrcode?: string } } } = await apiClient.post('/wechat-clawbot/qrcode');
       const d = res.data?.data;
       if (!d?.qrcode_url) { alert('获取二维码失败'); return; }
       setBindingCode(d.qrcode_url); // 复用 bindingCode 存二维码 URL
@@ -72,7 +75,8 @@ export function SessionAgentBar({
       // 轮询扫码状态
       const pollInterval = setInterval(async () => {
         try {
-          const r: any = await apiClient.post('/wechat-clawbot/qrcode/status', { qrcode: qrToken });
+          // [2026-05-24] 类型安全
+          const r: { data?: { data?: { status?: string; credentials?: { ilink_user_id?: string } } } } = await apiClient.post('/wechat-clawbot/qrcode/status', { qrcode: qrToken });
           const status = r.data?.data?.status;
           if (status === 'confirmed') {
             const userId = r.data?.data?.credentials?.ilink_user_id;
@@ -91,7 +95,8 @@ export function SessionAgentBar({
       }, 3000);
       // 3分钟后停止轮询
       setTimeout(() => { clearInterval(pollInterval); setBindingCode(null); }, 180000);
-    } catch (e: any) { alert('获取二维码失败: ' + (e.message || '')); }
+    // [2026-05-24] 类型安全
+    } catch (e: unknown) { alert('获取二维码失败: ' + (e instanceof Error ? e.message : '')); }
     finally { setBindingLoading(false); }
   }
 
@@ -108,14 +113,16 @@ export function SessionAgentBar({
       try {
         const authRaw = sessionStorage.getItem('repaceclaw-auth') || localStorage.getItem('repaceclaw-auth');
         const token = authRaw ? JSON.parse(authRaw)?.state?.token : '';
-        const headers: any = token ? { Authorization: `Bearer ${token}` } : {};
+        // [2026-05-24] 类型安全
+        const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
         const [mRes, pRes] = await Promise.all([
           fetch('/api/models', { headers }).then(r => r.json()),
           fetch('/api/model-providers', { headers }).then(r => r.json()),
         ]);
         const provs = pRes.data || [];
-        const models = (mRes.data || []).filter((m: any) => m.enabled).map((m: any) => {
-          const prov = provs.find((p: any) => p.id === m.providerId);
+        // [2026-05-24] 类型安全
+        const models = (mRes.data || []).filter((m: { enabled?: boolean; providerId?: string; name?: string }) => m.enabled).map((m: { name?: string; providerId?: string }) => {
+          const prov = provs.find((p: { id?: string }) => p.id === m.providerId);
           return { id: m.name, label: `${m.name} · ${prov?.name || ''}` };
         });
         setAvailableModels([{ id: 'auto', label: '自动选择' }, ...models]);
