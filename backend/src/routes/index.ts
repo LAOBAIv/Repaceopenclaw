@@ -35,6 +35,7 @@ import wechatClawBotRoutes from './wechatClawBot';
 import wechatRoutes from './wechat';
 import wechatIncomingRoutes from './wechatIncoming'; // [2026-05-16] OC 微信插件 RC-proxy 入口
 import authWechatRoutes from './authWechat'; // [2026-05-19] 微信扫码登录
+import memoriesRoutes from './memories'; // [2026-05-24] 向量记忆 API
 
 // 路由配置项
 interface RouteConfig {
@@ -76,6 +77,8 @@ const apiRoutes: RouteConfig[] = [
   { path: '/wechat-incoming', router: wechatIncomingRoutes },
   // [2026-05-19] 微信扫码登录（无需认证）
   { path: '/auth/wechat', router: authWechatRoutes },
+  // [2026-05-24] 向量记忆 API
+  { path: '/memories', router: memoriesRoutes },
 ];
 
 // 外部兼容路由列表（不使用 /api 前缀）

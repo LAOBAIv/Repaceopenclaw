@@ -2,6 +2,7 @@ import { Router, Request, Response } from "express";
 import { ConversationService } from "../services/ConversationService";
 import { AgentService } from "../services/AgentService";
 import { TaskService } from "../services/TaskService";
+import { MemoryService } from "../services/memory/MemoryService";
 import { authenticate } from "../middleware/auth";
 import { z } from "zod";
 import { broadcastToConversation } from "../ws/wsHandler";
@@ -429,6 +430,26 @@ router.post("/:id/messages", async (req: Request, res: Response) => {
         }
         systemPrompt += `\n\n你的名字是 ${paAgent.name}，请始终以第一人称回复。`;
         systemPrompt += `\n\n## 可用工具\n你可以使用以下工具获取实时数据。当用户询问平台状态、数量、列表等信息时，优先调用工具而非凭记忆回答。`;
+
+        // [2026-05-24] Phase 4: 向量记忆注入 — 检索相关记忆并融入 system prompt
+        try {
+          const memoryContext = await MemoryService.search({
+            query: content,
+            userId,
+            agentId: paAgent.id,
+            topK: 3,
+          }).catch(() => []);
+
+          if (memoryContext.length > 0) {
+            const memoryText = memoryContext
+              .map((m) => `【记忆】${m.title || m.content.slice(0, 100)} (相关度: ${(m.score * 100).toFixed(0)}%)`)
+              .join('\n');
+            systemPrompt = `[相关记忆]\n${memoryText}\n\n${systemPrompt}`;
+            logger.info(`[Memory Inject] ${memoryContext.length} memories injected for conv=${conv.id}`);
+          }
+        } catch (err: any) {
+          logger.warn(`[Memory Inject] Failed to retrieve memories: ${err.message}`);
+        }
 
         const historyMessages = ConversationService.getMessages(conv.id);
         const messages: any[] = [

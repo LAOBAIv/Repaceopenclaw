@@ -323,6 +323,38 @@ export function createTables(db: any) {
   // Migrate: add token_count to existing messages table (idempotent)
   safeAlter(db, "ALTER TABLE messages ADD COLUMN token_count INTEGER NOT NULL DEFAULT 0");
 
+  // ── Memories（向量记忆表）─────────────────────────────────────────────
+  db.run(`
+    CREATE TABLE IF NOT EXISTS memories (
+      id              TEXT PRIMARY KEY,
+      user_id         TEXT NOT NULL,
+      agent_id        TEXT,
+      conversation_id TEXT,
+      category        TEXT NOT NULL DEFAULT 'other',
+      title           TEXT,
+      content         TEXT NOT NULL,
+      source          TEXT NOT NULL DEFAULT 'manual',
+      importance      INTEGER NOT NULL DEFAULT 5,
+      access_count    INTEGER NOT NULL DEFAULT 0,
+      last_access     TEXT,
+      created_at      TEXT NOT NULL
+    )
+  `);
+  safeAlter(db, "CREATE INDEX IF NOT EXISTS idx_memories_user ON memories(user_id)");
+  safeAlter(db, "CREATE INDEX IF NOT EXISTS idx_memories_user_agent ON memories(user_id, agent_id)");
+  safeAlter(db, "CREATE INDEX IF NOT EXISTS idx_memories_category ON memories(category)");
+  safeAlter(db, "CREATE INDEX IF NOT EXISTS idx_memories_created ON memories(created_at DESC)");
+
+  db.run(`
+    CREATE TABLE IF NOT EXISTS memory_vectors (
+      memory_id  TEXT PRIMARY KEY,
+      vector     TEXT NOT NULL,
+      model      TEXT NOT NULL DEFAULT 'text-embedding-3-small',
+      dimension  INTEGER NOT NULL DEFAULT 1536,
+      FOREIGN KEY (memory_id) REFERENCES memories(id) ON DELETE CASCADE
+    )
+  `);
+
   // ── Audit Logs（操作审计日志）────────────────────────────────────────────
   db.run(`
     CREATE TABLE IF NOT EXISTS audit_logs (

@@ -20,6 +20,7 @@ import { MobileAgentLibrary } from './pages/MobileAgentLibrary';
 import { PlatformAssistant } from './pages/PlatformAssistant';
 import { WechatClawBot } from './pages/WechatClawBot';
 import GroupChat from './pages/GroupChat';
+import { MemoryManager } from './pages/MemoryManager';
 import { useAuthStore } from './stores/authStore';
 
 // 浏览器类型检测
@@ -116,6 +117,7 @@ function App() {
           <Route path="/platform-assistant" element={<PlatformAssistant />} />
           <Route path="/wechat-clawbot" element={<WechatClawBot />} />
           <Route path="/Projects" element={<ProjectsPage />} />
+          <Route path="/memory" element={<MemoryManager />} />
           <Route path="*" element={<Navigate to="/workspace" replace />} />
         </Route>
       </Routes>
