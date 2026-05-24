@@ -27,36 +27,47 @@ export interface Task {
   updatedAt: string;
 }
 
-function execToRows(db: any, sql: string, params?: any[]): any[] {
+// [2026-05-24] 类型安全：better-sqlite3 Database 最小接口
+interface BetterSqlite3Db {
+  exec(sql: string, params?: unknown[]): Array<{ columns: string[]; values: unknown[][] }>;
+  run(sql: string, params?: unknown[]): void;
+  prepare(sql: string): { get(params?: unknown[]): unknown | undefined; all(params?: unknown[]): unknown[] };
+  getRowsModified(): number;
+}
+
+function execToRows(db: BetterSqlite3Db, sql: string, params?: unknown[]): Record<string, unknown>[] { // [2026-05-24] 类型安全
   const result = params ? db.exec(sql, params) : db.exec(sql);
   if (!result.length) return [];
   const cols = result[0].columns;
-  return result[0].values.map((row: any[]) => {
-    // [2026-05-24] 类型安全：any → Record<string, unknown>
-    const obj: Record<string, unknown> = {};
+  return result[0].values.map((row: unknown[]) => {
+    const obj: Record<string, unknown> = {}; // [2026-05-24] 类型安全：any → Record<string, unknown>
     cols.forEach((c: string, i: number) => (obj[c] = row[i]));
     return obj;
   });
 }
 
-const rowToTask = (obj: any): Task => ({
-  id: obj.id,
-  taskCode: obj.task_code || undefined,
-  title: obj.title,
-  description: obj.description,
-  columnId: obj.column_id as TaskColumn,
-  priority: obj.priority as TaskPriority,
-  tags: JSON.parse(obj.tags || "[]"),
-  agent: obj.agent || "",
-  agentColor: obj.agent_color || "#6366F1",
-  agentId: obj.agent_id || "",
-  dueDate: obj.due_date || "",
-  commentCount: obj.comment_count || 0,
-  fileCount: obj.file_count || 0,
-  sortOrder: obj.sort_order || 0,
-  createdBy: obj.created_by || null,
-  createdAt: obj.created_at,
-  updatedAt: obj.updated_at,
+// [2026-05-24] 类型安全：Record<string, unknown> 安全取值辅助
+const rv = (r: Record<string, unknown>, k: string): string | undefined => r[k] as string | undefined;
+const rn = (r: Record<string, unknown>, k: string): number | undefined => r[k] as number | undefined;
+
+const rowToTask = (obj: Record<string, unknown>): Task => ({ // [2026-05-24] 类型安全
+  id: rv(obj, 'id')!,
+  taskCode: rv(obj, 'task_code') || undefined,
+  title: rv(obj, 'title')!,
+  description: rv(obj, 'description')!,
+  columnId: rv(obj, 'column_id') as TaskColumn,
+  priority: rv(obj, 'priority') as TaskPriority,
+  tags: JSON.parse(rv(obj, 'tags') || "[]"),
+  agent: rv(obj, 'agent') || "",
+  agentColor: rv(obj, 'agent_color') || "#6366F1",
+  agentId: rv(obj, 'agent_id') || "",
+  dueDate: rv(obj, 'due_date') || "",
+  commentCount: rn(obj, 'comment_count') || 0,
+  fileCount: rn(obj, 'file_count') || 0,
+  sortOrder: rn(obj, 'sort_order') || 0,
+  createdBy: rv(obj, 'created_by') || null,
+  createdAt: rv(obj, 'created_at')!,
+  updatedAt: rv(obj, 'updated_at')!,
 });
 
 export const TaskService = {
@@ -64,7 +75,7 @@ export const TaskService = {
   listGrouped(userId?: string): Record<TaskColumn, Task[]> {
     const db = getDb();
     let sql = "SELECT * FROM tasks";
-    const params: any[] = [];
+    const params: unknown[] = []; // [2026-05-24] 类型安全
     if (userId) {
       sql += " WHERE user_id = ?";
       params.push(userId);
@@ -81,7 +92,7 @@ export const TaskService = {
   listByColumn(columnId: TaskColumn, userId?: string): Task[] {
     const db = getDb();
     let sql = "SELECT * FROM tasks WHERE column_id=?";
-    const params: any[] = [columnId];
+    const params: unknown[] = [columnId]; // [2026-05-24] 类型安全
     if (userId) {
       sql += " AND user_id = ?";
       params.push(userId);
@@ -135,12 +146,12 @@ export const TaskService = {
     const col = data.columnId || "todo";
     // Compute sort order: max in column + 1
     const orderRows = execToRows(db, "SELECT MAX(sort_order) as m FROM tasks WHERE column_id=?", [col]);
-    const sortOrder = (orderRows[0]?.m ?? -1) + 1;
+    const sortOrder = ((orderRows[0]?.m as number) ?? -1) + 1; // [2026-05-24] 类型安全
 
     // Dual-code Phase 1：任务创建开始双写 UUID + taskCode。
     // taskCode 尽量挂在真实 user_code 下面，便于后续按用户维度检索/排障。
     const userCodeRow = data.userId ? execToRows(db, "SELECT user_code FROM users WHERE id=?", [data.userId])[0] : null;
-    const taskCode = IdGenerator.taskCode(userCodeRow?.user_code || IdGenerator.userCode());
+    const taskCode = IdGenerator.taskCode((userCodeRow?.user_code as string) || IdGenerator.userCode()); // [2026-05-24] 类型安全
 
     db.run(
       `INSERT INTO tasks (id, task_code, title, description, column_id, priority, tags, agent, agent_color, agent_id, due_date, comment_count, file_count, sort_order, created_by, user_id, created_at, updated_at)

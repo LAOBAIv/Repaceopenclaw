@@ -22,14 +22,21 @@ let pool: Pool;
 let client: PoolClient;
 let _initialized = false;
 
+/** SQL 查询参数 */ // [2026-05-24] 类型安全
+type SqlParams = unknown[];
+/** SQL 查询结果行 */ // [2026-05-24] 类型安全
+type SqlRow = Record<string, unknown>;
+/** SQL 查询结果 */ // [2026-05-24] 类型安全
+type SqlResult = { columns: string[]; values: unknown[][] }[];
+
 /** sql.js Database 兼容接口 */
 export interface PGDatabase {
-  exec(sql: string, params?: any[]): { columns: string[]; values: any[][] }[];
-  run(sql: string, params?: any[]): void;
+  exec(sql: string, params?: SqlParams): SqlResult; // [2026-05-24] 类型安全
+  run(sql: string, params?: SqlParams): void; // [2026-05-24] 类型安全
   prepare(sql: string): {
-    get: (params?: any[]) => Record<string, any> | undefined;
-    all: (params?: any[]) => Record<string, any>[];
-    run: (params?: any[]) => void;
+    get: (params?: SqlParams) => SqlRow | undefined; // [2026-05-24] 类型安全
+    all: (params?: SqlParams) => SqlRow[]; // [2026-05-24] 类型安全
+    run: (params?: SqlParams) => void; // [2026-05-24] 类型安全
   };
   close(): void;
 }
@@ -76,7 +83,7 @@ export async function initPostgresSync(): Promise<PGDatabase> {
 function getPGDb(): PGDatabase {
   return {
     /** SELECT — 返回 sql.js 兼容格式 {columns, values}[] */
-    exec(sql: string, params?: any[]): { columns: string[]; values: any[][] }[] {
+    exec(sql: string, params?: SqlParams): SqlResult { // [2026-05-24] 类型安全
       const rows = _syncQuery(sql, params);
       if (!rows.length) return [];
       const columns = Object.keys(rows[0]);
@@ -85,16 +92,16 @@ function getPGDb(): PGDatabase {
     },
 
     /** INSERT / UPDATE / DELETE */
-    run(sql: string, params?: any[]): void {
+    run(sql: string, params?: SqlParams): void { // [2026-05-24] 类型安全
       _syncQuery(sql, params);
     },
 
     /** 预编译语句（兼容 sql.js prepare 接口） */
     prepare(sql: string) {
       return {
-        get: (params?: any[]) => _syncQuery(sql, params)[0],
-        all: (params?: any[]) => _syncQuery(sql, params),
-        run: (params?: any[]) => { _syncQuery(sql, params); },
+        get: (params?: SqlParams) => _syncQuery(sql, params)[0], // [2026-05-24] 类型安全
+        all: (params?: SqlParams) => _syncQuery(sql, params), // [2026-05-24] 类型安全
+        run: (params?: SqlParams) => { _syncQuery(sql, params); }, // [2026-05-24] 类型安全
       };
     },
 
@@ -106,9 +113,9 @@ function getPGDb(): PGDatabase {
 }
 
 /** 同步查询包装器（使用 deasync 阻塞等待 Promise） */
-function _syncQuery(sql: string, params?: any[]): Record<string, any>[] {
+function _syncQuery(sql: string, params?: SqlParams): SqlRow[] { // [2026-05-24] 类型安全
   let done = false;
-  let result: Record<string, any>[] = [];
+  let result: SqlRow[] = []; // [2026-05-24] 类型安全
   let error: Error | null = null;
 
   client.query(sql, params)

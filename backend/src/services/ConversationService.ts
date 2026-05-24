@@ -54,19 +54,31 @@ export interface Message {
   createdAt: string;
 }
 
-function execToRows(db: any, sql: string, params?: any[]): any[] {
+// [2026-05-24] 类型安全：better-sqlite3 Database 最小接口
+interface BetterSqlite3Db {
+  exec(sql: string, params?: unknown[]): Array<{ columns: string[]; values: unknown[][] }>;
+  run(sql: string, params?: unknown[]): void;
+  prepare(sql: string): { get(params?: unknown[]): unknown | undefined; all(params?: unknown[]): unknown[] };
+  getRowsModified(): number;
+}
+
+function execToRows(db: BetterSqlite3Db, sql: string, params?: unknown[]): Record<string, unknown>[] {
   const result = params ? db.exec(sql, params) : db.exec(sql);
   if (!result.length) return [];
   const cols = result[0].columns;
-  return result[0].values.map((row: any[]) => {
+  return result[0].values.map((row: unknown[]) => {
     const obj: Record<string, unknown> = {}; // [2026-05-24] 类型安全：any → Record<string, unknown>
     cols.forEach((c: string, i: number) => (obj[c] = row[i]));
     return obj;
   });
 }
 
+// [2026-05-24] 类型安全：Record<string, unknown> 安全取值辅助
+const rv = (r: Record<string, unknown>, k: string): string | undefined => r[k] as string | undefined;
+const rn = (r: Record<string, unknown>, k: string): number | undefined => r[k] as number | undefined;
+
 /** 批量查询多个会话的 agentIds,返回 Map<conversationId, agentId[]> */
-function fetchAgentIdsMap(db: any, convIds: string[]): Map<string, string[]> {
+function fetchAgentIdsMap(db: BetterSqlite3Db, convIds: string[]): Map<string, string[]> { // [2026-05-24] 类型安全
   const map = new Map<string, string[]>();
   if (!convIds.length) return map;
   // SQLite IN 查询(最多 999 个参数,实际不会超限)
@@ -77,8 +89,10 @@ function fetchAgentIdsMap(db: any, convIds: string[]): Map<string, string[]> {
     convIds
   );
   for (const r of rows) {
-    if (!map.has(r.conversation_id)) map.set(r.conversation_id, []);
-    map.get(r.conversation_id)!.push(r.agent_id);
+    const cid = rv(r, 'conversation_id')!;
+    const aid = rv(r, 'agent_id')!;
+    if (!map.has(cid)) map.set(cid, []);
+    map.get(cid)!.push(aid);
   }
   return map;
 }
@@ -88,7 +102,7 @@ function fetchAgentIdsMap(db: any, convIds: string[]): Map<string, string[]> {
  * 说明:当前真实来源是 conversation_agents,但仍有旧代码/排障脚本会直接看 agent_ids 文本列,
  * 所以在双编码过渡期要持续同步,避免"当前会话已切 agent,但旧快照列还是旧值"的脏状态。
  */
-function syncConversationAgentSnapshot(db: any, conversationId: string): string[] {
+function syncConversationAgentSnapshot(db: BetterSqlite3Db, conversationId: string): string[] { // [2026-05-24] 类型安全
   const rows = execToRows(
     db,
     `SELECT agent_id FROM conversation_agents WHERE conversation_id=? ORDER BY joined_at ASC`,
@@ -100,28 +114,30 @@ function syncConversationAgentSnapshot(db: any, conversationId: string): string[
 }
 
 /** 将 DB 行 + agentIds 组装成 Conversation 对象 */
-function rowToConversation(r: any, agentIds: string[]): Conversation {
+function rowToConversation(r: Record<string, unknown>, agentIds: string[]): Conversation { // [2026-05-24] 类型安全
+  const v = (k: string) => r[k] as string | undefined; // [2026-05-24] 类型安全：安全取值
+  const vn = (k: string) => r[k] as number | undefined; // [2026-05-24] 类型安全
   return {
-    id: r.id,
-    projectId: r.project_id,
-    taskId: r.task_id || null,
-    sessionCode: r.session_code || undefined,
-    currentAgentId: r.current_agent_id || r.agent_id || agentIds[0] || '',
-    currentAgentCode: r.current_agent_code || undefined,
+    id: v('id')!,
+    projectId: v('project_id') ?? null,
+    taskId: v('task_id') ?? null,
+    sessionCode: v('session_code'),
+    currentAgentId: v('current_agent_id') || v('agent_id') || agentIds[0] || '',
+    currentAgentCode: v('current_agent_code'),
     agentIds,
     agentId: agentIds[0] ?? "",   // 兼容旧字段
-    title: r.title,
-    status: (r.status as 'in_progress' | 'completed' | 'archived' | 'deleted') || 'in_progress',
-    scopeType: (r.scope_type as Conversation['scopeType']) || 'user',
-    scopeId: r.scope_id || '',
-    memoryPolicy: (r.memory_policy as Conversation['memoryPolicy']) || 'private',
-    summary: r.summary || '',
-    lastMessageAt: r.last_message_at || undefined,
-    userId: r.user_id || '',
-    createdBy: r.created_by || null,
-    createdAt: r.created_at,
+    title: v('title')!,
+    status: (v('status') as Conversation['status']) || 'in_progress',
+    scopeType: (v('scope_type') as Conversation['scopeType']) || 'user',
+    scopeId: v('scope_id') || '',
+    memoryPolicy: (v('memory_policy') as Conversation['memoryPolicy']) || 'private',
+    summary: v('summary') || '',
+    lastMessageAt: v('last_message_at'),
+    userId: v('user_id') || '',
+    createdBy: v('created_by') ?? null,
+    createdAt: v('created_at')!,
     // 会话类型：general（普通）| wechat_assistant（微信助手）
-    conversationType: (r.conversation_type as Conversation['conversationType']) || 'general',
+    conversationType: (v('conversation_type') as Conversation['conversationType']) || 'general',
   };
 }
 
@@ -146,7 +162,7 @@ export const ConversationService = {
   list(userId?: string, projectId?: string, status?: string): Conversation[] {
     const db = getDb();
     let sql = "SELECT * FROM conversations";
-    const params: any[] = [];
+    const params: unknown[] = []; // [2026-05-24] 类型安全
     const conditions: string[] = [];
     if (userId) {
       conditions.push("user_id = ?");
@@ -175,14 +191,14 @@ export const ConversationService = {
     sql += " ORDER BY created_at DESC";
     const rows = execToRows(db, sql, params.length ? params : undefined);
     if (!rows.length) return [];
-    const agentMap = fetchAgentIdsMap(db, rows.map((r) => r.id));
-    return rows.map((r) => rowToConversation(r, agentMap.get(r.id) ?? []));
+    const agentMap = fetchAgentIdsMap(db, rows.map((r) => rv(r, 'id')!));
+    return rows.map((r) => rowToConversation(r, agentMap.get(rv(r, 'id')!) ?? []));
   },
 
   getById(id: string, userId?: string): Conversation | null {
     const db = getDb();
     let sql = "SELECT * FROM conversations WHERE id=?";
-    const params: any[] = [id];
+    const params: unknown[] = [id]; // [2026-05-24] 类型安全
     if (userId) {
       sql = "SELECT * FROM conversations WHERE id=? AND user_id=?";
       params.push(userId);
@@ -190,8 +206,8 @@ export const ConversationService = {
     const rows = execToRows(db, sql, params);
     if (!rows.length) return null;
     const r = rows[0];
-    const agentMap = fetchAgentIdsMap(db, [r.id]);
-    return rowToConversation(r, agentMap.get(r.id) ?? []);
+    const agentMap = fetchAgentIdsMap(db, [rv(r, 'id')!]);
+    return rowToConversation(r, agentMap.get(rv(r, 'id')!) ?? []);
   },
 
   /**
@@ -204,7 +220,7 @@ export const ConversationService = {
 
     const db = getDb();
     let sql = "SELECT * FROM conversations WHERE session_code=?";
-    const params: any[] = [idOrCode];
+    const params: unknown[] = [idOrCode]; // [2026-05-24] 类型安全
     if (userId) {
       sql = "SELECT * FROM conversations WHERE session_code=? AND user_id=?";
       params.push(userId);
@@ -212,8 +228,8 @@ export const ConversationService = {
     const rows = execToRows(db, sql, params);
     if (!rows.length) return null;
     const r = rows[0];
-    const agentMap = fetchAgentIdsMap(db, [r.id]);
-    return rowToConversation(r, agentMap.get(r.id) ?? []);
+    const agentMap = fetchAgentIdsMap(db, [rv(r, 'id')!]);
+    return rowToConversation(r, agentMap.get(rv(r, 'id')!) ?? []);
   },
 
   /** 将 conversation UUID/session_code 统一解析成真实底层主键。 */
@@ -237,7 +253,7 @@ export const ConversationService = {
     // Phase 2:taskId 入参既可能是 UUID,也可能已经是 task_code。
     // 统一先解析出真实 task UUID,再决定 sessionCode 应复用哪个业务码。
     const resolvedTask = data.taskId ? TaskService.getByIdOrCode(data.taskId) : null;
-    const sessionCode = resolvedTask?.taskCode || data.taskId || IdGenerator.taskCode(userCodeRow?.user_code || IdGenerator.userCode());
+    const sessionCode = resolvedTask?.taskCode || data.taskId || IdGenerator.taskCode((userCodeRow?.user_code as string) || IdGenerator.userCode()); // [2026-05-24] 类型安全
     const taskId = resolvedTask?.id || null;
     // 关键修复：无 taskId 的普通会话也必须有真实 conversation.id。
     // 之前这里直接把 taskId 赋给 conversationId，导致未绑定任务的前台新会话 id 变成 null，
@@ -405,14 +421,14 @@ export const ConversationService = {
       [conversationId]
     );
     return rows.map((r) => ({
-      id: r.id,
-      messageCode: r.message_code || undefined,
-      conversationId: r.conversation_id,
-      role: r.role as "user" | "agent",
-      content: r.content,
-      agentId: r.agent_id || undefined,
-      tokenCount: r.token_count ?? 0,
-      createdAt: r.created_at,
+      id: rv(r, 'id')!,
+      messageCode: rv(r, 'message_code') || undefined,
+      conversationId: rv(r, 'conversation_id')!,
+      role: rv(r, 'role') as "user" | "agent",
+      content: rv(r, 'content')!,
+      agentId: rv(r, 'agent_id') || undefined,
+      tokenCount: rn(r, 'token_count') ?? 0,
+      createdAt: rv(r, 'created_at')!,
     }));
   },
 
@@ -485,9 +501,9 @@ export const ConversationService = {
       userId ? [userId] : undefined
     );
     if (!rows.length) return [];
-    const agentMap = fetchAgentIdsMap(db, rows.map((r) => r.id));
+    const agentMap = fetchAgentIdsMap(db, rows.map((r) => rv(r, 'id')!));
     return rows.map((r) => {
-      const conv = rowToConversation(r, agentMap.get(r.id) ?? []);
+      const conv = rowToConversation(r, agentMap.get(rv(r, 'id')!) ?? []);
       return {
         id: conv.id,
         title: conv.title,
@@ -496,12 +512,12 @@ export const ConversationService = {
         agentIds: conv.agentIds,
         sessionCode: conv.sessionCode,
         currentAgentCode: conv.currentAgentCode,
-        ocSessionKey: r.oc_session_key || undefined,
+        ocSessionKey: rv(r, 'oc_session_key') || undefined,
         createdAt: conv.createdAt,
         updatedAt: conv.lastMessageAt || conv.createdAt,
-        userId: r.user_id || '',
-        messageCount: Number(r.message_count || 0),
-        lastMessage: String(r.last_message || '').substring(0, 200),
+        userId: rv(r, 'user_id') || '',
+        messageCount: Number(rn(r, 'message_count') || 0),
+        lastMessage: String(rv(r, 'last_message') || '').substring(0, 200),
         status: conv.status,
         scopeType: conv.scopeType,
         scopeId: conv.scopeId,

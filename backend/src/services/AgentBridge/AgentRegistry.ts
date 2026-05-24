@@ -50,10 +50,10 @@ export async function registerAgent(
 
     logger.info(`[AgentRegistry] ✅ Registered: ${agent.name} (${agent.agentType || 'general'}) → ${ocAgentId}`);
     return { success: true, ocAgentId };
-  } catch (error: any) {
-    logger.error(`[AgentRegistry] ❌ Register failed for ${agent.name}:`, error.message);
-    await logRegistry(agent.id, 'register', `failed: ${error.message}`);
-    return { success: false, ocAgentId, error: error.message };
+  } catch (error: unknown) { // [2026-05-24] 类型安全
+    logger.error(`[AgentRegistry] ❌ Register failed for ${agent.name}:`, { message: error instanceof Error ? error.message : String(error) }); // [2026-05-24] 类型安全
+    await logRegistry(agent.id, 'register', `failed: ${error instanceof Error ? error.message : String(error)}`);
+    return { success: false, ocAgentId, error: error instanceof Error ? error.message : String(error) };
   }
 }
 
@@ -78,10 +78,10 @@ export async function unregisterAgent(
 
     logger.info(`[AgentRegistry] ✅ Unregistered: ${agentId}`);
     return { success: true };
-  } catch (error: any) {
-    logger.error(`[AgentRegistry] ❌ Unregister failed for ${agentId}:`, error.message);
-    await logRegistry(agentId, 'unregister', `failed: ${error.message}`);
-    return { success: false, error: error.message };
+  } catch (error: unknown) { // [2026-05-24] 类型安全
+    logger.error(`[AgentRegistry] ❌ Unregister failed for ${agentId}:`, { message: error instanceof Error ? error.message : String(error) }); // [2026-05-24] 类型安全
+    await logRegistry(agentId, 'unregister', `failed: ${error instanceof Error ? error.message : String(error)}`);
+    return { success: false, error: error instanceof Error ? error.message : String(error) };
   }
 }
 
@@ -109,10 +109,10 @@ export async function updateAgent(
 
     logger.info(`[AgentRegistry] ✅ Updated: ${agentId} (${agent.agentType || 'general'}) → ${ocAgentId}`);
     return { success: true };
-  } catch (error: any) {
-    logger.error(`[AgentRegistry] ❌ Update failed for ${agentId}:`, error.message);
-    await logRegistry(agentId, 'update', `failed: ${error.message}`);
-    return { success: false, error: error.message };
+  } catch (error: unknown) { // [2026-05-24] 类型安全
+    logger.error(`[AgentRegistry] ❌ Update failed for ${agentId}:`, { message: error instanceof Error ? error.message : String(error) }); // [2026-05-24] 类型安全
+    await logRegistry(agentId, 'update', `failed: ${error instanceof Error ? error.message : String(error)}`);
+    return { success: false, error: error instanceof Error ? error.message : String(error) };
   }
 }
 
@@ -155,7 +155,7 @@ export async function syncAllAgents(): Promise<{
       // 跳过独立绑定的全局智能体（不走 agent_type 映射链路）
       if (agent.openclawAgentId === 'repaceclaw-platform-assistant') continue;
       // [2026-05-16] 稳定方案：用 agent_code 识别微信助手，固定其 openclaw_agent_id
-      if ((agent as any).agentCode === 'rc-wechat-agent' || agent.id === '151194a0-385e-4fc6-8aca-c1622e5967f8') {
+      if ((agent as unknown as Record<string, unknown>).agentCode === 'rc-wechat-agent' || agent.id === '151194a0-385e-4fc6-8aca-c1622e5967f8') { // [2026-05-24] 类型安全
         // 确保微信助手的 openclaw_agent_id 始终为 rc-wechat-agent
         if (agent.openclawAgentId !== 'rc-wechat-agent') {
           db.run('UPDATE agents SET openclaw_agent_id = ? WHERE id = ?', ['rc-wechat-agent', agent.id]);
@@ -167,8 +167,8 @@ export async function syncAllAgents(): Promise<{
       const ocAgentId = toOpenClawAgentId(agent.agentType);
       db.run('UPDATE agents SET openclaw_agent_id = ?, agent_type = ? WHERE id = ?', [ocAgentId, agent.agentType || 'general', agent.id]);
       report.registered++;
-    } catch (error: any) {
-      report.errors.push({ agentId: agent.id, error: error.message });
+    } catch (error: unknown) { // [2026-05-24] 类型安全
+      report.errors.push({ agentId: agent.id, error: error instanceof Error ? error.message : String(error) }); // [2026-05-24] 类型安全
     }
   }
 
@@ -203,38 +203,40 @@ function resolveModel(agent: Agent): string | undefined {
  * 🛡️ 2026-05-03 修复：加上 userId 字段，
  * 避免 syncAllAgents() 循环内重复查数据库（N+1 问题）。
  */
-function rowToAgent(obj: any): Agent {
+function rowToAgent(obj: Record<string, unknown>): Agent { // [2026-05-24] 类型安全
+  const v = (k: string) => obj[k] as string | undefined; // [2026-05-24] 类型安全
+  const vn = (k: string) => obj[k] as number | undefined; // [2026-05-24] 类型安全
   return {
-    id: obj.id,
-    name: obj.name,
-    color: obj.color,
-    systemPrompt: obj.system_prompt,
-    writingStyle: obj.writing_style,
-    expertise: JSON.parse(obj.expertise || '[]'),
-    description: obj.description || '',
-    status: (obj.status || 'idle') as Agent['status'],
-    modelName: obj.model_name || '',
-    modelProvider: obj.model_provider || '',
-    temperature: obj.temperature ?? 0.7,
-    maxTokens: obj.max_tokens ?? 4096,
-    topP: obj.top_p ?? 1,
-    frequencyPenalty: obj.frequency_penalty ?? 0,
-    presencePenalty: obj.presence_penalty ?? 0,
-    tokenProvider: obj.token_provider || '',
-    tokenApiKey: obj.token_api_key || '',
-    tokenBaseUrl: obj.token_base_url || '',
-    outputFormat: obj.output_format || '纯文本',
-    boundary: obj.boundary || '',
-    memoryTurns: obj.memory_turns ?? 0,
-    temperatureOverride: obj.temperature_override ?? null,
-    tokenUsed: obj.token_used ?? 0,
-    visibility: (obj.visibility || 'private') as Agent['visibility'],
-    skillsConfig: JSON.parse(obj.skills_config || '{}'),
-    quotaConfig: JSON.parse(obj.quota_config || '{}'),
-    openclawAgentId: obj.openclaw_agent_id || null,
-    userId: obj.user_id || '',
-    agentType: obj.agent_type || 'general',  // 新增：业务类型
-    createdAt: obj.created_at,
+    id: v('id')!,
+    name: v('name')!,
+    color: v('color')!,
+    systemPrompt: v('system_prompt')!,
+    writingStyle: v('writing_style')!,
+    expertise: JSON.parse(v('expertise') || '[]'),
+    description: v('description') || '',
+    status: (v('status') || 'idle') as Agent['status'],
+    modelName: v('model_name') || '',
+    modelProvider: v('model_provider') || '',
+    temperature: vn('temperature') ?? 0.7,
+    maxTokens: vn('max_tokens') ?? 4096,
+    topP: vn('top_p') ?? 1,
+    frequencyPenalty: vn('frequency_penalty') ?? 0,
+    presencePenalty: vn('presence_penalty') ?? 0,
+    tokenProvider: v('token_provider') || '',
+    tokenApiKey: v('token_api_key') || '',
+    tokenBaseUrl: v('token_base_url') || '',
+    outputFormat: v('output_format') || '纯文本',
+    boundary: v('boundary') || '',
+    memoryTurns: vn('memory_turns') ?? 0,
+    temperatureOverride: vn('temperature_override') ?? null,
+    tokenUsed: vn('token_used') ?? 0,
+    visibility: (v('visibility') || 'private') as Agent['visibility'],
+    skillsConfig: JSON.parse(v('skills_config') || '{}'),
+    quotaConfig: JSON.parse(v('quota_config') || '{}'),
+    openclawAgentId: v('openclaw_agent_id') || null,
+    userId: v('user_id') || '',
+    agentType: v('agent_type') || 'general',  // 新增：业务类型
+    createdAt: v('created_at')!,
   };
 }
 

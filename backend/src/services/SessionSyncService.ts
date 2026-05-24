@@ -31,11 +31,11 @@ export interface OpenClawSessionMeta {
 }
 
 /** 从 JSONL 消息内容中提取纯文本 */
-function extractMessageContent(content: any): string {
+function extractMessageContent(content: unknown): string { // [2026-05-24] 类型安全
   if (typeof content === 'string') return content;
   if (Array.isArray(content)) {
     return content
-      .map((c: any) => c.text || '')
+      .map((c: unknown) => (typeof c === 'object' && c !== null && 'text' in c ? String((c as Record<string, unknown>).text) : '')) // [2026-05-24] 类型安全
       .join('')
       .replace(/\[.*?\]/g, '')
       .trim();
@@ -120,8 +120,16 @@ export function scanOpenClawSessions(): OpenClawSessionMeta[] {
   return sessions;
 }
 
+// [2026-05-24] 类型安全：better-sqlite3 Database 最小接口
+interface BetterSqlite3Db {
+  exec(sql: string, params?: unknown[]): Array<{ columns: string[]; values: unknown[][] }>;
+  run(sql: string, params?: unknown[]): void;
+  prepare(sql: string): { get(params?: unknown[]): unknown | undefined; all(params?: unknown[]): unknown[] };
+  getRowsModified(): number;
+}
+
 /** 同步 OpenClaw sessions 到 RepaceClaw DB（接收 db 实例作为参数） */
-export function syncToDatabase(db: any, userId: string = ''): { synced: number; total: number; errors: string[] } {
+export function syncToDatabase(db: BetterSqlite3Db, userId: string = ''): { synced: number; total: number; errors: string[] } { // [2026-05-24] 类型安全
   const openClawSessions = scanOpenClawSessions();
   let synced = 0;
   const errors: string[] = [];
@@ -175,7 +183,7 @@ export function syncToDatabase(db: any, userId: string = ''): { synced: number; 
 }
 
 /** 获取合并后的会话列表 — 通过 conversation_agents 关联表获取 agentIds */
-export function getAllSessions(db: any, userId: string = '') {
+export function getAllSessions(db: BetterSqlite3Db, userId: string = '') { // [2026-05-24] 类型安全
   const rows = db.exec(`
     SELECT 
       c.id, c.title, c.oc_session_key as ocSessionKey,
@@ -190,7 +198,7 @@ export function getAllSessions(db: any, userId: string = '') {
   if (!rows[0]?.values?.length) return [];
 
   const sessions = (rows[0]?.values || []).map(row => {
-    const obj: Record<string, any> = {};
+    const obj: Record<string, unknown> = {}; // [2026-05-24] 类型安全
     const cols = rows[0].columns;
     cols.forEach((c, i) => { obj[c] = row[i]; });
     obj.lastMessage = obj.lastMessage ? String(obj.lastMessage).substring(0, 200) : '';
@@ -198,7 +206,7 @@ export function getAllSessions(db: any, userId: string = '') {
   });
 
   // 批量查询 agentIds
-  const convIds = sessions.map((s: any) => s.id);
+  const convIds = sessions.map((s: Record<string, unknown>) => s.id as string); // [2026-05-24] 类型安全
   const placeholders = convIds.map(() => "?").join(",");
   try {
     const agentRows = db.prepare(
@@ -210,14 +218,14 @@ export function getAllSessions(db: any, userId: string = '') {
       agentMap.get(ar.conversation_id)!.push(ar.agent_id);
     }
     for (const s of sessions) {
-      s.agentIds = agentMap.get(s.id) || [];
-      s.agentId = s.agentIds[0] || '';
+      (s as Record<string, unknown>).agentIds = agentMap.get(s.id as string) || []; // [2026-05-24] 类型安全
+      (s as Record<string, unknown>).agentId = ((s as Record<string, unknown>).agentIds as string[])[0] || '';
     }
   } catch {
     // conversation_agents 表不存在时，返回空数组
     for (const s of sessions) {
-      s.agentIds = [];
-      s.agentId = '';
+      (s as Record<string, unknown>).agentIds = []; // [2026-05-24] 类型安全
+      (s as Record<string, unknown>).agentId = '';
     }
   }
 

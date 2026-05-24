@@ -40,42 +40,53 @@ export interface DocumentNode {
   children?: DocumentNode[];
 }
 
-const rowToProject = (obj: any): Project => ({
-  id: obj.id,
-  title: obj.title,
-  description: obj.description,
-  tags: JSON.parse(obj.tags || "[]"),
-  status: obj.status,
-  goal: obj.goal || "",
-  priority: (obj.priority || "mid") as Project["priority"],
-  startTime: obj.start_time || "",
-  endTime: obj.end_time || "",
-  decisionMaker: obj.decision_maker || "",
-  workflowNodes: JSON.parse(obj.workflow_nodes || "[]"),
-  createdBy: obj.created_by || null,
-  createdAt: obj.created_at,
-  updatedAt: obj.updated_at,
+// [2026-05-24] 类型安全：Record<string, unknown> 安全取值辅助
+const rv = (r: Record<string, unknown>, k: string): string | undefined => r[k] as string | undefined;
+const rn = (r: Record<string, unknown>, k: string): number | undefined => r[k] as number | undefined;
+
+const rowToProject = (obj: Record<string, unknown>): Project => ({ // [2026-05-24] 类型安全
+  id: rv(obj, 'id')!,
+  title: rv(obj, 'title')!,
+  description: rv(obj, 'description')!,
+  tags: JSON.parse(rv(obj, 'tags') || "[]"),
+  status: rv(obj, 'status') as Project['status'],
+  goal: rv(obj, 'goal') || "",
+  priority: (rv(obj, 'priority') || "mid") as Project["priority"],
+  startTime: rv(obj, 'start_time') || "",
+  endTime: rv(obj, 'end_time') || "",
+  decisionMaker: rv(obj, 'decision_maker') || "",
+  workflowNodes: JSON.parse(rv(obj, 'workflow_nodes') || "[]"),
+  createdBy: rv(obj, 'created_by') || null,
+  createdAt: rv(obj, 'created_at')!,
+  updatedAt: rv(obj, 'updated_at')!,
 });
 
-const rowToDoc = (obj: any): DocumentNode => ({
-  id: obj.id,
-  projectId: obj.project_id,
-  parentId: obj.parent_id || null,
-  title: obj.title,
-  content: obj.content,
-  order: obj.node_order,
-  assignedAgentIds: JSON.parse(obj.assigned_agent_ids || "[]"),
-  createdAt: obj.created_at,
-  updatedAt: obj.updated_at,
+const rowToDoc = (obj: Record<string, unknown>): DocumentNode => ({ // [2026-05-24] 类型安全
+  id: rv(obj, 'id')!,
+  projectId: rv(obj, 'project_id')!,
+  parentId: rv(obj, 'parent_id') || null,
+  title: rv(obj, 'title')!,
+  content: rv(obj, 'content')!,
+  order: rn(obj, 'node_order')!,
+  assignedAgentIds: JSON.parse(rv(obj, 'assigned_agent_ids') || "[]"),
+  createdAt: rv(obj, 'created_at')!,
+  updatedAt: rv(obj, 'updated_at')!,
 });
 
-function execToRows(db: any, sql: string, params?: any[]): any[] {
+// [2026-05-24] 类型安全：better-sqlite3 Database 最小接口
+interface BetterSqlite3Db {
+  exec(sql: string, params?: unknown[]): Array<{ columns: string[]; values: unknown[][] }>;
+  run(sql: string, params?: unknown[]): void;
+  prepare(sql: string): { get(params?: unknown[]): unknown | undefined; all(params?: unknown[]): unknown[] };
+  getRowsModified(): number;
+}
+
+function execToRows(db: BetterSqlite3Db, sql: string, params?: unknown[]): Record<string, unknown>[] { // [2026-05-24] 类型安全
   const result = params ? db.exec(sql, params) : db.exec(sql);
   if (!result.length) return [];
   const cols = result[0].columns;
-  return result[0].values.map((row: any[]) => {
-    // [2026-05-24] 类型安全：any → Record<string, unknown>
-    const obj: Record<string, unknown> = {};
+  return result[0].values.map((row: unknown[]) => {
+    const obj: Record<string, unknown> = {}; // [2026-05-24] 类型安全：any → Record<string, unknown>
     cols.forEach((c: string, i: number) => (obj[c] = row[i]));
     return obj;
   });
@@ -85,7 +96,7 @@ export const ProjectService = {
   list(userId?: string): Project[] {
     const db = getDb();
     let sql = "SELECT * FROM projects";
-    const params: any[] = [];
+    const params: unknown[] = []; // [2026-05-24] 类型安全
     if (userId) {
       sql += " WHERE user_id = ?";
       params.push(userId);
@@ -201,7 +212,7 @@ export const ProjectService = {
     const now = new Date().toISOString();
     // Get max order
     const orderRows = execToRows(db, "SELECT MAX(node_order) as max_order FROM documents WHERE project_id=? AND parent_id IS ?", [data.projectId, data.parentId || null]);
-    const order = (orderRows[0]?.max_order ?? -1) + 1;
+    const order = ((orderRows[0]?.max_order as number) ?? -1) + 1; // [2026-05-24] 类型安全
     db.run(
       `INSERT INTO documents (id, project_id, parent_id, title, content, node_order, assigned_agent_ids, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?)`,
       [id, data.projectId, data.parentId || null, data.title, "", order, "[]", now, now]
@@ -232,7 +243,7 @@ export const ProjectService = {
     const deleteRecursive = (nodeId: string) => {
       const children = execToRows(db, "SELECT id FROM documents WHERE parent_id=?", [nodeId]);
       for (const child of children) {
-        deleteRecursive(child.id);
+        deleteRecursive(child.id as string); // [2026-05-24] 类型安全
       }
       db.run("DELETE FROM documents WHERE id=?", [nodeId]);
     };
