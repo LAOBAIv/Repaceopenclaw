@@ -27,6 +27,7 @@ import { getDb } from "../../db/client";
 import https from "https";
 import http from "http";
 import { URL } from "url";
+import { getErrorMessage } from '../../types/ilink';
 
 // ─── Gateway 配置(底层模型调用统一走 Gateway)─────────────────────────────
 const { url: GATEWAY_URL, token: GATEWAY_TOKEN } = resolveOpenClawGateway();
@@ -404,8 +405,9 @@ function callOpenAIStream(
 
           onComplete(totalTokens);
           resolve(totalTokens);
-        } catch (e: any) {
-          reject(new Error(`Response parse error: ${e.message}. Body: ${body.slice(0, 200)}`));
+        } catch (e: unknown) {
+          // [2026-05-24] 类型安全：any → unknown
+          reject(new Error(`Response parse error: ${getErrorMessage(e)}. Body: ${body.slice(0, 200)}`));
         }
       });
 
@@ -516,8 +518,9 @@ export class AutoLLMAdapter implements ILLMAdapter {
         );
         logger.info(`[Auto] Success via agent private key (${provider}/${modelId}), tokens=${tokenCount}`);
         return;
-      } catch (err: any) {
-        logger.warn(`[Auto] Agent private key failed: ${err.message}, falling back to global channels...`);
+      } catch (err: unknown) {
+        // [2026-05-24] 类型安全：any → unknown
+        logger.warn(`[Auto] Agent private key failed: ${getErrorMessage(err)}, falling back to global channels...`);
       }
     }
 
@@ -565,8 +568,9 @@ export class AutoLLMAdapter implements ILLMAdapter {
             );
             logger.info(`[Auto] Success via preset fallback (${presetProvider}/${presetModelId}), tokens=${tokenCount}`);
             return;
-          } catch (err: any) {
-            logger.warn(`[Auto] Preset fallback failed: ${err.message}`);
+          } catch (err: unknown) {
+            // [2026-05-24] 类型安全：any → unknown
+            logger.warn(`[Auto] Preset fallback failed: ${getErrorMessage(err)}`);
           }
         }
       } catch (e) {
@@ -649,8 +653,9 @@ export class AutoLLMAdapter implements ILLMAdapter {
           );
           logger.info(`[Auto] Success via openclaw provider`);
           return;
-        } catch (err: any) {
-          logger.warn(`[Auto] OpenClaw provider failed: ${err.message}, trying next...`);
+        } catch (err: unknown) {
+          // [2026-05-24] 类型安全：any → unknown
+          logger.warn(`[Auto] OpenClaw provider failed: ${getErrorMessage(err)}, trying next...`);
           continue;
         }
       }
@@ -681,9 +686,10 @@ export class AutoLLMAdapter implements ILLMAdapter {
         );
         logger.info(`[Auto] Success via ${provider.provider} / ${modelId}, tokens=${tokenCount}`);
         return;
-      } catch (err: any) {
+      } catch (err: unknown) {
+        // [2026-05-24] 类型安全：any → unknown
         logger.warn(
-          `[Auto] Provider ${provider.provider} failed: ${err.message}, trying next...`
+          `[Auto] Provider ${provider.provider} failed: ${getErrorMessage(err)}, trying next...`
         );
         continue;
       }

@@ -4,6 +4,7 @@ import { authenticate, requireRole } from "../middleware/auth";
 import { OrganizationService } from "../services/OrganizationService";
 import { PermissionService } from "../services/PermissionService";
 import { UserService } from "../services/UserService";
+import { getErrorMessage } from "../types/ilink";
 
 const router = Router();
 const adminOnly = [authenticate, requireRole(["super_admin", "admin"])];
@@ -52,8 +53,9 @@ router.post("/departments", ...adminOnly, (req: Request, res: Response) => {
       status: parsed.data.status,
     });
     res.status(201).json({ data });
-  } catch (err: any) {
-    res.status(400).json({ error: err.message || "创建组织失败" });
+  } catch (err: unknown) {
+    // [2026-05-24] 类型安全：any → unknown
+    res.status(400).json({ error: getErrorMessage(err) || "创建组织失败" });
   }
 });
 
@@ -67,8 +69,9 @@ router.put("/departments/:id", ...adminOnly, (req: Request, res: Response) => {
     const data = OrganizationService.updateDepartment(req.params.id, parsed.data);
     if (!data) return res.status(404).json({ error: "组织不存在" });
     res.json({ data });
-  } catch (err: any) {
-    res.status(400).json({ error: err.message || "更新组织失败" });
+  } catch (err: unknown) {
+    // [2026-05-24] 类型安全：any → unknown
+    res.status(400).json({ error: getErrorMessage(err) || "更新组织失败" });
   }
 });
 
@@ -76,8 +79,9 @@ router.delete("/departments/:id", ...adminOnly, (req: Request, res: Response) =>
   try {
     OrganizationService.deleteDepartment(req.params.id);
     res.json({ data: { success: true } });
-  } catch (err: any) {
-    const msg = err.message || "删除组织失败";
+  } catch (err: unknown) {
+    // [2026-05-24] 类型安全：any → unknown
+    const msg = getErrorMessage(err) || "删除组织失败";
     const status = msg.includes("不存在") ? 404 : 400;
     res.status(status).json({ error: msg });
   }
@@ -97,8 +101,9 @@ router.put("/users/:id/department", ...adminOnly, (req: Request, res: Response) 
     const data = OrganizationService.assignPrimaryDepartment(req.params.id, parsed.data.departmentId ?? null);
     if (!data) return res.status(404).json({ error: "用户不存在" });
     res.json({ data });
-  } catch (err: any) {
-    res.status(400).json({ error: err.message || "组织分配失败" });
+  } catch (err: unknown) {
+    // [2026-05-24] 类型安全：any → unknown
+    res.status(400).json({ error: getErrorMessage(err) || "组织分配失败" });
   }
 });
 
@@ -107,8 +112,9 @@ router.get("/users/:id/permissions", ...adminOnly, (req: Request, res: Response)
     const data = PermissionService.getUserPermissionSummary(req.params.id);
     if (!data) return res.status(404).json({ error: "用户不存在" });
     res.json({ data });
-  } catch (err: any) {
-    res.status(400).json({ error: err.message || "获取权限摘要失败" });
+  } catch (err: unknown) {
+    // [2026-05-24] 类型安全：any → unknown
+    res.status(400).json({ error: getErrorMessage(err) || "获取权限摘要失败" });
   }
 });
 
@@ -128,8 +134,9 @@ router.put("/users/:id", ...adminOnly, (req: Request, res: Response) => {
     const data = UserService.updateUser(req.params.id, parsed.data);
     if (!data) return res.status(404).json({ error: "用户不存在" });
     res.json({ data });
-  } catch (err: any) {
-    res.status(400).json({ error: err.message || "更新用户失败" });
+  } catch (err: unknown) {
+    // [2026-05-24] 类型安全：any → unknown
+    res.status(400).json({ error: getErrorMessage(err) || "更新用户失败" });
   }
 });
 
@@ -138,8 +145,9 @@ router.delete("/users/:id", ...adminOnly, (req: Request, res: Response) => {
   try {
     UserService.deleteUser(req.params.id);
     res.json({ data: { success: true } });
-  } catch (err: any) {
-    const msg = err.message || "删除用户失败";
+  } catch (err: unknown) {
+    // [2026-05-24] 类型安全：any → unknown
+    const msg = getErrorMessage(err) || "删除用户失败";
     const status = msg.includes("不存在") ? 404 : 400;
     res.status(status).json({ error: msg });
   }

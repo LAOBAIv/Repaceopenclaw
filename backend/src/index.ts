@@ -31,6 +31,7 @@ import { clawBotClient } from './services/ClawBotGatewayClient';
 import { wechatMessageService, loadWechatAccountsFromFile } from './services/WechatMessageService';
 import { wechatSessionSync } from './services/WechatSessionSync';
 import { ILinkMonitor } from './services/ILinkMonitor';
+import { getErrorMessage } from './types/ilink';
 
 // 环境变量配置
 const PORT = process.env.PORT || 3001;
@@ -51,16 +52,18 @@ async function main(): Promise<void> {
     logger.info('[AgentBridge] Syncing agents to OpenClaw...');
     const report = await AgentBridge.syncAllAgents();
     logger.info(`[AgentBridge] Sync result: ${report.registered}/${report.total} registered, ${report.errors.length} errors`);
-  } catch (err: any) {
-    logger.error('[AgentBridge] Startup sync failed:', err.message);
+  } catch (err: unknown) {
+    // [2026-05-24] 类型安全：any → unknown
+    logger.error('[AgentBridge] Startup sync failed:', getErrorMessage(err));
   }
 
   // 1.6 初始化 OpenClaw Gateway WebSocket 客户端
   try {
     clawBotClient.connect();
     logger.info("[ClawBotGateway] WebSocket client initialized");
-  } catch (err: any) {
-    logger.warn("[ClawBotGateway] Failed to initialize WS client: " + err.message);
+  } catch (err: unknown) {
+    // [2026-05-24] 类型安全：any → unknown
+    logger.warn("[ClawBotGateway] Failed to initialize WS client: " + getErrorMessage(err));
   }
 
   // 1.7 微信消息被动同步（链路 A 优化）
@@ -69,20 +72,23 @@ async function main(): Promise<void> {
   try {
     wechatSessionSync.start(15000); // 每 15 秒同步一次
     logger.info('[WechatSessionSync] Started, syncing every 15s');
-  } catch (err: any) {
-    logger.warn('[WechatSessionSync] Failed to start: ' + err.message);
+  } catch (err: unknown) {
+    // [2026-05-24] 类型安全：any → unknown
+    logger.warn('[WechatSessionSync] Failed to start: ' + getErrorMessage(err));
   }
 
   // 1.8 启动 ILinkMonitor 微信消息主动轮询
   // OC 插件在 RC-MODE 下禁用轮询，由 RC 平台直接轮询 iLink
   // [2026-05-19] 不用 await，避免网络请求卡住阻塞服务器启动
   try {
-    ILinkMonitor.start().catch((err: any) => {
-      logger.warn('[ILinkMonitor] Failed to start: ' + err.message);
+    ILinkMonitor.start().catch((err: unknown) => {
+      // [2026-05-24] 类型安全：any → unknown
+      logger.warn('[ILinkMonitor] Failed to start: ' + getErrorMessage(err));
     });
     logger.info('[ILinkMonitor] Starting in background...');
-  } catch (err: any) {
-    logger.warn('[ILinkMonitor] Failed to start: ' + err.message);
+  } catch (err: unknown) {
+    // [2026-05-24] 类型安全：any → unknown
+    logger.warn('[ILinkMonitor] Failed to start: ' + getErrorMessage(err));
   }
 
   // 2. 创建 Express 应用
@@ -178,20 +184,23 @@ async function main(): Promise<void> {
     try {
       // 先断开 Gateway WebSocket，避免 close 事件再次触发重连
       clawBotClient.disconnect();
-    } catch (err: any) {
-      logger.warn('[Server] Failed to disconnect ClawBot client during shutdown: ' + err.message);
+    } catch (err: unknown) {
+      // [2026-05-24] 类型安全：any → unknown
+      logger.warn('[Server] Failed to disconnect ClawBot client during shutdown: ' + getErrorMessage(err));
     }
 
     try {
       wechatSessionSync.stop();
-    } catch (err: any) {
-      logger.warn('[Server] Failed to stop WechatSessionSync during shutdown: ' + err.message);
+    } catch (err: unknown) {
+      // [2026-05-24] 类型安全：any → unknown
+      logger.warn('[Server] Failed to stop WechatSessionSync during shutdown: ' + getErrorMessage(err));
     }
 
     try {
       ILinkMonitor.stop();
-    } catch (err: any) {
-      logger.warn('[Server] Failed to stop ILinkMonitor during shutdown: ' + err.message);
+    } catch (err: unknown) {
+      // [2026-05-24] 类型安全：any → unknown
+      logger.warn('[Server] Failed to stop ILinkMonitor during shutdown: ' + getErrorMessage(err));
     }
 
     // [2026-05-21] 关闭前必须保存内存数据库到磁盘，否则 sql.js 内存数据丢失
@@ -199,8 +208,9 @@ async function main(): Promise<void> {
       const { saveDb } = require('./db/client');
       saveDb();
       logger.info('[Server] Database saved to disk before shutdown');
-    } catch (err: any) {
-      logger.error('[Server] Failed to save database on shutdown: ' + err.message);
+    } catch (err: unknown) {
+      // [2026-05-24] 类型安全：any → unknown
+      logger.error('[Server] Failed to save database on shutdown: ' + getErrorMessage(err));
     }
 
     // 不等待 server.close 回调，避免长连接/SSE 卡住退出

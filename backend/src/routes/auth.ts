@@ -6,6 +6,7 @@ import { ConversationService } from "../services/ConversationService";
 import { AgentService } from "../services/AgentService";
 import { getDb, saveDb } from "../db/client";
 import { logger } from "../utils/logger";
+import { getErrorMessage } from "../types/ilink";
 
 const router = Router();
 
@@ -73,8 +74,9 @@ router.post("/register", async (req: Request, res: Response) => {
       requestId: (req as any).requestId,
     });
     res.status(201).json(result);
-  } catch (err: any) {
-    res.status(400).json({ error: err.message });
+  } catch (err: unknown) {
+    // [2026-05-24] 类型安全：any → unknown
+    res.status(400).json({ error: getErrorMessage(err) });
   }
 });
 
@@ -101,8 +103,9 @@ router.post("/login", async (req: Request, res: Response) => {
       requestId: (req as any).requestId,
     });
     res.json(result);
-  } catch (err: any) {
-    res.status(401).json({ error: err.message });
+  } catch (err: unknown) {
+    // [2026-05-24] 类型安全：any → unknown
+    res.status(401).json({ error: getErrorMessage(err) });
   }
 });
 
@@ -122,8 +125,9 @@ router.put("/me", authenticate, (req: Request, res: Response) => {
     const user = UserService.updateProfile((req as any).user.id, { username, avatar, nickname });
     if (!user) return res.status(404).json({ error: "用户不存在" });
     res.json(user);
-  } catch (err: any) {
-    res.status(400).json({ error: err.message });
+  } catch (err: unknown) {
+    // [2026-05-24] 类型安全：any → unknown
+    res.status(400).json({ error: getErrorMessage(err) });
   }
 });
 
@@ -136,8 +140,9 @@ router.put("/password", authenticate, async (req: Request, res: Response) => {
     }
     await UserService.changePassword((req as any).user.id, oldPassword, newPassword);
     res.json({ message: "密码修改成功" });
-  } catch (err: any) {
-    res.status(400).json({ error: err.message });
+  } catch (err: unknown) {
+    // [2026-05-24] 类型安全：any → unknown
+    res.status(400).json({ error: getErrorMessage(err) });
   }
 });
 
@@ -182,8 +187,9 @@ router.put("/users/:id/reset-password", authenticate, requireRole(["super_admin"
     if (!newPassword) return res.status(400).json({ error: "新密码不能为空" });
     await UserService.resetPassword(req.params.id, newPassword);
     res.json({ message: "密码重置成功" });
-  } catch (err: any) {
-    res.status(400).json({ error: err.message });
+  } catch (err: unknown) {
+    // [2026-05-24] 类型安全：any → unknown
+    res.status(400).json({ error: getErrorMessage(err) });
   }
 });
 
@@ -225,8 +231,9 @@ router.post("/complete-setup", authenticate, async (req: Request, res: Response)
 
     const user = UserService.getUserById(userId);
     res.json({ ...user, needSetup: false });
-  } catch (err: any) {
-    res.status(400).json({ error: err.message || '设置失败' });
+  } catch (err: unknown) {
+    // [2026-05-24] 类型安全：any → unknown
+    res.status(400).json({ error: getErrorMessage(err) || '设置失败' });
   }
 });
 
