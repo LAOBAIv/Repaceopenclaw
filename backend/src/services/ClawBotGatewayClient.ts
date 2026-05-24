@@ -22,10 +22,10 @@ import { getErrorMessage } from '../types/ilink';
 
 // ─── 类型定义 ────────────────────────────────────────────────────────────
 
-type EventCallback = (data: any) => void;
+type EventCallback = (data: unknown) => void; // [2026-05-24] 类型安全
 
 interface PendingRequest {
-  resolve: (value: any) => void;
+  resolve: (value: unknown) => void; // [2026-05-24] 类型安全
   reject: (reason: Error) => void;
   timer: ReturnType<typeof setTimeout>;
 }
@@ -121,7 +121,7 @@ class ClawBotGatewayClient {
 
   // ─── 请求/响应 ────────────────────────────────────────────────────────
 
-  request(method: string, params: Record<string, any> = {}, timeout = REQUEST_TIMEOUT): Promise<any> {
+  request(method: string, params: Record<string, unknown> = {}, timeout = REQUEST_TIMEOUT): Promise<unknown> { // [2026-05-24] 类型安全
     return new Promise((resolve, reject) => {
       if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
         reject(new Error('Gateway not connected'));
@@ -161,7 +161,7 @@ class ClawBotGatewayClient {
     this.eventListeners.get(event)?.delete(callback);
   }
 
-  private emit(event: string, data: any): void {
+  private emit(event: string, data: unknown): void { // [2026-05-24] 类型安全
     // Specific listeners
     const listeners = this.eventListeners.get(event);
     if (listeners) {
@@ -177,7 +177,9 @@ class ClawBotGatewayClient {
     // Wildcard listeners
     const wildcards = this.eventListeners.get('*');
     if (wildcards) {
-      const enriched = { event, ...data };
+      const enriched = typeof data === 'object' && data !== null && !Array.isArray(data)
+        ? { event, ...(data as Record<string, unknown>) }
+        : { event, data }; // [2026-05-24] 类型安全：unknown spread guard
       for (const cb of wildcards) {
         try {
           cb(enriched);
@@ -219,27 +221,35 @@ class ClawBotGatewayClient {
     this.ws.send(JSON.stringify(connectFrame));
   }
 
-  private handleMessage(msg: any): void {
+  private handleMessage(msg: Record<string, unknown>): void { // [2026-05-24] 类型安全
+    // [2026-05-24] 类型安全：safe property access from Record<string, unknown>
+    const msgType = msg['type'] as string | undefined;
+    const msgOk = msg['ok'] as boolean | undefined;
+    const msgPayload = msg['payload'] as Record<string, unknown> | undefined;
+    const msgError = msg['error'] as Record<string, unknown> | string | undefined;
+    const msgEvent = msg['event'] as string | undefined;
+    const msgId = msg['id'] as string | undefined;
+
     // 连接成功响应：Gateway 返回 { type: "res", ok: true, payload: { type: "hello-ok", ... } }
-    if (msg.type === 'res' && msg.ok && msg.payload?.type === 'hello-ok') {
+    if (msgType === 'res' && msgOk && msgPayload?.['type'] === 'hello-ok') {
       logger.info('[ClawBotGateway] Authenticated successfully');
       this.setState('connected');
       this.reconnectAttempts = 0;
       this.startHeartbeat();
-      this.emit('connected', msg.payload);
+      this.emit('connected', msgPayload);
       return;
     }
 
-    if (msg.type === 'res' && msg.ok === false) {
+    if (msgType === 'res' && msgOk === false) {
       // 请求失败
-      logger.warn('[ClawBotGateway] Request failed: ' + (msg.error?.message || JSON.stringify(msg.error)));
+      logger.warn('[ClawBotGateway] Request failed: ' + (typeof msgError === 'object' ? (msgError?.['message'] as string) : msgError || JSON.stringify(msgError)));
     }
 
-    if (msg.type === 'event') {
+    if (msgType === 'event') {
       // Gateway 事件推送
-      const eventName = msg.event || msg.type;
+      const eventName = msgEvent || msgType;
       logger.debug('[ClawBotGateway] Event: ' + eventName);
-      this.emit(eventName, msg.payload || msg);
+      this.emit(eventName, msgPayload || msg);
 
       if (eventName === 'shutdown') {
         logger.warn('[ClawBotGateway] Gateway shutting down');
@@ -249,16 +259,15 @@ class ClawBotGatewayClient {
     }
 
     // 响应处理（非 hello-ok 的普通响应）
-    if (msg.type === 'res') {
-      const { id, ok, payload, error } = msg;
-      const pending = this.pendingRequests.get(id);
+    if (msgType === 'res') {
+      const pending = this.pendingRequests.get(msgId as string);
       if (pending) {
-        this.pendingRequests.delete(id);
+        this.pendingRequests.delete(msgId as string); // [2026-05-24] 类型安全：id → msgId
         clearTimeout(pending.timer);
-        if (ok) {
-          pending.resolve(payload);
+        if (msgOk) {
+          pending.resolve(msgPayload);
         } else {
-          const errMsg = error?.message || error || 'Gateway request failed';
+          const errMsg = typeof msgError === 'object' ? (msgError?.['message'] as string) : (msgError as string) || 'Gateway request failed';
           pending.reject(new Error(typeof errMsg === 'string' ? errMsg : JSON.stringify(errMsg)));
         }
       }

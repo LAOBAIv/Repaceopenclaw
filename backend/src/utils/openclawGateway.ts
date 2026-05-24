@@ -30,7 +30,7 @@ function isPlaceholderValue(value?: string | null): boolean {
   return v.startsWith('<REPLACE') || v.startsWith('REPLACE_') || v.includes('YOUR_') || v.includes('CHANGEME');
 }
 
-function readOpenClawConfig(): any {
+function readOpenClawConfig(): unknown { // [2026-05-24] 类型安全
   try {
     if (!fs.existsSync(OPENCLAW_CONFIG_PATH)) return null;
     return JSON.parse(fs.readFileSync(OPENCLAW_CONFIG_PATH, 'utf8'));
@@ -48,9 +48,11 @@ export function resolveOpenClawGateway(): GatewayResolved {
   const envUrl = isPlaceholderValue(envUrlRaw) ? '' : (envUrlRaw || '');
   const envToken = isPlaceholderValue(envTokenRaw) ? '' : (envTokenRaw || '');
 
-  const cfg = readOpenClawConfig();
-  const port = cfg?.gateway?.port || 18789;
-  const token = cfg?.gateway?.auth?.token || '';
+  const cfg = readOpenClawConfig() as Record<string, unknown> | null;
+  const gateway = cfg?.gateway as Record<string, unknown> | undefined;
+  const port = Number((gateway as Record<string, unknown> | undefined)?.port ?? 18789);
+  const auth = gateway?.auth as Record<string, unknown> | undefined;
+  const token = (auth?.token as string) || '';
   const bindUrl = `http://127.0.0.1:${port}`;
 
   return {

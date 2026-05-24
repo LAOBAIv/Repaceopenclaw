@@ -14,7 +14,7 @@ const BotChannelSchema = z.object({
   enabled: z.boolean().default(true),
 });
 
-function rowToBot(obj: any) {
+function rowToBot(obj: Record<string, unknown>) { // [2026-05-24] 类型安全
   return {
     id: obj.id as string,
     channelType: obj.channel_type as string,

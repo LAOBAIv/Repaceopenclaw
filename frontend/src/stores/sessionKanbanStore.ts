@@ -9,6 +9,7 @@
 import { create } from 'zustand';
 import { conversationsApi } from '../api/conversations';
 import { useAgentStore } from './agentStore';
+import { Message } from '../types';
 
 const PLATFORM_ASSISTANT_IDS = new Set([
   'platform-assistant',
@@ -152,7 +153,8 @@ export const useSessionKanbanStore = create<SessionKanbanState>()(
             addedIds.add(conv.id);
 
             // 获取消息列表（用于统计消息数和最后一条消息）
-            let messages: any[] = [];
+            // [2026-05-24] 类型安全
+            let messages: Message[] = [];
             try {
               messages = await conversationsApi.getMessages(conv.id);
             } catch {
@@ -180,7 +182,8 @@ export const useSessionKanbanStore = create<SessionKanbanState>()(
               currentAgentId: conv.currentAgentId || agentId,
               status: (conv.status === 'closed' ? 'closed' : conv.status === 'deleted' ? 'deleted' : 'in_progress') as SessionCard['status'],
               createdAt: conv.createdAt,
-              createdBy: (conv as any).createdBy || null,
+              // [2026-05-24] 类型安全
+              createdBy: (conv as unknown as Record<string, unknown>).createdBy as string | null || null,
               lastMessage,
               messageCount,
               agentName,
@@ -199,9 +202,10 @@ export const useSessionKanbanStore = create<SessionKanbanState>()(
           }
 
           set({ sessions: result, loading: false });
-        } catch (err: any) {
+        } catch (err: unknown) {
           console.error('[SessionKanbanStore] restoreFromPersist 失败:', err);
-          set({ sessions: EMPTY_BOARD, loading: false, error: err.message || '加载失败' });
+          // [2026-05-24] 类型安全
+          set({ sessions: EMPTY_BOARD, loading: false, error: (err instanceof Error ? err.message : String(err)) || '加载失败' });
         }
       },
 

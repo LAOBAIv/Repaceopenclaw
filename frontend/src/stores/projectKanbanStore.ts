@@ -1,6 +1,20 @@
 import { create } from 'zustand';
 import { projectsApi } from '../api/projects';
 
+// [2026-05-24] 类型安全：后端 Project 数据库格式（snake_case）
+interface DbProject {
+  id: string;
+  title: string;
+  description?: string;
+  tags?: string; // JSON 字符串
+  status?: string;
+  priority?: string;
+  end_time?: string;
+  created_at?: string;
+  updated_at?: string;
+  workflow_nodes?: string | unknown[]; // JSON 字符串或数组
+}
+
 /* ─── 业务规则（重要）───────────────────────────────────────────
  * 【单项目智能体规则】
  *   项目（KanbanProject）的 agents 数组如实记录用户选择的参与智能体。
@@ -67,7 +81,8 @@ const EMPTY_PROJECTS: ProjectBoard = {
  * 后端 Project 没有明确的 column/状态字段，按 status 映射：
  *   active → progress, archived → done
  */
-function dbProjectToFrontend(dbProject: any): KanbanProject {
+// [2026-05-24] 类型安全
+function dbProjectToFrontend(dbProject: DbProject): KanbanProject {
   // tags 后端存的是 JSON 字符串，需要解析
   let tags: string[] = [];
   try {
@@ -177,7 +192,8 @@ export const useProjectKanbanStore = create<ProjectKanbanState>()(
           const result: ProjectBoard = { progress: [], done: [] };
 
           for (const dbProject of dbProjects) {
-            const frontend = dbProjectToFrontend(dbProject);
+            // [2026-05-24] 类型安全：API 返回类型与实际 snake_case 字段不一致
+            const frontend = dbProjectToFrontend(dbProject as unknown as DbProject);
             // status === 'archived' → done, 其余 → progress
             if (dbProject.status === 'archived') {
               result.done.push(frontend);

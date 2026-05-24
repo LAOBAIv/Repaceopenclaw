@@ -100,11 +100,12 @@ const DEFAULT_LAYER_PERMISSIONS: Record<string, any> = {
   },
 };
 
-function execRows(db: any, sql: string, params: any[] = []): any[] {
+// [2026-05-24] 类型安全：any → unknown
+function execRows(db: { exec(sql: string, params?: unknown[]): Array<{ columns: string[]; values: unknown[][] }> }, sql: string, params: unknown[] = []): Record<string, unknown>[] {
   const result = db.exec(sql, params);
   if (!result.length) return [];
   const cols = result[0].columns;
-  return result[0].values.map((row: any[]) => {
+  return result[0].values.map((row: unknown[]) => { // [2026-05-24] 类型安全
     const obj: Record<string, unknown> = {}; // [2026-05-24] 类型安全：any → Record<string, unknown>
     cols.forEach((c: string, i: number) => {
       obj[c] = row[i];
@@ -113,11 +114,11 @@ function execRows(db: any, sql: string, params: any[] = []): any[] {
   });
 }
 
-function isPlainObject(value: any): value is Record<string, any> {
+function isPlainObject(value: unknown): value is Record<string, unknown> { // [2026-05-24] 类型安全
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function parseJsonObject(raw: any): Record<string, any> {
+function parseJsonObject(raw: unknown): Record<string, unknown> { // [2026-05-24] 类型安全
   if (!raw) return {};
   if (isPlainObject(raw)) return raw;
   try {
@@ -175,23 +176,23 @@ export class PermissionService {
       [userId]
     );
 
-    return rows.map((row) => ({
-      id: String(row.id),
-      departmentId: row.department_id ? String(row.department_id) : null,
-      departmentName: row.department_name ? String(row.department_name) : null,
-      departmentCode: row.department_code ? String(row.department_code) : null,
-      roleId: row.role_id ? String(row.role_id) : null,
-      roleName: row.role_name ? String(row.role_name) : null,
-      roleCode: row.role_code ? String(row.role_code) : null,
-      permissionTemplateId: row.permission_template_id ? String(row.permission_template_id) : null,
-      permissionTemplateName: row.permission_template_name ? String(row.permission_template_name) : null,
-      permissionTemplateCode: row.template_code ? String(row.template_code) : null,
-      title: String(row.title || ""),
-      isPrimary: Number(row.is_primary || 0) === 1,
-      status: String(row.status || "active"),
-      joinedAt: String(row.joined_at || ""),
-      rolePermissions: parseJsonObject(row.permissions_json),
-      templateConfig: parseJsonObject(row.config_json),
+    return rows.map((row) => ({ // [2026-05-24] 类型安全：bracket notation
+      id: String(row['id']),
+      departmentId: row['department_id'] ? String(row['department_id']) : null,
+      departmentName: row['department_name'] ? String(row['department_name']) : null,
+      departmentCode: row['department_code'] ? String(row['department_code']) : null,
+      roleId: row['role_id'] ? String(row['role_id']) : null,
+      roleName: row['role_name'] ? String(row['role_name']) : null,
+      roleCode: row['role_code'] ? String(row['role_code']) : null,
+      permissionTemplateId: row['permission_template_id'] ? String(row['permission_template_id']) : null,
+      permissionTemplateName: row['permission_template_name'] ? String(row['permission_template_name']) : null,
+      permissionTemplateCode: row['template_code'] ? String(row['template_code']) : null,
+      title: String(row['title'] || ""),
+      isPrimary: Number(row['is_primary'] || 0) === 1,
+      status: String(row['status'] || "active"),
+      joinedAt: String(row['joined_at'] || ""),
+      rolePermissions: parseJsonObject(row['permissions_json']),
+      templateConfig: parseJsonObject(row['config_json']),
     }));
   }
 
@@ -218,15 +219,15 @@ export class PermissionService {
        WHERE user_id = ?
        ORDER BY created_at DESC`,
       [userId]
-    ).map((row) => ({
-      id: String(row.id),
-      agentId: String(row.agent_id || ""),
-      grantType: String(row.grant_type || ""),
-      scopeType: String(row.scope_type || ""),
-      scopeId: String(row.scope_id || ""),
-      createdBy: String(row.created_by || ""),
-      createdAt: String(row.created_at || ""),
-      updatedAt: String(row.updated_at || ""),
+    ).map((row) => ({ // [2026-05-24] 类型安全：bracket notation
+      id: String(row['id']),
+      agentId: String(row['agent_id'] || ""),
+      grantType: String(row['grant_type'] || ""),
+      scopeType: String(row['scope_type'] || ""),
+      scopeId: String(row['scope_id'] || ""),
+      createdBy: String(row['created_by'] || ""),
+      createdAt: String(row['created_at'] || ""),
+      updatedAt: String(row['updated_at'] || ""),
     }));
 
     const dataGrants = execRows(
@@ -236,20 +237,20 @@ export class PermissionService {
        WHERE user_id = ?
        ORDER BY created_at DESC`,
       [userId]
-    ).map((row) => ({
-      id: String(row.id),
-      resourceType: String(row.resource_type || ""),
-      resourceId: String(row.resource_id || ""),
-      grantType: String(row.grant_type || ""),
-      scopeType: String(row.scope_type || ""),
-      scopeId: String(row.scope_id || ""),
-      createdBy: String(row.created_by || ""),
-      createdAt: String(row.created_at || ""),
-      updatedAt: String(row.updated_at || ""),
+    ).map((row) => ({ // [2026-05-24] 类型安全：bracket notation
+      id: String(row['id']),
+      resourceType: String(row['resource_type'] || ""),
+      resourceId: String(row['resource_id'] || ""),
+      grantType: String(row['grant_type'] || ""),
+      scopeType: String(row['scope_type'] || ""),
+      scopeId: String(row['scope_id'] || ""),
+      createdBy: String(row['created_by'] || ""),
+      createdAt: String(row['created_at'] || ""),
+      updatedAt: String(row['updated_at'] || ""),
     }));
 
     const hasOrgScope = scopes.length > 0;
-    const isPlatformAdmin = ["super_admin", "admin"].includes(String(user.role || "user"));
+    const isPlatformAdmin = ["super_admin", "admin"].includes(String(user['role'] || "user"));
 
     let mergedPermissions: Record<string, any> = hasOrgScope ? deepMerge({}, DEFAULT_LAYER_PERMISSIONS) : {};
     const source = hasOrgScope ? ["default:org-layer-same-permissions"] : [];
@@ -270,12 +271,12 @@ export class PermissionService {
     return {
       stage: "v1-baseline-same-permissions",
       user: {
-        id: String(user.id),
-        userCode: String(user.user_code || ""),
-        username: String(user.username || ""),
-        email: String(user.email || ""),
-        role: String(user.role || "user"),
-        status: String(user.status || "active"),
+        id: String(user['id']),
+        userCode: String(user['user_code'] || ""),
+        username: String(user['username'] || ""),
+        email: String(user['email'] || ""),
+        role: String(user['role'] || "user"),
+        status: String(user['status'] || "active"),
       },
       primaryDepartment: primaryScope?.departmentId
         ? {

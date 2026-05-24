@@ -34,11 +34,12 @@ export interface OrganizationUser {
   wechatOpenid?: string;  // 微信 openid（部分显示）
 }
 
-function execRows(db: any, sql: string, params: any[] = []): any[] {
+// [2026-05-24] 类型安全：any → unknown
+function execRows(db: { exec(sql: string, params?: unknown[]): Array<{ columns: string[]; values: unknown[][] }> }, sql: string, params: unknown[] = []): Record<string, unknown>[] {
   const result = db.exec(sql, params);
   if (!result.length) return [];
   const cols = result[0].columns;
-  return result[0].values.map((row: any[]) => {
+  return result[0].values.map((row: unknown[]) => { // [2026-05-24] 类型安全
     const obj: Record<string, unknown> = {}; // [2026-05-24] 类型安全：any → Record<string, unknown>
     cols.forEach((c: string, i: number) => {
       obj[c] = row[i];
@@ -47,18 +48,18 @@ function execRows(db: any, sql: string, params: any[] = []): any[] {
   });
 }
 
-function toDepartmentNode(row: any): DepartmentNode {
+function toDepartmentNode(row: Record<string, unknown>): DepartmentNode { // [2026-05-24] 类型安全
   return {
-    id: String(row.id),
-    departmentCode: String(row.department_code || ""),
-    name: String(row.name || ""),
-    parentId: row.parent_id ? String(row.parent_id) : null,
-    ownerUserId: String(row.owner_user_id || ""),
-    description: String(row.description || ""),
-    status: String(row.status || "active"),
-    createdAt: String(row.created_at || ""),
-    updatedAt: String(row.updated_at || ""),
-    userCount: Number(row.user_count || 0),
+    id: String(row['id']),
+    departmentCode: String(row['department_code'] || ""),
+    name: String(row['name'] || ""),
+    parentId: row['parent_id'] ? String(row['parent_id']) : null,
+    ownerUserId: String(row['owner_user_id'] || ""),
+    description: String(row['description'] || ""),
+    status: String(row['status'] || "active"),
+    createdAt: String(row['created_at'] || ""),
+    updatedAt: String(row['updated_at'] || ""),
+    userCount: Number(row['user_count'] || 0),
     children: [],
   };
 }
@@ -265,22 +266,22 @@ export class OrganizationService {
        ORDER BY u.created_at DESC`
     );
 
-    return rows.map((row) => ({
-      id: String(row.id),
-      userCode: String(row.user_code || ""),
-      username: String(row.username || ""),
-      email: String(row.email || ""),
-      role: (row.role || "user") as "super_admin" | "admin" | "user",
-      status: String(row.status || "active"),
-      avatar: String(row.avatar || ""),
-      lastLoginAt: String(row.last_login_at || ""),
-      createdAt: String(row.created_at || ""),
-      updatedAt: String(row.updated_at || ""),
-      primaryDepartmentId: row.primary_department_id ? String(row.primary_department_id) : null,
-      primaryDepartmentName: row.primary_department_name ? String(row.primary_department_name) : null,
-      primaryDepartmentCode: row.primary_department_code ? String(row.primary_department_code) : null,
-      wechatBound: !!row.wechat_openid,
-      wechatOpenid: row.wechat_openid ? String(row.wechat_openid) : undefined,
+    return rows.map((row) => ({ // [2026-05-24] 类型安全：bracket notation for Record<string, unknown>
+      id: String(row['id']),
+      userCode: String(row['user_code'] || ""),
+      username: String(row['username'] || ""),
+      email: String(row['email'] || ""),
+      role: (row['role'] || "user") as "super_admin" | "admin" | "user",
+      status: String(row['status'] || "active"),
+      avatar: String(row['avatar'] || ""),
+      lastLoginAt: String(row['last_login_at'] || ""),
+      createdAt: String(row['created_at'] || ""),
+      updatedAt: String(row['updated_at'] || ""),
+      primaryDepartmentId: row['primary_department_id'] ? String(row['primary_department_id']) : null,
+      primaryDepartmentName: row['primary_department_name'] ? String(row['primary_department_name']) : null,
+      primaryDepartmentCode: row['primary_department_code'] ? String(row['primary_department_code']) : null,
+      wechatBound: !!row['wechat_openid'],
+      wechatOpenid: row['wechat_openid'] ? String(row['wechat_openid']) : undefined,
     }));
   }
 

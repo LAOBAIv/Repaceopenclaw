@@ -102,7 +102,7 @@ export function WechatClawBot() {
       const r = await fetch(API_BASE + '/push', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: pushUserId.trim(), text: pushText.trim() }) });
       const j = await r.json();
       if (j.success) { setPushResult('\u2705 \u53d1\u9001\u6210\u529f'); setPushText(''); } else setPushResult('\u274c ' + (j.error || '\u5931\u8d25'));
-    } catch (e: any) { setPushResult('\u274c ' + e.message); } finally { setPushLoading(false); }
+    } catch (e: unknown) { setPushResult('\u274c ' + (e as Error).message); } finally { setPushLoading(false); } // [2026-05-24] 类型安全
   };
 
   const handleSyncNow = async () => { setSyncing(true); try { await fetch(API_BASE + '/sync-now', { method: 'POST' }); await fetchSyncStatus(); } catch (e) { console.warn("[WechatBot]", e); } finally { setSyncing(false); } };

@@ -13,6 +13,7 @@ import { useState, useCallback } from 'react';
 import { showToast } from '@/components/Toast';
 import type { CodeChannel, CodeModel } from '../types';
 import { saveTokenCache } from '../utils';
+import type { TokenChannel } from '@/api/tokenChannels';
 
 export interface UseTokenReturn {
   // 弹窗状态
@@ -36,7 +37,8 @@ export interface UseTokenReturn {
   confirmTokenModal: (
     selectedChannel: CodeChannel,
     hasBackendKey: boolean,
-    presetChannel: any,
+    // [2026-05-24] 类型安全
+    presetChannel: TokenChannel | null,
     customMaxTokens: string,
     customTemp: string,
     customTopP: string,
@@ -83,7 +85,8 @@ export function useToken(
   const confirmTokenModal = useCallback((
     selChannel: CodeChannel,
     hbk: boolean,
-    presetChannel: any,
+    // [2026-05-24] 类型安全
+    presetChannel: TokenChannel | null,
     cMaxTokens: string,
     cTemp: string,
     cTopP: string,

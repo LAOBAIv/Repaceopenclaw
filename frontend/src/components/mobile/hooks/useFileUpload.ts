@@ -57,9 +57,9 @@ export function useFileUpload(conversationId?: string) {
           setUploading(false);
           // 清除成功提示
           setTimeout(() => setUploadProgress(null), 3000);
-        } catch (uploadErr: any) {
+        } catch (uploadErr: unknown) { // [2026-05-24] 类型安全
           console.error('[useFileUpload:upload]', uploadErr);
-          setUploadError(uploadErr.message || '上传失败');
+          setUploadError((uploadErr as Error).message || '上传失败');
           setUploading(false);
           setUploadProgress(null);
         }
@@ -70,9 +70,9 @@ export function useFileUpload(conversationId?: string) {
         setUploadProgress(null);
       };
       reader.readAsDataURL(file);
-    } catch (err: any) {
+    } catch (err: unknown) { // [2026-05-24] 类型安全
       console.error('[useFileUpload:uploadOuter]', err);
-      setUploadError(err.message || '上传失败');
+      setUploadError((err as Error).message || '上传失败');
       setUploading(false);
       setUploadProgress(null);
     }

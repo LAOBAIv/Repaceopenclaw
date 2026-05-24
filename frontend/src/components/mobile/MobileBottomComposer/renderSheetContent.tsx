@@ -31,11 +31,11 @@ export function renderSheetContent(
   uploadProgress?: string | null,
   uploadError?: string | null,
   uploadedFiles?: FileAsset[],
-  agents?: any[],
+  agents?: Array<{ id: string; name: string; color?: string }>, // [2026-05-24] 类型安全
   currentAgentId?: string,
   currentAgentIds?: string[],
-  collabNodesInternal?: any[],
-  setCollabNodesInternal?: React.Dispatch<React.SetStateAction<any[]>>,
+  collabNodesInternal?: Array<{ id: string; name: string; nodeType: 'serial' | 'parallel'; agentIds: string[]; desc?: string }>, // [2026-05-24] 类型安全
+  setCollabNodesInternal?: React.Dispatch<React.SetStateAction<Array<{ id: string; name: string; nodeType: 'serial' | 'parallel'; agentIds: string[]; desc?: string }>>>, // [2026-05-24] 类型安全
   isProject?: boolean,
   onSwitchAgent?: (agentId: string, agentName: string, agentColor: string) => void,
 ) {

@@ -47,7 +47,8 @@ export class VectorStore {
       `INSERT OR REPLACE INTO memory_vectors (memory_id, vector, model, dimension)
        VALUES (?, ?, ?, ?)`
     );
-    const insertMany = db.transaction((rows: any[]) => {
+    // [2026-05-24] 类型安全：any → VectorRecord
+    const insertMany = db.transaction((rows: VectorRecord[]) => {
       for (const row of rows) {
         stmt.run(row.memoryId, JSON.stringify(row.vector), row.model, row.dimension);
       }
@@ -83,7 +84,8 @@ export class VectorStore {
 
     // 构建 WHERE 条件
     const conditions: string[] = [];
-    const params: any[] = [];
+    // [2026-05-24] 类型安全：any → unknown
+    const params: unknown[] = [];
 
     if (userId) { conditions.push('m.user_id = ?'); params.push(userId); }
     if (agentId !== undefined) {

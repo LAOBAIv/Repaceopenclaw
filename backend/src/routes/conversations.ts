@@ -31,7 +31,7 @@ function resolveTaskOr404(taskIdOrCode: string) {
   return TaskService.getByIdOrCode(taskIdOrCode);
 }
 
-function canAccessConversation(conv: any, userId?: string, userRole?: string) {
+function canAccessConversation(conv: { userId?: string; createdBy?: string } | Record<string, unknown>, userId?: string, userRole?: string) { // [2026-05-24] 类型安全
   if (!conv) return false;
   if (userRole === 'super_admin' || userRole === 'admin') return true;
   if (conv.userId && conv.userId === userId) return true;
@@ -374,11 +374,11 @@ router.patch("/:id/status", (req: Request, res: Response) => {
   const isGlobalAssistant = conv.agentIds.some(id => AgentService.isPlatformAssistantId(id))
     || conv.title === 'RepaceClaw 平台助手'
     || conv.title === '微信助手'
-    || (conv as any).conversationType === 'wechat_assistant';
+    || (conv['conversationType'] as string) === 'wechat_assistant'; // [2026-05-24] 类型安全
   if (isGlobalAssistant && !['active', 'in_progress'].includes(status)) {
     return res.status(400).json({ error: "全局助手会话只允许 active/in_progress 状态" });
   }
-  const updated = ConversationService.updateStatus(conv.id, status as any);
+  const updated = ConversationService.updateStatus(conv.id, status as 'active' | 'in_progress' | 'completed' | 'archived' | 'deleted' | 'closed'); // [2026-05-24] 类型安全
   if (!updated) return res.status(404).json({ error: "Conversation not found" });
   res.json({ data: updated });
 });
@@ -413,7 +413,7 @@ router.post("/:id/messages", async (req: Request, res: Response) => {
     try {
       const paAgent = conv.agentIds
         .map((id: string) => AgentService.getByIdOrCode(id, userId))
-        .find((a: any) => a && AgentService.isPlatformAssistantId(a.id));
+        .find((a: { id: string } | null) => a && AgentService.isPlatformAssistantId(a.id)); // [2026-05-24] 类型安全
 
       if (paAgent) {
         const { resolveOpenClawGateway } = require('../utils/openclawGateway');
@@ -456,9 +456,9 @@ router.post("/:id/messages", async (req: Request, res: Response) => {
         }
 
         const historyMessages = ConversationService.getMessages(conv.id);
-        const messages: any[] = [
+        const messages: Array<{ role: string; content: string | null; tool_calls?: unknown[]; tool_call_id?: string }> = [ // [2026-05-24] 类型安全
           { role: "system", content: systemPrompt },
-          ...historyMessages.slice(-20).map((m: any) => ({
+          ...historyMessages.slice(-20).map((m: { role: string; content: string }) => ({ // [2026-05-24] 类型安全
             role: m.role === "agent" ? "assistant" : "user",
             content: m.content,
           })),
@@ -477,7 +477,7 @@ router.post("/:id/messages", async (req: Request, res: Response) => {
           const gatewayUrl = new URL(`${gateway.url}/v1/chat/completions`);
           const lib = gatewayUrl.protocol === "https:" ? https : http;
 
-          const response = await new Promise<any>((resolve) => {
+          const response = await new Promise<Record<string, unknown>>((resolve) => { // [2026-05-24] 类型安全
             const apiReq = lib.request(gatewayUrl.toString(), {
               method: "POST",
               headers: {
@@ -485,7 +485,7 @@ router.post("/:id/messages", async (req: Request, res: Response) => {
                 "Content-Length": Buffer.byteLength(payload),
                 "Authorization": `Bearer ${gateway.token}`,
               },
-            }, (apiRes: any) => {
+            }, (apiRes: import('http').IncomingMessage) => { // [2026-05-24] 类型安全
               let body = "";
               apiRes.on("data", (d: Buffer) => (body += d.toString()));
               apiRes.on("end", () => {
@@ -500,12 +500,12 @@ router.post("/:id/messages", async (req: Request, res: Response) => {
             apiReq.end();
           });
 
-          if (!response?.choices?.[0]) {
+          if (!(response as Record<string, unknown>)?.choices?.[0]) {
             logger.error('[Platform Assistant] Gateway returned no response');
             break;
           }
 
-          const choice = response.choices[0];
+          const choice = ((response as Record<string, unknown>).choices as Array<{ message: { content?: string; tool_calls?: Array<{ id: string; function: { name: string; arguments: string } }> } }>)[0];
           const assistantMsg = choice.message;
 
           // 检查是否有工具调用
@@ -542,7 +542,7 @@ router.post("/:id/messages", async (req: Request, res: Response) => {
               role: "agent",
               content: assistantMsg.content,
               agentId: paAgent.id,
-              tokenCount: response.usage?.total_tokens || 0,
+              tokenCount: ((response as Record<string, unknown>).usage as Record<string, unknown>)?.total_tokens as number || 0,
             });
             return res.status(201).json({ data: { userMessage: msg, agentMessage: aiMsg } });
           }

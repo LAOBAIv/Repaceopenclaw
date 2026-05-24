@@ -47,6 +47,9 @@ export function resolveConversationAgentIds(
   return fallback || [];
 }
 
-export function isConversationNotFoundError(err: any): boolean {
-  return err?.response?.status === 404 || err?.response?.data?.error === 'Conversation not found';
+// [2026-05-24] 类型安全
+export function isConversationNotFoundError(err: unknown): boolean {
+  const e = err as Record<string, unknown>;
+  const response = e?.response as Record<string, unknown> | undefined;
+  return response?.status === 404 || (response?.data as Record<string, unknown>)?.error === 'Conversation not found';
 }

@@ -92,7 +92,7 @@ export function MobileWorkspace() {
     return (
       <MobileAgentLibrary
         onBack={() => nav.setMobileView('workspace')}
-        onUseTemplateState={(state: any) => {
+        onUseTemplateState={(state: unknown) => { // [2026-05-24] 类型安全
           nav.setAgentCreateTemplateState(state);
           nav.setMobileView('agent-create');
         }}

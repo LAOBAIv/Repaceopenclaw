@@ -15,6 +15,21 @@ import { useAuthStore } from '@/stores/authStore';
 import { tokenChannelsApi } from '@/api/tokenChannels';
 import apiClient from '@/api/client';
 import type { BackendSkill, CodeChannel, CodeModel } from './types';
+
+// [2026-05-24] 类型安全 — 后台模型数据
+interface BackendModel {
+  name: string;
+  providerId: string;
+  enabled: boolean;
+  contextWindow?: string;
+  maxTokens?: number;
+}
+
+// [2026-05-24] 类型安全 — 后台模型提供商数据
+interface BackendProvider {
+  id: string;
+  baseUrl: string;
+}
 import { CODE_CHANNELS } from './constants';
 import { TOKEN_CACHE_PREFIX, saveTokenCache } from './utils';
 // Hooks
@@ -59,13 +74,13 @@ export function AgentCreate() {
 
         const channels: CodeChannel[] = backendChannels.map(bc => {
           const chBase = (bc.baseUrl || '').replace(/\/$/, '');
-          const matchedProv = allProviders.find((p: any) => (p.baseUrl || '').replace(/\/$/, '') === chBase);
+          const matchedProv = allProviders.find((p: BackendProvider) => (p.baseUrl || '').replace(/\/$/, '') === chBase);
           const chModels = matchedProv
-            ? allModels.filter((m: any) => m.providerId === matchedProv.id && m.enabled)
+            ? allModels.filter((m: BackendModel) => m.providerId === matchedProv.id && m.enabled)
             : [];
 
           const modelList = chModels.length > 0
-            ? chModels.map((m: any) => ({
+            ? chModels.map((m: BackendModel) => ({
                 id: m.name, name: m.name, contextWindow: m.contextWindow || '-',
                 maxTokens: m.maxTokens || 4096, temperature: 0.7, topP: 0.95,
                 frequencyPenalty: 0, presencePenalty: 0, desc: `${m.name}`,

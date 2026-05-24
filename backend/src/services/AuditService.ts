@@ -49,7 +49,8 @@ export const AuditService = {
     const offset = options.offset || 0;
 
     let sql = "SELECT * FROM audit_logs";
-    const params: any[] = [];
+    // [2026-05-24] 类型安全：any → unknown
+    const params: unknown[] = [];
     const conditions: string[] = [];
 
     if (options.userId) {

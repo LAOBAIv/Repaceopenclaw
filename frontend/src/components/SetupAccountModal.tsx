@@ -34,8 +34,8 @@ export function SetupAccountModal({ visible, onComplete, mode = 'full' }: Props)
         const res = await apiClient.put('/auth/me', { nickname: nickname.trim() });
         updateUser({ nickname: res.data?.nickname || nickname.trim() });
         onComplete();
-      } catch (e: any) {
-        setError(e?.response?.data?.error || '设置失败');
+      } catch (e: unknown) { // [2026-05-24] 类型安全
+        setError((e as any)?.response?.data?.error || '设置失败');
       } finally { setLoading(false); }
       return;
     }
@@ -48,8 +48,8 @@ export function SetupAccountModal({ visible, onComplete, mode = 'full' }: Props)
     try {
       await apiClient.post('/auth/complete-setup', { username: username.trim(), email: email.trim(), password });
       onComplete();
-    } catch (e: any) {
-      setError(e?.response?.data?.error || '设置失败');
+    } catch (e: unknown) { // [2026-05-24] 类型安全
+      setError((e as any)?.response?.data?.error || '设置失败');
     } finally { setLoading(false); }
   }
 

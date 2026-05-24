@@ -1,5 +1,6 @@
 import { v4 as uuidv4 } from "uuid";
 import { getDb, saveDb } from "../db/client";
+import type { DbLike } from "../db/sqlite-compat"; // [2026-05-24] 类型安全
 
 export interface Plugin {
   id: string;
@@ -20,29 +21,30 @@ export interface Plugin {
   updatedAt: string;
 }
 
-function rowToPlugin(obj: any): Plugin {
+function rowToPlugin(obj: Record<string, unknown>): Plugin { // [2026-05-24] 类型安全
   return {
-    id: obj.id,
-    name: obj.name,
-    description: obj.description || "",
-    version: obj.version || "1.0.0",
-    author: obj.author || "",
-    homepage: obj.homepage || "",
-    icon: obj.icon || "",
-    category: obj.category || "general",
-    config: (() => { try { return JSON.parse(obj.config || "{}"); } catch { return {}; } })(),
-    manifest: (() => { try { return JSON.parse(obj.manifest || "{}"); } catch { return {}; } })(),
-    enabled: !!obj.enabled,
-    installedAt: obj.installed_at,
-    updatedAt: obj.updated_at,
+    id: obj['id'] as string,
+    name: obj['name'] as string,
+    description: (obj['description'] as string) || "",
+    version: (obj['version'] as string) || "1.0.0",
+    author: (obj['author'] as string) || "",
+    homepage: (obj['homepage'] as string) || "",
+    icon: (obj['icon'] as string) || "",
+    category: (obj['category'] as string) || "general",
+    config: (() => { try { return JSON.parse((obj['config'] as string) || "{}"); } catch { return {}; } })(),
+    manifest: (() => { try { return JSON.parse((obj['manifest'] as string) || "{}"); } catch { return {}; } })(),
+    enabled: !!obj['enabled'],
+    installedAt: obj['installed_at'] as string,
+    updatedAt: obj['updated_at'] as string,
   };
 }
 
-function execToRows(db: any, sql: string, params?: any[]): any[] {
+// [2026-05-24] 类型安全：any → DbLike / unknown[] / Record<string, unknown>[]
+function execToRows(db: DbLike, sql: string, params?: unknown[]): Record<string, unknown>[] {
   const result = params ? db.exec(sql, params) : db.exec(sql);
   if (!result.length) return [];
   const cols = result[0].columns;
-  return result[0].values.map((row: any[]) => {
+  return result[0].values.map((row: unknown[]) => { // [2026-05-24] 类型安全
     const obj: Record<string, unknown> = {}; // [2026-05-24] 类型安全：any → Record<string, unknown>
     cols.forEach((c: string, i: number) => (obj[c] = row[i]));
     return obj;

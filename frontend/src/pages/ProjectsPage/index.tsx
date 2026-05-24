@@ -25,7 +25,7 @@ export function ProjectsPage() {
     try {
       const data = await projectsApi.list();
       setProjects(data);
-    } catch (e: any) {
+    } catch (e: unknown) { // [2026-05-24] 类型安全
       console.error('获取项目列表失败', e);
     } finally {
       setLoading(false);
@@ -59,7 +59,7 @@ export function ProjectsPage() {
     try {
       await projectsApi.delete(project.id);
       fetchProjects();
-    } catch (e: any) {
+    } catch (e: unknown) { // [2026-05-24] 类型安全
       alert('删除失败');
     }
   };
@@ -68,7 +68,7 @@ export function ProjectsPage() {
     try {
       await projectsApi.update(project.id, { status: project.status === 'archived' ? 'active' : 'archived' });
       fetchProjects();
-    } catch (e: any) {
+    } catch (e: unknown) { // [2026-05-24] 类型安全
       alert('操作失败');
     }
   };

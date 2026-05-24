@@ -80,29 +80,30 @@ export function UserAgentsAdmin() {
   function toggleCol(k: string) { setCols(p => { const n = new Set(p); n.has(k) ? n.delete(k) : n.add(k); return n; }); }
   const active = ALL_COLUMNS.filter(c => cols.has(c.key));
 
-  function cell(c: any, k: string) {
+  function cell(c: Record<string, unknown>, k: string) { // [2026-05-24] 类型安全
+    const r = c as Record<string, string | undefined>; // [2026-05-24] 类型安全
     switch (k) {
-      case 'username': return <b>{c.username || c.userId?.slice(0,8) || '-'}</b>;
-      case 'agentName': return <span style={{ color: c.agentColor || '#6366f1', fontWeight: 500 }}>{c.agentName || '已删除'}</span>;
-      case 'title': return c.title || '-';
-      case 'agentType': return TYPE_LABELS[c.agentType] || c.agentType || '-';
-      case 'openclawAgentId': return <code style={{ fontSize: 11, background: '#f1f5f9', padding: '1px 5px', borderRadius: 3 }}>{c.openclawAgentId || '-'}</code>;
-      case 'modelProvider': return <span style={{ color: '#1d4ed8', fontWeight: 500 }}>{c.modelProvider || '-'}</span>;
-      case 'modelName': return <b>{c.modelName || '-'}</b>;
-      case 'status': { const si = STATUS_MAP[c.status] || STATUS_MAP.in_progress; return <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 4, background: si.bg, color: si.color, fontWeight: 500 }}>{si.label}</span>; }
-      case 'messageCount': return c.messageCount;
-      case 'totalTokens': return c.totalTokens?.toLocaleString() || '0';
-      case 'lastMessageAt': return c.lastMessageAt ? new Date(c.lastMessageAt).toLocaleString('zh-CN', { month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit' }) : '-';
-      case 'createdAt': return c.createdAt ? new Date(c.createdAt).toLocaleDateString('zh-CN') : '-';
-      case 'conversationType': return c.conversationType || '-';
-      case 'scopeType': return c.scopeType || '-';
-      case 'memoryPolicy': return c.memoryPolicy || '-';
-      case 'email': return c.email || '-';
-      case 'userRole': return c.userRole || '-';
-      case 'temperature': return c.temperature ?? '-';
-      case 'maxTokens': return c.maxTokens ?? '-';
-      case 'agentVisibility': return c.agentVisibility || '-';
-      case 'tokenUsed': return c.tokenUsed?.toLocaleString() || '0';
+      case 'username': return <b>{r.username || (r.userId as string)?.slice(0,8) || '-'}</b>;
+      case 'agentName': return <span style={{ color: r.agentColor || '#6366f1', fontWeight: 500 }}>{r.agentName || '已删除'}</span>;
+      case 'title': return r.title || '-';
+      case 'agentType': return TYPE_LABELS[r.agentType as string] || r.agentType || '-';
+      case 'openclawAgentId': return <code style={{ fontSize: 11, background: '#f1f5f9', padding: '1px 5px', borderRadius: 3 }}>{r.openclawAgentId || '-'}</code>;
+      case 'modelProvider': return <span style={{ color: '#1d4ed8', fontWeight: 500 }}>{r.modelProvider || '-'}</span>;
+      case 'modelName': return <b>{r.modelName || '-'}</b>;
+      case 'status': { const si = STATUS_MAP[r.status as string] || STATUS_MAP.in_progress; return <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 4, background: si.bg, color: si.color, fontWeight: 500 }}>{si.label}</span>; }
+      case 'messageCount': return r.messageCount;
+      case 'totalTokens': return (c.totalTokens as number)?.toLocaleString() || '0';
+      case 'lastMessageAt': return r.lastMessageAt ? new Date(r.lastMessageAt).toLocaleString('zh-CN', { month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit' }) : '-';
+      case 'createdAt': return r.createdAt ? new Date(r.createdAt).toLocaleDateString('zh-CN') : '-';
+      case 'conversationType': return r.conversationType || '-';
+      case 'scopeType': return r.scopeType || '-';
+      case 'memoryPolicy': return r.memoryPolicy || '-';
+      case 'email': return r.email || '-';
+      case 'userRole': return r.userRole || '-';
+      case 'temperature': return r.temperature ?? '-';
+      case 'maxTokens': return r.maxTokens ?? '-';
+      case 'agentVisibility': return r.agentVisibility || '-';
+      case 'tokenUsed': return (c.tokenUsed as number)?.toLocaleString() || '0';
       default: return '-';
     }
   }

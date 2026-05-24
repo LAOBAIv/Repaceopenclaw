@@ -11,6 +11,14 @@ import remarkGfm from 'remark-gfm';
 import { SyntaxHighlighter, oneLight } from '@/lib/syntaxHighlight';
 import { Message } from '@/types';
 
+// [2026-05-24] 类型安全
+interface CodeProps {
+  node?: unknown;
+  inline?: boolean;
+  className?: string;
+  children?: React.ReactNode;
+}
+
 interface MessageBubbleProps {
   msg: Message;
   isStreaming: boolean;
@@ -74,7 +82,8 @@ export function MessageBubble({
               <ReactMarkdown
                 remarkPlugins={[remarkGfm]}
                 components={{
-                  code: ({ node, inline, className, children, ...props }: any) => {
+                  code: (codeProps) => { // [2026-05-24] 类型安全
+                    const { node, inline, className, children, ...props } = codeProps as CodeProps;
                     const match = /language-(\w+)/.exec(className || '');
                     const language = match ? match[1] : 'text';
                     if (inline) {

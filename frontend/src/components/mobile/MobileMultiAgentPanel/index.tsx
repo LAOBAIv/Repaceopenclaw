@@ -31,7 +31,7 @@ export function MobileMultiAgentPanel({
     return agents.filter(a => ids.includes(a.id));
   }, [agents, currentAgentIds, currentAgentId]);
 
-  const handleSwitchAgent = useCallback((agent: any) => {
+  const handleSwitchAgent = useCallback((agent: { id: string; name: string; color?: string }) => { // [2026-05-24] 类型安全
     if (agent.id === currentAgentId) return;
     if (onSwitchAgent) onSwitchAgent(agent.id, agent.name, agent.color || COLORS.accent);
     if (onInject) onInject(`/switch ${agent.name}`);

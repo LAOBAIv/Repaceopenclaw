@@ -15,7 +15,7 @@ export function requestLogger(req: Request, res: Response, next: NextFunction) {
 
   // 响应完成后记录
   const originalEnd = res.end;
-  res.end = function (this: Response, ...args: any[]) {
+  res.end = function (this: Response, chunk?: unknown, encoding?: BufferEncoding | (() => void), cb?: () => void): Response { // [2026-05-24] 类型安全
     const duration = Date.now() - start;
     const status = res.statusCode;
 
@@ -31,7 +31,7 @@ export function requestLogger(req: Request, res: Response, next: NextFunction) {
       }
     }
 
-    return originalEnd.apply(this, args as any);
+    return originalEnd.call(this, chunk as any, encoding as any, cb);
   };
 
   next();

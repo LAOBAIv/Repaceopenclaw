@@ -1,8 +1,9 @@
 // [2026-05-18] 从 client.ts 拆分出默认数据种子
 import { execToRows } from "./client";
+import type { DbLike } from "./sqlite-compat";
 
 // ── Seed default data (idempotent: skip if already present) ─────────────────
-export function seedDefaultData(db: any) {
+export function seedDefaultData(db: DbLike) { // [2026-05-24] 类型安全
   const now = new Date().toISOString();
 
   // ── Default Skills ──────────────────────────────────────────────────────────

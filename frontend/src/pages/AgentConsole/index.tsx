@@ -108,7 +108,7 @@ export function AgentConsole() {
           title: name, description: taskDesc.trim(), tags, goal: taskGoal.trim(),
           priority: PRIORITY_MAP[priority] ?? 'low', startTime: startTime || '', endTime: endTime || '',
           decisionMaker: decisionMaker ?? '',
-          workflowNodes: nodes.map(n => ({ id: n.id, name: n.name, nodeType: n.nodeType, agentIds: n.agentIds, taskDesc: n.name })) as any,
+          workflowNodes: nodes.map(n => ({ id: n.id, name: n.name, nodeType: n.nodeType, agentIds: n.agentIds, taskDesc: n.name })), // [2026-05-24] 类型安全
         });
       } catch { /* 后端不可用时静默处理 */ }
       updateProject(editProject.id, {

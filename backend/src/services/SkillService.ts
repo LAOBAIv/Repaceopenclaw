@@ -16,25 +16,27 @@ export interface Skill {
   updatedAt: string;
 }
 
-function rowToSkill(obj: any): Skill {
+function rowToSkill(obj: Record<string, unknown>): Skill { // [2026-05-24] 类型安全
   return {
-    id: obj.id,
-    name: obj.name,
-    description: obj.description || "",
-    category: obj.category || "general",
-    type: (obj.type || "builtin") as Skill["type"],
-    config: (() => { try { return JSON.parse(obj.config || "{}"); } catch { return {}; } })(),
-    enabled: !!obj.enabled,
-    createdAt: obj.created_at,
-    updatedAt: obj.updated_at,
+    id: obj['id'] as string,
+    name: obj['name'] as string,
+    description: (obj['description'] as string) || "",
+    category: (obj['category'] as string) || "general",
+    type: ((obj['type'] as string) || "builtin") as Skill["type"],
+    config: (() => { try { return JSON.parse((obj['config'] as string) || "{}"); } catch { return {}; } })(),
+    enabled: !!obj['enabled'],
+    createdAt: obj['created_at'] as string,
+    updatedAt: obj['updated_at'] as string,
   };
 }
 
-function execToRows(db: any, sql: string, params?: any[]): any[] {
+// [2026-05-24] 类型安全：any → DbClient / unknown
+interface DbClient { exec(sql: string, params?: unknown[]): Array<{ columns: string[]; values: unknown[][] }> }
+function execToRows(db: DbClient, sql: string, params?: unknown[]): Record<string, unknown>[] {
   const result = params ? db.exec(sql, params) : db.exec(sql);
   if (!result.length) return [];
   const cols = result[0].columns;
-  return result[0].values.map((row: any[]) => {
+  return result[0].values.map((row: unknown[]) => { // [2026-05-24] 类型安全
     // [2026-05-24] 类型安全：any → Record<string, unknown>
     const obj: Record<string, unknown> = {};
     cols.forEach((c: string, i: number) => (obj[c] = row[i]));

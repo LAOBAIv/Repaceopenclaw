@@ -21,14 +21,16 @@ export function loadAgentSkillsPrompt(agentId: string): string {
     if (!result.length || !result[0].values.length) return "";
 
     const cols = result[0].columns;
-    const skills = result[0].values.map((row: any[]) => {
+    // [2026-05-24] 类型安全：any → unknown
+    const skills = result[0].values.map((row: unknown[]) => {
       const obj: Record<string, unknown> = {}; // [2026-05-24] 类型安全：any → Record<string, unknown>
       cols.forEach((c: string, i: number) => (obj[c] = row[i]));
       return obj;
     });
 
     const lines = skills.map(
-      (s: any) => `- 【${s.name}】(${s.category}):${s.description}`
+      // [2026-05-24] 类型安全：any → unknown
+      (s: unknown) => `- 【${(s as Record<string, unknown>).name}】(${(s as Record<string, unknown>).category}):${(s as Record<string, unknown>).description}`
     );
     return `\n\n## 可用技能\n你拥有以下技能,可在回答中酌情说明或使用:\n${lines.join("\n")}`;
   } catch {

@@ -9,7 +9,7 @@ const WS_URL = `${WS_PROTOCOL}//${window.location.host}/ws`;
 interface WSIncoming {
   type: string;
   messageId?: string;
-  message?: any;
+  message?: unknown; // [2026-05-24] 类型安全
   chunk?: string;
   agentId?: string;
   conversationId?: string;  // [2026-05-17] 用于精确匹配面板

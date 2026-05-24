@@ -81,7 +81,11 @@ export function ModelChannels() {
     try {
       await apiClient.post('/token-channels', form); await fetchChannels();
       closeModal(); setSaveMsg('✅ 保存成功'); setTimeout(() => setSaveMsg(''), 3000);
-    } catch (e: any) { setSaveMsg(`❌ 保存失败：${e.response?.data?.error || e.message}`); }
+    } catch (e: unknown) { // [2026-05-24] 类型安全
+      const msg = (e as { response?: { data?: { error?: string } }; message?: string })?.response?.data?.error
+        || (e as { message?: string })?.message || '未知错误';
+      setSaveMsg(`❌ 保存失败：${msg}`);
+    }
     finally { setSaving(false); }
   };
 
@@ -93,7 +97,10 @@ export function ModelChannels() {
   const handleTest = async (ch: Channel) => {
     setTestResults(r => ({ ...r, [ch.id]: { loading: true, connected: false, statusCode: 0, latencyMs: null, note: '测试中...' } }));
     try { const res = await apiClient.post(`/token-channels/${ch.id}/test`); setTestResults(r => ({ ...r, [ch.id]: res.data.data })); }
-    catch (e: any) { setTestResults(r => ({ ...r, [ch.id]: { connected: false, statusCode: 0, latencyMs: null, note: e.message } })); }
+    catch (e: unknown) { // [2026-05-24] 类型安全
+      const msg = (e as { message?: string })?.message || '未知错误';
+      setTestResults(r => ({ ...r, [ch.id]: { connected: false, statusCode: 0, latencyMs: null, note: msg } }));
+    }
   };
 
   const toggleEnabled = async (ch: Channel) => {
@@ -106,8 +113,10 @@ export function ModelChannels() {
       await fetchChannels();
       setSaveMsg(ch.isPreset ? '✅ 已取消预设' : '✅ 已设为预设渠道');
       setTimeout(() => setSaveMsg(''), 2500);
-    } catch (err: any) {
-      setSaveMsg('❌ 操作失败：' + (err?.response?.data?.error || err.message));
+    } catch (err: unknown) { // [2026-05-24] 类型安全
+      const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error
+        || (err as { message?: string })?.message || '未知错误';
+      setSaveMsg('❌ 操作失败：' + msg);
       setTimeout(() => setSaveMsg(''), 4000);
     }
   };
@@ -133,7 +142,11 @@ export function ModelChannels() {
       await apiClient.post('/models', { providerId: prov.id, name: modelName, displayName: modelName, contextWindow: 128000, maxTokens: 8192, capabilities: ['text'], enabled: true });
       fetchModels();
       setSaveMsg('✅ 模型已添加'); setTimeout(() => setSaveMsg(''), 2500);
-    } catch (e: any) { setSaveMsg('❌ 添加失败：' + (e.response?.data?.error || e.message)); setTimeout(() => setSaveMsg(''), 4000); }
+    } catch (e: unknown) { // [2026-05-24] 类型安全
+      const msg = (e as { response?: { data?: { error?: string } } })?.response?.data?.error
+        || (e as { message?: string })?.message || '未知错误';
+      setSaveMsg('❌ 添加失败：' + msg); setTimeout(() => setSaveMsg(''), 4000);
+    }
   };
   const handleSaveModel = async () => {
     if (!editingModel) return;
@@ -141,8 +154,8 @@ export function ModelChannels() {
       await apiClient.put(`/models/${editingModel.id}`, { name: editingModel.name, displayName: editingModel.displayName, contextWindow: editingModel.contextWindow, maxTokens: editingModel.maxTokens, enabled: editingModel.enabled });
       fetchModels(); setShowModelModal(false); setEditingModel(null);
       setSaveMsg('✅ 模型已更新'); setTimeout(() => setSaveMsg(''), 2500);
-    } catch (e: any) {
-      const err = e.response?.data?.error;
+    } catch (e: unknown) { // [2026-05-24] 类型安全
+      const err = (e as { response?: { data?: { error?: unknown } } })?.response?.data?.error;
       const msg = typeof err === 'string' ? err : JSON.stringify(err);
       setSaveMsg('❌ 更新失败：' + msg);
       setTimeout(() => setSaveMsg(''), 4000);

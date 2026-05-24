@@ -51,7 +51,8 @@ export interface AuthResult {
   token: string;
 }
 
-function rowToUser(row: any[]): User {
+// [2026-05-24] 类型安全：any → unknown
+function rowToUser(row: unknown[]): User {
   return {
     id: row[0] as string,
     user_code: row[1] as string,

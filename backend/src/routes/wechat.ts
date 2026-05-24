@@ -18,7 +18,7 @@ router.get("/binding", (req: Request, res: Response) => {
   const userId = (req as any).user?.id;
   if (!userId) return res.status(401).json({ error: "未认证" });
 
-  const row = getDb().queryOne(
+  const row = getDb().queryOne<Record<string, unknown>>( // [2026-05-24] 类型安全
     `SELECT id, user_id, conversation_id, bot_id, bot_name, status, bound_at, created_at
      FROM wechat_bindings WHERE user_id = ?`,
     [userId]
@@ -72,7 +72,7 @@ router.post("/binding", (req: Request, res: Response) => {
     // 新建绑定记录（conversation_id 从微信助手会话获取）
     const { ConversationService } = require("../services/ConversationService");
     const wechatConv = ConversationService.list(userId).find(
-      (c: any) => c.conversationType === "wechat_assistant"
+      (c: Record<string, unknown>) => c.conversationType === "wechat_assistant" // [2026-05-24] 类型安全
     );
     getDb().run(
       `INSERT INTO wechat_bindings (id, user_id, conversation_id, bot_id, bot_name, status, bound_at, created_at)

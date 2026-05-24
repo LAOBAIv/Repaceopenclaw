@@ -257,10 +257,9 @@ type ConversationWsEvent = {
   type: string;
   conversationId?: string;
   messageId?: string;
-  message?: any;
+  message?: Message; // [2026-05-24] 类型安全
   chunk?: string;
   agentId?: string;
-  [key: string]: any;
 };
 
 const conversationWsSubscribers = new Map<string, Set<(event: ConversationWsEvent) => void>>();
@@ -508,7 +507,7 @@ export const useConversationStore = create<ConversationStore>()(
             if (panel) {
               const msg = data.message;
               // 避免重复添加
-              const exists = panel.messages.some((m: any) => m.id === msg.id);
+              const exists = panel.messages.some((m: unknown) => (m as { id?: string })?.id === msg.id); // [2026-05-24] 类型安全
               if (!exists) {
                 set({
                   openPanels: panels.map((p) =>
@@ -1411,7 +1410,7 @@ export const useConversationStore = create<ConversationStore>()(
     name: CONV_STORE_BASENAME,
     version: 6, // [2026-05-19] 不再持久化 sessionTabs，强制重置旧数据
     storage: createJSONStorage(() => convPersistStorage),
-    migrate: (persistedState: any, version: number) => {
+    migrate: (persistedState: unknown, version: number) => { // [2026-05-24] 类型安全
       // v5→v6: 不再持久化，全量重置
       return {
         sessionTabs: [],

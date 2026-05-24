@@ -8,7 +8,7 @@ export type SubTab = 'overview' | 'conversations' | 'push' | 'sync';
 
 export interface StatusData {
   wsConnection: WsState;
-  channelStatus: any;
+  channelStatus: Record<string, unknown>; // [2026-05-24] 类型安全
   timestamp: string;
 }
 

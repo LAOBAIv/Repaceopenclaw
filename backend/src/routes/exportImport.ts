@@ -4,11 +4,13 @@ import { v4 as uuidv4 } from "uuid";
 
 const router = Router();
 
-function execToRows(db: any, sql: string, params?: any[]): any[] {
+// [2026-05-24] 类型安全：any → DbClient / unknown
+interface DbClient { exec(sql: string, params?: unknown[]): Array<{ columns: string[]; values: unknown[][] }> }
+function execToRows(db: DbClient, sql: string, params?: unknown[]): Record<string, unknown>[] {
   const result = params ? db.exec(sql, params) : db.exec(sql);
   if (!result.length) return [];
   const cols = result[0].columns;
-  return result[0].values.map((row: any[]) => {
+  return result[0].values.map((row: unknown[]) => { // [2026-05-24] 类型安全
     const obj: Record<string, unknown> = {}; // [2026-05-24] 类型安全：any → Record<string, unknown>
     cols.forEach((c: string, i: number) => (obj[c] = row[i]));
     return obj;
@@ -69,8 +71,8 @@ router.post("/", (req: Request, res: Response) => {
 
   const importTable = (
     tableName: string,
-    rows: any[],
-    insertSql: (r: any) => [string, any[]]
+    rows: unknown[],
+    insertSql: (r: Record<string, unknown>) => [string, unknown[]] // [2026-05-24] 类型安全
   ) => {
     if (!Array.isArray(rows) || !rows.length) return;
 
@@ -81,7 +83,8 @@ router.post("/", (req: Request, res: Response) => {
     let count = 0;
     for (const r of rows) {
       try {
-        const [sql, params] = insertSql(r);
+        const row = r as Record<string, unknown>; // [2026-05-24] 类型安全：narrow unknown to Record
+        const [sql, params] = insertSql(row);
         db.run(sql, params);
         count++;
       } catch {
@@ -96,52 +99,52 @@ router.post("/", (req: Request, res: Response) => {
     `INSERT OR IGNORE INTO agents (id, name, color, system_prompt, writing_style, expertise, description, status,
       model_name, model_provider, temperature, max_tokens, top_p, frequency_penalty, presence_penalty, created_at)
      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-    [r.id || uuidv4(), r.name, r.color || "#6366F1", r.system_prompt || "", r.writing_style || "balanced",
-     r.expertise || "[]", r.description || "", r.status || "idle",
-     r.model_name || "", r.model_provider || "",
-     r.temperature ?? 0.7, r.max_tokens ?? 4096, r.top_p ?? 1,
-     r.frequency_penalty ?? 0, r.presence_penalty ?? 0,
-     r.created_at || new Date().toISOString()],
+    [r['id'] || uuidv4(), r['name'], r['color'] || "#6366F1", r['system_prompt'] || "", r['writing_style'] || "balanced",
+     r['expertise'] || "[]", r['description'] || "", r['status'] || "idle",
+     r['model_name'] || "", r['model_provider'] || "",
+     r['temperature'] ?? 0.7, r['max_tokens'] ?? 4096, r['top_p'] ?? 1,
+     r['frequency_penalty'] ?? 0, r['presence_penalty'] ?? 0,
+     r['created_at'] || new Date().toISOString()],
   ]);
 
   // Projects
   importTable("projects", data.projects || [], (r) => [
     `INSERT OR IGNORE INTO projects (id, title, description, tags, status, goal, priority, start_time, end_time, decision_maker, workflow_nodes, created_at, updated_at)
      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-    [r.id || uuidv4(), r.title, r.description || "", r.tags || "[]", r.status || "active",
-     r.goal || "", r.priority || "mid", r.start_time || "", r.end_time || "",
-     r.decision_maker || "", r.workflow_nodes || "[]",
-     r.created_at || new Date().toISOString(), r.updated_at || new Date().toISOString()],
+    [r['id'] || uuidv4(), r['title'], r['description'] || "", r['tags'] || "[]", r['status'] || "active",
+     r['goal'] || "", r['priority'] || "mid", r['start_time'] || "", r['end_time'] || "",
+     r['decision_maker'] || "", r['workflow_nodes'] || "[]",
+     r['created_at'] || new Date().toISOString(), r['updated_at'] || new Date().toISOString()],
   ]);
 
   // Tasks
   importTable("tasks", data.tasks || [], (r) => [
     `INSERT OR IGNORE INTO tasks (id, title, description, column_id, priority, tags, agent, agent_color, agent_id, due_date, comment_count, file_count, sort_order, created_at, updated_at)
      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-    [r.id || uuidv4(), r.title, r.description || "", r.column_id || "todo", r.priority || "mid",
-     r.tags || "[]", r.agent || "", r.agent_color || "#6366F1", r.agent_id || "",
-     r.due_date || "", r.comment_count || 0, r.file_count || 0, r.sort_order || 0,
-     r.created_at || new Date().toISOString(), r.updated_at || new Date().toISOString()],
+    [r['id'] || uuidv4(), r['title'], r['description'] || "", r['column_id'] || "todo", r['priority'] || "mid",
+     r['tags'] || "[]", r['agent'] || "", r['agent_color'] || "#6366F1", r['agent_id'] || "",
+     r['due_date'] || "", r['comment_count'] || 0, r['file_count'] || 0, r['sort_order'] || 0,
+     r['created_at'] || new Date().toISOString(), r['updated_at'] || new Date().toISOString()],
   ]);
 
   // Conversations
   importTable("conversations", data.conversations || [], (r) => [
     `INSERT OR IGNORE INTO conversations (id, project_id, agent_id, title, created_at) VALUES (?,?,?,?,?)`,
-    [r.id || uuidv4(), r.project_id || null, r.agent_id, r.title || "新对话", r.created_at || new Date().toISOString()],
+    [r['id'] || uuidv4(), r['project_id'] || null, r['agent_id'], r['title'] || "新对话", r['created_at'] || new Date().toISOString()],
   ]);
 
   // Messages
   importTable("messages", data.messages || [], (r) => [
     `INSERT OR IGNORE INTO messages (id, conversation_id, role, content, agent_id, created_at) VALUES (?,?,?,?,?,?)`,
-    [r.id || uuidv4(), r.conversation_id, r.role, r.content, r.agent_id || null, r.created_at || new Date().toISOString()],
+    [r['id'] || uuidv4(), r['conversation_id'], r['role'], r['content'], r['agent_id'] || null, r['created_at'] || new Date().toISOString()],
   ]);
 
   // Documents
   importTable("documents", data.documents || [], (r) => [
     `INSERT OR IGNORE INTO documents (id, project_id, parent_id, title, content, node_order, assigned_agent_ids, created_at, updated_at)
      VALUES (?,?,?,?,?,?,?,?,?)`,
-    [r.id || uuidv4(), r.project_id, r.parent_id || null, r.title, r.content || "", r.node_order || 0,
-     r.assigned_agent_ids || "[]", r.created_at || new Date().toISOString(), r.updated_at || new Date().toISOString()],
+    [r['id'] || uuidv4(), r['project_id'], r['parent_id'] || null, r['title'], r['content'] || "", r['node_order'] || 0,
+     r['assigned_agent_ids'] || "[]", r['created_at'] || new Date().toISOString(), r['updated_at'] || new Date().toISOString()],
   ]);
 
   saveDb();

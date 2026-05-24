@@ -34,10 +34,12 @@ export function ModelList() {
         apiClient.get('/model-providers'),
       ]);
       const provs: Provider[] = pRes.data.data || [];
-      const mods: Model[] = (mRes.data.data || []).map((m: any) => ({
-        ...m,
-        providerName: provs.find(p => p.id === m.providerId)?.name || m.providerId,
-      }));
+      const mods: Model[] = (mRes.data.data || []).map((m: Record<string, unknown>) => { // [2026-05-24] 类型安全
+        return {
+          ...m,
+          providerName: provs.find(p => p.id === m.providerId)?.name || m.providerId,
+        };
+      });
       setProviders(provs);
       setModels(mods);
     } catch { setModels([]); setProviders([]); }

@@ -9,6 +9,37 @@ import { useLocation } from 'react-router-dom';
 import { PRIORITY, PRIORITY_REV_MAP, nowLocal } from '../constants';
 import type { DecisionMaker } from '../constants';
 
+/** 路由 state 中传入的编辑任务数据（最小接口，仅包含实际使用的字段） */
+export interface ConsoleEditTask {
+  id: string;
+  title: string;
+  description?: string;
+  agent: string;
+  agentColor: string;
+  agents?: { name: string; color: string }[];
+  priority?: string;
+  tags?: string[];
+}
+
+/** 路由 state 中传入的编辑项目数据 */
+export interface ConsoleEditProject {
+  id: string;
+  backendId?: string;
+  title: string;
+  description?: string;
+  agent: string;
+  agentColor: string;
+  agents?: { name: string; color: string }[];
+  priority?: string;
+  tags?: string[];
+}
+
+/** 路由 location.state 类型 */
+export interface ConsoleLocationState {
+  editTask?: ConsoleEditTask | null;
+  editProject?: ConsoleEditProject | null;
+}
+
 export interface ConsoleStateReturn {
   // 表单字段
   taskName: string;
@@ -35,17 +66,16 @@ export interface ConsoleStateReturn {
   // 重置所有表单状态
   resetForm: () => void;
   // 编辑模式标识
-  editTask: any;
-  editProject: any;
-  prefill: any;
+  editTask: ConsoleEditTask | null;
+  editProject: ConsoleEditProject | null;
+  prefill: ConsoleEditTask | ConsoleEditProject | null; // [2026-05-24] 类型安全
 }
 
 export function useConsoleState(): ConsoleStateReturn {
   const location = useLocation();
 
   /* 从看板「编辑」跳转时带入的预填数据 */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const locationState = location.state as any;
+  const locationState = location.state as ConsoleLocationState | null; // [2026-05-24] 类型安全
   const editProject = locationState?.editProject ?? null;
   const editTask = locationState?.editTask ?? null;
   /** 统一预填源：任务优先，其次项目 */

@@ -21,7 +21,7 @@ export function MarkdownContent({ content, isUser }: MarkdownContentProps) {
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{
-          code({ node, inline, className, children, ...rest }: any) {
+          code({ node, inline, className, children, ...rest }: React.ComponentProps<'code'> & { inline?: boolean }) { // [2026-05-24] 类型安全
             const match = /language-(\w+)/.exec(className || '');
             const language = match ? match[1] : 'text';
             if (inline) {
@@ -29,13 +29,13 @@ export function MarkdownContent({ content, isUser }: MarkdownContentProps) {
             }
             return <CodeBlock codeText={String(children).trimEnd()} language={language} isUser={isUser} props={rest} />;
           },
-          table({ children, ...rest }: any) {
+          table({ children, ...rest }: React.ComponentProps<'table'>) { // [2026-05-24] 类型安全
             return <MobileTable isUser={isUser} {...rest}>{children}</MobileTable>;
           },
-          img({ ...rest }: any) {
+          img({ ...rest }: React.ComponentProps<'img'>) { // [2026-05-24] 类型安全
             return <img {...rest} style={{ maxWidth: '100%', height: 'auto', borderRadius: '6px' }} />;
           },
-          pre({ children, ...rest }: any) {
+          pre({ children, ...rest }: React.ComponentProps<'pre'>) { // [2026-05-24] 类型安全
             return (
               <div style={{ overflowX: 'auto', maxWidth: '100%', margin: '8px 0' }}>
                 <pre {...rest} style={{ overflowX: 'auto', margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>

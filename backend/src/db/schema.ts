@@ -1,11 +1,12 @@
 // [2026-05-18] 从 client.ts 拆分出表结构定义（DDL）
 import { saveDb, safeAlter } from './client';
+import type { DbLike } from './sqlite-compat';
 import logger from '../utils/logger';
 
 
 
 /** 创建所有表结构（幂等，CREATE IF NOT EXISTS） */
-export function createTables(db: any) {
+export function createTables(db: DbLike) { // [2026-05-24] 类型安全
   db.run(`
     CREATE TABLE IF NOT EXISTS agents (
       id TEXT PRIMARY KEY,

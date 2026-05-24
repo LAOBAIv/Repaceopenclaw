@@ -43,9 +43,9 @@ export function useFileTransfer(projectId?: string, conversationId?: string, onS
           if (prompt.trim()) onSend(prompt);
         } catch (analysisError) { console.error('[uploadRealFile:autoAnalysis]', analysisError); }
       }
-    } catch (e: any) {
+    } catch (e: unknown) { // [2026-05-24] 类型安全
       console.error('[uploadRealFile]', e);
-      showToast(e?.response?.data?.error?.message || '文件上传失败', 'error');
+      showToast((e as any)?.response?.data?.error?.message || '文件上传失败', 'error');
     } finally { setUploading(false); }
   }, [projectId, conversationId, onSend, loadProjectFiles]);
 

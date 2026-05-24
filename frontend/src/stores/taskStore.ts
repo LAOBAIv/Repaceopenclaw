@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { tasksApi } from '../api/tasks';
+import { tasksApi, DbTask } from '../api/tasks';
 
 /* ─── 业务规则（重要）───────────────────────────────────────────
  * 【单任务智能体规则】
@@ -83,7 +83,8 @@ const EMPTY_TASKS: TaskBoard = {
  * 将后端返回的 DbTask（数据库格式）转换为前端 Task（Zustand store 格式）
  * 处理字段命名转换、JSON 解析、日期格式化等
  */
-function dbTaskToFrontend(dbTask: any): Task {
+// [2026-05-24] 类型安全
+function dbTaskToFrontend(dbTask: DbTask): Task {
   // tags 后端存的是 JSON 字符串，需要解析
   let tags: string[] = [];
   try {

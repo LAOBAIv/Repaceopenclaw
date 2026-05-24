@@ -12,11 +12,13 @@ import { getDb } from '../db/client';
 import { getErrorMessage } from '../types/ilink';
 
 /** 内部工具函数：执行 SQL 并返回行数组 */
-function execToRows(db: any, sql: string, params?: any[]): any[] {
+// [2026-05-24] 类型安全：any → DbClient / unknown
+interface DbClient { exec(sql: string, params?: unknown[]): Array<{ columns: string[]; values: unknown[][] }> }
+function execToRows(db: DbClient, sql: string, params?: unknown[]): Record<string, unknown>[] {
   const result = params ? db.exec(sql, params) : db.exec(sql);
   if (!result.length) return [];
   const cols = result[0].columns;
-  return result[0].values.map((row: any[]) => {
+  return result[0].values.map((row: unknown[]) => { // [2026-05-24] 类型安全
     const obj: Record<string, unknown> = {}; // [2026-05-24] 类型安全：any → Record<string, unknown>
     cols.forEach((c: string, i: number) => (obj[c] = row[i]));
     return obj;
@@ -114,7 +116,7 @@ export const PLATFORM_TOOLS = [
 
 export interface ToolCall {
   name: string;
-  arguments: Record<string, any>;
+  arguments: Record<string, unknown>; // [2026-05-24] 类型安全
 }
 
 export async function executeToolCall(toolCall: ToolCall, userId?: string): Promise<string> {
@@ -141,14 +143,14 @@ export async function executeToolCall(toolCall: ToolCall, userId?: string): Prom
  * 通用 API 调用执行器
  * 通过内部 HTTP 请求调用 RepaceClaw 后端 API
  */
-async function executeApiCall(args: any, userId?: string): Promise<string> {
+async function executeApiCall(args: Record<string, unknown>, userId?: string): Promise<string> { // [2026-05-24] 类型安全
   const http = require('http');
   const https = require('https');
 
-  const method = (args.method || 'GET').toUpperCase();
-  const path = args.path || '';
-  const query = args.query || '';
-  const body = args.body ? JSON.stringify(args.body) : undefined;
+  const method = ((args['method'] as string) || 'GET').toUpperCase(); // [2026-05-24] 类型安全
+  const path = (args['path'] as string) || '';
+  const query = (args['query'] as string) || '';
+  const body = args['body'] ? JSON.stringify(args['body']) : undefined;
 
   if (!path.startsWith('/api/')) {
     return JSON.stringify({ error: '只允许调用 /api/* 接口' });
@@ -165,7 +167,7 @@ async function executeApiCall(args: any, userId?: string): Promise<string> {
         ...(body ? { 'Content-Length': Buffer.byteLength(body) } : {}),
       },
       timeout: 15000,
-    }, (res: any) => {
+    }, (res: import('http').IncomingMessage) => { // [2026-05-24] 类型安全
       let data = '';
       res.on('data', (chunk: Buffer) => (data += chunk.toString()));
       res.on('end', () => {
@@ -182,7 +184,7 @@ async function executeApiCall(args: any, userId?: string): Promise<string> {
       });
     });
 
-    req.on('error', (err: any) => resolve(JSON.stringify({ error: err.message })));
+    req.on('error', (err: Error) => resolve(JSON.stringify({ error: err.message }))); // [2026-05-24] 类型安全
     req.on('timeout', () => { req.destroy(); resolve(JSON.stringify({ error: 'API timeout (15s)' })); });
 
     if (body) req.write(body);
@@ -193,13 +195,13 @@ async function executeApiCall(args: any, userId?: string): Promise<string> {
 /**
  * 直接数据库查询执行器
  */
-function executeDbQuery(args: any): string {
+function executeDbQuery(args: Record<string, unknown>): string { // [2026-05-24] 类型安全
   const db = getDb();
-  const table = args.table || '';
-  const columns = args.columns || '*';
-  const where = args.where ? ` WHERE ${args.where}` : '';
-  const orderBy = args.orderBy ? ` ORDER BY ${args.orderBy}` : ' ORDER BY created_at DESC';
-  const limit = args.limit || 20;
+  const table = (args['table'] as string) || ''; // [2026-05-24] 类型安全
+  const columns = (args['columns'] as string) || '*';
+  const where = args['where'] ? ` WHERE ${args['where']}` : '';
+  const orderBy = args['orderBy'] ? ` ORDER BY ${args['orderBy']}` : ' ORDER BY created_at DESC';
+  const limit = (args['limit'] as number) || 20;
 
   // 安全校验：只允许查询已知表
   const allowedTables = [

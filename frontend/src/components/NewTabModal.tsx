@@ -108,9 +108,9 @@ export function NewTabModal({ open, onClose, onCreated }: NewTabModalProps) {
         showToast(`${isProject ? '协作项目' : '会话'}创建成功`, 'success');
         resetAndClose();
       }
-    } catch (err: any) {
+    } catch (err: unknown) { // [2026-05-24] 类型安全
       console.error('[NewTabModal] 创建失败:', err);
-      showToast('创建失败：' + (err?.response?.data?.error || err?.message || '未知错误'), 'error');
+      showToast('创建失败：' + ((err as any)?.response?.data?.error || (err as Error)?.message || '未知错误'), 'error');
     } finally {
       setCreating(false);
     }

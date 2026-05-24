@@ -16,6 +16,32 @@ import { showToast } from '@/components/Toast';
 import apiClient from '@/api/client';
 import { agentsApi } from '@/api/agents';
 import type { BackendSkill, CodeChannel, CodeModel } from '../types';
+
+// [2026-05-24] 类型安全 — 智能体表单回填数据结构
+interface AgentFormData {
+  name: string;
+  systemPrompt?: string;
+  writingStyle?: string;
+  expertise?: string[];
+  description?: string;
+  boundary?: string;
+  outputFormat?: string;
+  agentType?: string;
+  visibility?: string;
+  skillsConfig?: Record<string, boolean>;
+  memoryTurns?: number | string;
+  temperatureOverride?: number | string;
+  modelName?: string;
+  modelProvider?: string;
+  maxTokens?: number | string;
+  temperature?: number | string;
+  topP?: number | string;
+  frequencyPenalty?: number | string;
+  presencePenalty?: number | string;
+  tokenProvider?: string;
+  tokenApiKey?: string;
+  tokenBaseUrl?: string;
+}
 import { AGENT_TYPE_OPTIONS } from '../constants';
 import { templateCategoryToAgentType, saveTokenCache } from '../utils';
 
@@ -37,8 +63,10 @@ export interface UseAgentFormReturn {
   // 状态标志
   isEdit: boolean; editId: string | null; isAdmin: boolean; isDefaultAgent: boolean;
   // 辅助函数
-  findAgent: (id: string) => any;
-  fillForm: (agent: any) => void;
+  // [2026-05-24] 类型安全
+  findAgent: (id: string) => AgentFormData | null;
+  // [2026-05-24] 类型安全
+  fillForm: (agent: AgentFormData) => void;
   handleSubmit: (e: React.FormEvent, backendSkills: BackendSkill[], selectedChannel: CodeChannel, selectedModel: CodeModel | null, customMaxTokens: string, customTemp: string, customTopP: string, customFreqPenalty: string, customPresPenalty: string, tokenValue: string, customBaseUrl: string) => Promise<void>;
   // 样式
   inputStyle: React.CSSProperties;
@@ -103,8 +131,9 @@ export function useAgentForm(
   }, [getAgentById]);
 
   /* ── 预填表单 ── */
-  const fillForm = useCallback((agent: any) => {
+  const fillForm = useCallback((agent: AgentFormData) => {
     if (!agent) return;
+    // [2026-05-24] 类型安全
     if (!dynamicChannels.length) {
       setName(agent.name);
       setRole(agent.systemPrompt ?? '');
@@ -187,7 +216,8 @@ export function useAgentForm(
       fillForm(agent);
     } else {
       agentsApi.getById(editId!)
-        .then((a: any) => fillForm(a))
+        // [2026-05-24] 类型安全
+        .then((a: AgentFormData) => fillForm(a))
         .catch(() => fetchAgents());
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps

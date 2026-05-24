@@ -52,8 +52,8 @@ export default function AccountSettings() {
       const updated = await authApi.updateMe({ nickname: nickname.trim() });
       setUser(updated);
       setMsg('昵称保存成功');
-    } catch (e: any) {
-      setMsg(e?.response?.data?.error || '保存失败');
+    } catch (e: unknown) { // [2026-05-24] 类型安全
+      setMsg((e as any)?.response?.data?.error || '保存失败');
     } finally {
       setSaving(false);
     }
@@ -68,8 +68,8 @@ export default function AccountSettings() {
       await authApi.changePassword(oldPwd, newPwd);
       setPwdMsg('密码修改成功');
       setOldPwd(''); setNewPwd(''); setConfirmPwd('');
-    } catch (e: any) {
-      setPwdMsg(e?.response?.data?.error || '修改失败');
+    } catch (e: unknown) { // [2026-05-24] 类型安全
+      setPwdMsg((e as any)?.response?.data?.error || '修改失败');
     }
   }
 

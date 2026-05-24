@@ -4,12 +4,12 @@ import path from "path";
 import fs from "fs";
 import { dbConfig } from "./config";
 import { IdGenerator } from "../utils/IdGenerator";
-import { SqliteCompat } from "./sqlite-compat";
+import { SqliteCompat, DbLike } from "./sqlite-compat"; // [2026-05-24] 类型安全
 import logger from "../utils/logger";
 import { getErrorMessage } from "../types/ilink";
 
 /** 安全执行 ALTER/CREATE 等幂等 DDL，只静默 "duplicate column" 类错误，其他异常打日志 */
-function safeAlter(db: any, sql: string): void {
+function safeAlter(db: DbLike, sql: string): void { // [2026-05-24] 类型安全
   try {
     db.run(sql);
   } catch (e: unknown) { // [2026-05-24] 类型安全：any → unknown
@@ -20,17 +20,17 @@ function safeAlter(db: any, sql: string): void {
   }
 }
 
-let db: any;
+let db: DbLike | undefined; // [2026-05-24] 类型安全
 const DB_PATH = path.join(__dirname, "../../data/platform.db");
 
 /** 统一初始化入口：根据 DB_TYPE 选择驱动 */
-export async function initDb(): Promise<any> {
+export async function initDb(): Promise<DbLike> { // [2026-05-24] 类型安全
   // PostgreSQL 模式
   if (dbConfig.type === "postgres") {
     const { initPostgresSync } = await import("./postgres");
     const pgDb = await initPostgresSync();
     // 将 pgDb 挂载到全局 _pgDb，供 getDb() 返回
-    (globalThis as any).__pgDb = pgDb;
+    (globalThis as Record<string, unknown>).__pgDb = pgDb; // [2026-05-24] 类型安全
     return pgDb;
   }
 
@@ -51,12 +51,12 @@ export async function initDb(): Promise<any> {
   return db;
 }
 
-export function execToRows(db: any, sql: string, params?: any[]): any[] {
+export function execToRows(db: DbLike, sql: string, params?: unknown[]): Record<string, unknown>[] { // [2026-05-24] 类型安全
   const result = params ? db.exec(sql, params) : db.exec(sql);
   if (!result.length) return [];
   const cols = result[0].columns;
-  return result[0].values.map((row: any[]) => {
-    const obj: Record<string, unknown> = {}; // [2026-05-24] 类型安全：any → Record<string, unknown>
+  return result[0].values.map((row: unknown[]) => { // [2026-05-24] 类型安全
+    const obj: Record<string, unknown> = {}; // [2026-05-24] 类型安全
     cols.forEach((c: string, i: number) => (obj[c] = row[i]));
     return obj;
   });
@@ -79,9 +79,9 @@ export function saveDb() {
  * SQLite 模式：返回 sql.js Database
  * PostgreSQL 模式：返回 PGDatabase（兼容 sql.js 接口）
  */
-export function getDb(): any {
+export function getDb(): DbLike { // [2026-05-24] 类型安全
   if (dbConfig.type === "postgres") {
-    return (globalThis as any).__pgDb;
+    return (globalThis as Record<string, unknown>).__pgDb; // [2026-05-24] 类型安全
   }
   return db;
 }

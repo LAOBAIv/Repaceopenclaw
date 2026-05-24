@@ -1,13 +1,14 @@
 import { Router, Request, Response } from "express";
 import { getDb } from "../db/client";
+import type { DbLike } from "../db/sqlite-compat"; // [2026-05-24] 类型安全
 
 const router = Router();
 
-function execToRows(db: any, sql: string, params?: any[]): any[] {
+function execToRows(db: DbLike, sql: string, params?: unknown[]): Record<string, unknown>[] { // [2026-05-24] 类型安全
   const result = params ? db.exec(sql, params) : db.exec(sql);
   if (!result.length) return [];
   const cols = result[0].columns;
-  return result[0].values.map((row: any[]) => {
+  return result[0].values.map((row: unknown[]) => { // [2026-05-24] 类型安全
     const obj: Record<string, unknown> = {}; // [2026-05-24] 类型安全：any → Record<string, unknown>
     cols.forEach((c: string, i: number) => (obj[c] = row[i]));
     return obj;
@@ -46,7 +47,7 @@ router.get("/", (req: Request, res: Response) => {
   const documents = execToRows(db,
     `SELECT id, project_id, title, content FROM documents WHERE title LIKE ? OR content LIKE ? ORDER BY updated_at DESC LIMIT 20`,
     [like, like]
-  ).map(r => ({ id: r.id, projectId: r.project_id, title: r.title, contentPreview: (r.content || "").slice(0, 120) }));
+  ).map(r => ({ id: r.id, projectId: r.project_id, title: r.title, contentPreview: String(r.content || "").slice(0, 120) })); // [2026-05-24] 类型安全
 
   res.json({ data: { agents, projects, tasks, documents } });
 });

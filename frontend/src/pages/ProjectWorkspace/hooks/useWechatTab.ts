@@ -5,6 +5,7 @@
  */
 import { useCallback } from 'react';
 import { useConversationStore } from '@/stores/conversationStore';
+import type { Message } from '@/types';
 
 export function useWechatTab(
   switchTab: (tabId: string) => void,
@@ -56,18 +57,20 @@ export function useWechatTab(
 
     // 创建新面板
     const { conversationsApi } = await import('@/api/conversations');
-    let conv: any;
+    let conv: unknown; // [2026-05-24] 类型安全
     try { conv = await conversationsApi.getWechatAssistant(); }
-    catch (err: any) {
+    catch (err: unknown) { // [2026-05-24] 类型安全
       console.error('[WechatTab] API 请求失败:', err);
-      const errMsg = err?.response?.data?.error || err?.message || '未知错误';
-      const status = err?.response?.status;
+      const e = err as { response?: { data?: { error?: string }; status?: number }; message?: string };
+      const errMsg = e?.response?.data?.error || e?.message || '未知错误';
+      const status = e?.response?.status;
       alert(`微信助手会话创建失败\nHTTP ${status || 'N/A'}: ${errMsg}`);
       return;
     }
     if (!conv) { alert('微信助手会话创建失败：服务器返回空数据'); return; }
+    const c = conv as { id: string; sessionCode?: string; currentAgentCode?: string; agentIds?: string[]; messages?: Message[] }; // [2026-05-24] 类型安全
 
-    const panelId = conv.id;
+    const panelId = c.id;
     const existingPanel = openPanels.find(p => p.id === panelId || p.conversationId === panelId);
     if (existingPanel) {
       bindPanelToTab('wechat', existingPanel.id, '微信助手', '#2563eb');
@@ -82,12 +85,12 @@ export function useWechatTab(
     );
 
     const panel = {
-      id: panelId, conversationId: panelId, sessionCode: conv.sessionCode,
-      agentId: 'rc-wechat-agent', currentAgentCode: conv.currentAgentCode,
-      agentIds: conv.agentIds?.length ? conv.agentIds : ['rc-wechat-agent'],
+      id: panelId, conversationId: panelId, sessionCode: c.sessionCode,
+      agentId: 'rc-wechat-agent', currentAgentCode: c.currentAgentCode,
+      agentIds: c.agentIds?.length ? c.agentIds : ['rc-wechat-agent'],
       agentName: wechatAgent?.name || '微信助手',
       agentColor: wechatAgent?.color || '#2563eb',
-      messages: conv.messages || [], isStreaming: false,
+      messages: c.messages || [], isStreaming: false,
     };
     useConversationStore.setState(s => ({ openPanels: [...s.openPanels, panel] }));
     bindPanelToTab('wechat', panelId, '微信助手', '#2563eb');

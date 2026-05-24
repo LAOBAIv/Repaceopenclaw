@@ -139,7 +139,7 @@ router.get(
             if (modelRows.length && modelRows[0].values.length) {
               const cols = modelRows[0].columns;
               const row: Record<string, unknown> = {}; // [2026-05-24] 类型安全：any → Record<string, unknown>
-              modelRows[0].values[0].forEach((v: any, i: number) => { row[cols[i]] = v; });
+              modelRows[0].values[0].forEach((v: unknown, i: number) => { row[cols[i]] = v; }); // [2026-05-24] 类型安全
               effectiveChannel = (row.provider_name as string) || "未知";
               effectiveModel = (row.model_name as string) || agentModelName;
               source = "global";
@@ -226,12 +226,12 @@ router.get(
     const fs = require('fs');
 
     // 读取 openclaw.json 中的 OC agent 配置
-    let ocAgents: any[] = [];
+    let ocAgents: Array<Record<string, unknown>> = []; // [2026-05-24] 类型安全
     try {
       const raw = fs.readFileSync('/root/.openclaw/openclaw.json', 'utf-8');
       const data = JSON.parse(raw);
-      ocAgents = (data?.agents?.list || []).filter((a: any) =>
-        a.id?.startsWith('rc-') || a.id === 'repaceclaw-platform-assistant'
+      ocAgents = (data?.agents?.list || []).filter((a: Record<string, unknown>) => // [2026-05-24] 类型安全
+        (a['id'] as string)?.startsWith('rc-') || a['id'] === 'repaceclaw-platform-assistant'
       );
     } catch {}
 
@@ -248,24 +248,24 @@ router.get(
       platform: '平台助手',
     };
 
-    const channels = ocAgents.map((oc: any) => {
-      const agentType = fromOpenClawAgentId(oc.id) || 'unknown';
+    const channels = ocAgents.map((oc: Record<string, unknown>) => { // [2026-05-24] 类型安全
+      const agentType = fromOpenClawAgentId(oc['id'] as string) || 'unknown';
       // 找到关联的 RC 智能体
-      const rcAgents = allAgents.filter(a => a.openclawAgentId === oc.id).map(a => ({
+      const rcAgents = allAgents.filter(a => a.openclawAgentId === oc['id']).map(a => ({
         id: a.id, name: a.name, color: a.color,
         userId: a.userId, visibility: a.visibility,
       }));
-      const isSystem = oc.id === 'rc-wechat-agent' || oc.id === 'repaceclaw-platform-assistant';
+      const isSystem = oc['id'] === 'rc-wechat-agent' || oc['id'] === 'repaceclaw-platform-assistant';
       return {
-        ocAgentId: oc.id,
+        ocAgentId: oc['id'] as string,
         type: agentType,
         label: TYPE_LABELS[agentType] || agentType,
-        model: oc.model || '',
-        workspace: oc.workspace || '',
+        model: (oc['model'] as string) || '',
+        workspace: (oc['workspace'] as string) || '',
         rcAgents,
         rcAgentCount: rcAgents.length,
         isSystem,
-        editable: isSystem && oc.id !== 'repaceclaw-platform-assistant',
+        editable: isSystem && oc['id'] !== 'repaceclaw-platform-assistant',
       };
     });
 
@@ -296,7 +296,7 @@ router.put(
     const raw = fs.readFileSync(configPath, 'utf-8');
     const data = JSON.parse(raw);
     const agents = data?.agents?.list || [];
-    const idx = agents.findIndex((a: any) => a.id === ocAgentId);
+    const idx = agents.findIndex((a: { id: string }) => a.id === ocAgentId); // [2026-05-24] 类型安全
     if (idx < 0) {
       throw Errors.notFound('OC 通道');
     }

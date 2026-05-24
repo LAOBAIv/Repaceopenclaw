@@ -49,7 +49,7 @@ router.get(
 
     let sql = `SELECT id, user_id, project_id, conversation_id, original_name, stored_name, mime_type, extension, size_bytes, storage_path, status, created_at, updated_at
                FROM file_assets WHERE user_id=? AND status='uploaded'`;
-    const params: any[] = [userId];
+    const params: unknown[] = [userId]; // [2026-05-24] 类型安全
     if (projectId) {
       sql += ' AND project_id=?';
       params.push(projectId);
@@ -76,7 +76,7 @@ router.get(
     const result = db.exec(sql, params);
     const rows = !result.length
       ? []
-      : result[0].values.map((row: any[]) => ({
+      : result[0].values.map((row: unknown[]) => ({ // [2026-05-24] 类型安全
           id: row[0],
           userId: row[1],
           projectId: row[2],

@@ -194,7 +194,8 @@ function loadAgentSkillsPrompt(agentId: string): string {
     });
 
     const lines = skills.map(
-      (s: any) => `- 【${s.name}】(${s.category}):${s.description}`
+      // [2026-05-24] 类型安全：any → unknown
+      (s: unknown) => `- 【${(s as Record<string, unknown>).name}】(${(s as Record<string, unknown>).category}):${(s as Record<string, unknown>).description}`
     );
     return `\n\n## 可用技能\n你拥有以下技能,可在回答中酌情说明或使用:\n${lines.join("\n")}`;
   } catch {
@@ -241,14 +242,14 @@ function loadProviders(): TokenChannel[] {
       const obj: Record<string, unknown> = {};
       cols.forEach((c, i) => (obj[c] = row[i]));
       return {
-        id: obj.id,
-        provider: obj.name,
+        id: obj.id as string,
+        provider: obj.name as string,
         modelName: "",  // 从 models 表按 name 匹配
-        baseUrl: obj.base_url || "",
-        apiKey: obj.api_key || "",
+        baseUrl: (obj.base_url as string) || "",
+        apiKey: (obj.api_key as string) || "",
         authType: "Bearer" as TokenChannel["authType"],
         enabled: !!obj.enabled,
-        priority: obj.priority ?? 0,
+        priority: (obj.priority as number) ?? 0,
       };
     });
   } catch {
@@ -338,7 +339,8 @@ function callOpenAIStream(
       logger.info(`[Auto→Gateway] Routing: ${modelId} → Gateway(openclaw)`);
     }
 
-    const bodyObj: any = {
+    // [2026-05-24] 类型安全：any → Record<string, unknown>
+    const bodyObj: Record<string, unknown> = {
       model: actualModel,
       messages: [{ role: "system", content: systemPrompt }, ...messages],
       stream: false,
@@ -368,7 +370,8 @@ function callOpenAIStream(
 
     // Remove undefined headers
     Object.keys(options.headers).forEach(
-      (k) => (options.headers as any)[k] === undefined && delete (options.headers as any)[k]
+      // [2026-05-24] 类型安全：any → unknown
+      (k) => (options.headers as Record<string, unknown>)[k] === undefined && delete (options.headers as Record<string, unknown>)[k]
     );
 
     const lib = actualUrl.protocol === "https:" ? https : http;
@@ -538,12 +541,13 @@ export class AutoLLMAdapter implements ILLMAdapter {
           // [2026-05-24] 类型安全：any → Record<string, unknown>
           const p: Record<string, unknown> = {};
           cols.forEach((c, i) => (p[c] = presetResult[0].values[0][i]));
-          const pd = p as Record<string, any>;
-          const presetProvider = pd.provider || "custom";
+          // [2026-05-24] 类型安全：any → Record<string, unknown>
+          const pd = p as Record<string, unknown>;
+          const presetProvider = (pd.provider as string) || "custom";
           const presetProviderLower = presetProvider.toLowerCase();
-          const presetModelId = pd.model_name || "auto";
-          const presetBaseUrl = pd.base_url || "https://api.openai.com/v1";
-          const presetAuthType = pd.auth_type || "Bearer";
+          const presetModelId = (pd.model_name as string) || "auto";
+          const presetBaseUrl = (pd.base_url as string) || "https://api.openai.com/v1";
+          const presetAuthType = (pd.auth_type as string) || "Bearer";
 
           if (OPENCLAW_PROVIDERS.has(presetProviderLower)) {
             const { OpenClawAdapter } = await import('./OpenClawAdapter');
@@ -565,7 +569,7 @@ export class AutoLLMAdapter implements ILLMAdapter {
           try {
             logger.info(`[Auto] Using preset fallback: provider=${presetProvider} model=${presetModelId} temp=${chTemp} maxTokens=${chMaxTokens}`);
             const tokenCount = await callOpenAIStream(
-              presetBaseUrl, pd.api_key, presetAuthType, presetModelId,
+              presetBaseUrl, pd.api_key as string, presetAuthType, presetModelId,
               systemPrompt, truncated,
               chTemp, chMaxTokens, chTopP, chFreqPenalty, chPresPenalty,
               onChunk, onComplete, controller
@@ -611,18 +615,19 @@ export class AutoLLMAdapter implements ILLMAdapter {
           // [2026-05-24] 类型安全：any → Record<string, unknown>
           const m: Record<string, unknown> = {};
           cols.forEach((c, i) => (m[c] = modelRows[0].values[0][i]));
-          const md = m as Record<string, any>;
+          // [2026-05-24] 类型安全：any → Record<string, unknown>
+          const md = m as Record<string, unknown>;
           matchedProvider = {
-            id: md.provider_id || "",
-            provider: md.provider_name || "",
-            modelName: md.name,
-            baseUrl: md.base_url || "",
-            apiKey: md.api_key || "",
-            authType: "Bearer",
+            id: (md.provider_id as string) || "",
+            provider: (md.provider_name as string) || "",
+            modelName: md.name as string,
+            baseUrl: (md.base_url as string) || "",
+            apiKey: (md.api_key as string) || "",
+            authType: "Bearer" as const,
             enabled: true,
             priority: 0,
           };
-          matchedModelId = md.name || agentModelName;
+          matchedModelId = (md.name as string) || agentModelName;
           logger.info(`[Auto] Model matched: ${agentModelName} → provider=${md.provider_name} url=${md.base_url}`);
         }
       } catch (e) {

@@ -190,7 +190,7 @@ export function useMobileChat() {
       }
       const model = AVAILABLE_MODELS.find(m => m.id === modelId);
       setShowToast(`模型已更新为 ${model?.label || modelId}`);
-    } catch (e: any) {
+    } catch (e: unknown) { // [2026-05-24] 类型安全
       console.error('[MobileWorkspace:switchModel]', e);
       const status = e?.response?.status;
       const detail = e?.response?.data?.error || e?.message || '未知错误';

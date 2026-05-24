@@ -3,8 +3,8 @@ import MobileChatMessages from './MobileChatMessages';
 import { COLORS } from '../../pages/MobileWorkspace';
 
 interface MobileChatPanelContainerProps {
-  panel: any;
-  agents: any[];
+  panel: { agentId?: string; agentName?: string; agentColor?: string; messages?: unknown[] }; // [2026-05-24] 类型安全
+  agents: Array<{ id: string; name: string; color: string; modelName?: string }>; // [2026-05-24] 类型安全
   isActive: boolean;
 }
 
@@ -27,7 +27,7 @@ const MobileChatPanelContainer = memo(({ panel, agents, isActive }: MobileChatPa
   const resolvedMessages = useMemo(() => {
     const raw = panel.messages || [];
     if (!agents.length) return raw;
-    return raw.map((msg: any) => {
+    return raw.map((msg: Record<string, unknown>) => { // [2026-05-24] 类型安全
       if (msg.agentName) return msg;
       const msgAgent = msg.agentId ? agents.find(a => a.id === msg.agentId) : null;
       if (msgAgent) {

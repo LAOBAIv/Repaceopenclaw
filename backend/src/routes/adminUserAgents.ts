@@ -37,7 +37,7 @@ router.get("/", ...adminOnly, (_req: Request, res: Response) => {
   const result = db.exec(query);
   const rows = !result.length
     ? []
-    : result[0].values.map((valueRow: any[]) => {
+    : result[0].values.map((valueRow: unknown[]) => { // [2026-05-24] 类型安全
         // [2026-05-24] 类型安全：any → Record<string, unknown>
         const obj: Record<string, unknown> = {};
         result[0].columns.forEach((col: string, i: number) => {
@@ -46,7 +46,7 @@ router.get("/", ...adminOnly, (_req: Request, res: Response) => {
         return obj;
       });
 
-  const data = rows.map((row: any) => ({
+  const data = rows.map((row: Record<string, unknown>) => ({ // [2026-05-24] 类型安全
     conversationId: row.conversation_id,
     title: row.title || "New Conversation",
     status: row.status || "in_progress",

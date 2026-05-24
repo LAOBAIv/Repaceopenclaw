@@ -32,8 +32,8 @@ export function ProjectModal({
         goal: goal.trim(),
       });
       onClose();
-    } catch (e: any) {
-      alert(e?.response?.data?.error || '保存失败');
+    } catch (e: unknown) { // [2026-05-24] 类型安全
+      alert((e as any)?.response?.data?.error || '保存失败');
     } finally {
       setLoading(false);
     }

@@ -6,7 +6,7 @@ const API_BASE = '/api/wechat-clawbot';
 type WsState = 'disconnected' | 'connecting' | 'connected' | 'reconnecting';
 type SubTab = 'overview' | 'conversations' | 'push' | 'sync';
 
-interface StatusData { wsConnection: WsState; channelStatus: any; timestamp: string; }
+interface StatusData { wsConnection: WsState; channelStatus: Record<string, unknown>; timestamp: string; } // [2026-05-24] 类型安全
 interface ScanStatus { status: 'wait' | 'scaned' | 'confirmed' | 'expired'; credentials?: { bot_token: string; ilink_bot_id: string; ilink_user_id: string }; baseurl?: string; }
 interface BoundAccount { accountId: string; userId: string; hasToken: boolean; savedAt: string; rcUsername?: string; rcNickname?: string; rcDepartment?: string; }
 interface Conversation { id: string; title: string; oc_session_key: string; created_at: string; last_message_at: string; status: string; username?: string; }
@@ -108,7 +108,7 @@ export function WechatClawBot() {
       const r = await fetch(API_BASE + '/push', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: pushUserId.trim(), text: pushText.trim() }) });
       const j = await r.json();
       if (j.success) { setPushResult('\u2705 \u53d1\u9001\u6210\u529f'); setPushText(''); } else setPushResult('\u274c ' + (j.error || '\u5931\u8d25'));
-    } catch (e: any) { setPushResult('\u274c ' + e.message); } finally { setPushLoading(false); }
+    } catch (e: unknown) { setPushResult('\u274c ' + (e as Error).message); } finally { setPushLoading(false); } // [2026-05-24] 类型安全
   };
 
   const handleSyncNow = async () => { setSyncing(true); try { await fetch(API_BASE + '/sync-now', { method: 'POST' }); await fetchSyncStatus(); } catch (e) { console.warn("[WechatBot]", e); } finally { setSyncing(false); } };

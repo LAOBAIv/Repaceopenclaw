@@ -44,8 +44,10 @@ export function SkillSettings() {
     try {
       const res = await apiClient.get('/skills');
       setSkills(res.data.data as Skill[]);
-    } catch (e: any) {
-      setError(e?.response?.data?.error || e.message || '加载失败');
+    } catch (e: unknown) { // [2026-05-24] 类型安全
+      const msg = (e as { response?: { data?: { error?: string } } })?.response?.data?.error
+        || (e as { message?: string })?.message || '加载失败';
+      setError(msg);
     } finally { setLoading(false); }
   }, []);
 
@@ -61,7 +63,11 @@ export function SkillSettings() {
     try {
       await apiClient.patch(`/skills/${skill.id}/enabled`, { enabled: !skill.enabled });
       setSkills(prev => prev.map(s => s.id === skill.id ? { ...s, enabled: !s.enabled } : s));
-    } catch (e: any) { alert('操作失败：' + (e?.response?.data?.error || e.message)); }
+    } catch (e: unknown) { // [2026-05-24] 类型安全
+      const msg = (e as { response?: { data?: { error?: string } } })?.response?.data?.error
+        || (e as { message?: string })?.message || '未知错误';
+      alert('操作失败：' + msg);
+    }
     finally { setBusyId(null); }
   }
 
@@ -72,7 +78,11 @@ export function SkillSettings() {
     try {
       await apiClient.delete(`/skills/${skill.id}`);
       setSkills(prev => prev.filter(s => s.id !== skill.id));
-    } catch (e: any) { alert('删除失败：' + (e?.response?.data?.error || e.message)); }
+    } catch (e: unknown) { // [2026-05-24] 类型安全
+      const msg = (e as { response?: { data?: { error?: string } } })?.response?.data?.error
+        || (e as { message?: string })?.message || '未知错误';
+      alert('删除失败：' + msg);
+    }
     finally { setBusyId(null); }
   }
 
@@ -84,7 +94,11 @@ export function SkillSettings() {
       const res = await apiClient.post('/skills', { ...form, config: {}, enabled: true });
       setSkills(prev => [res.data.data, ...prev]);
       setShowAdd(false); setForm(EMPTY_FORM);
-    } catch (e: any) { alert('创建失败：' + (e?.response?.data?.error || e.message)); }
+    } catch (e: unknown) { // [2026-05-24] 类型安全
+      const msg = (e as { response?: { data?: { error?: string } } })?.response?.data?.error
+        || (e as { message?: string })?.message || '未知错误';
+      alert('创建失败：' + msg);
+    }
     finally { setSaving(false); }
   }
 

@@ -71,10 +71,10 @@ export function MobileAgentCreate({ onBack, initialTemplateState }: Props) {
     apiClient.get('/token-channels')
       .then(res => {
         const data = res.data?.data || [];
-        const enabledChannels = data.filter((c: any) => c.enabled);
+        const enabledChannels = data.filter((c: { enabled?: boolean }) => c.enabled); // [2026-05-24] 类型安全
         setChannels(enabledChannels);
         if (enabledChannels.length > 0) {
-          const preset = enabledChannels.find((c: any) => c.isPreset) || enabledChannels[0];
+          const preset = enabledChannels.find((c: { isPreset?: boolean; provider?: string; modelName?: string }) => c.isPreset) || enabledChannels[0]; // [2026-05-24] 类型安全
           setSelectedChannel(preset.provider);
           if (preset.modelName) setModelName(preset.modelName);
         }

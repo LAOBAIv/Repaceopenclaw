@@ -21,7 +21,7 @@ export function makeFlowNode(idx: number): FlowNode {
 
 /** 移动端多智能体协作面板 Props */
 export interface MobileMultiAgentPanelProps {
-  agents: any[];
+  agents: Array<{ id: string; name: string; color?: string }>; // [2026-05-24] 类型安全
   currentAgentIds?: string[];
   currentAgentId?: string;
   collabNodes: FlowNode[];
@@ -33,7 +33,7 @@ export interface MobileMultiAgentPanelProps {
 
 /** 智能体选择器（底部弹框）Props */
 export interface MobileAgentPickerProps {
-  agents: any[];
+  agents: Array<{ id: string; name: string; color?: string }>; // [2026-05-24] 类型安全
   selected: string[];
   onConfirm: (ids: string[]) => void;
   onClose: () => void;

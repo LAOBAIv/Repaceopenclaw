@@ -122,13 +122,13 @@ router.post("/callback", async (req: Request, res: Response) => {
         try {
           const tokenUrl = `https://api.weixin.qq.com/sns/oauth2/access_token?appid=${appId}&secret=${appSecret}&code=${code}&grant_type=authorization_code`;
           const response = await fetch(tokenUrl);
-          const data: any = await response.json();
+          const data = await response.json() as Record<string, unknown>; // [2026-05-24] 类型安全
 
           if (data.errcode) {
-            throw new Error(data.errmsg || '微信授权失败');
+            throw new Error(String(data.errmsg) || '微信授权失败'); // [2026-05-24] 类型安全
           }
 
-          wechatOpenid = data.openid;
+          wechatOpenid = String(data.openid); // [2026-05-24] 类型安全
         } catch (err: unknown) {
           // [2026-05-24] 类型安全：any → unknown
           logger.error(`[WechatLogin] Failed to exchange code for openid: ${getErrorMessage(err)}`);
@@ -162,7 +162,7 @@ router.post("/callback", async (req: Request, res: Response) => {
 
     if (existingBinding.length > 0) {
       // 已有绑定，直接登录
-      userId = existingBinding[0].user_id;
+      userId = existingBinding[0].user_id as string; // [2026-05-24] 类型安全
       const user = UserService.getUserById(userId);
 
       if (!user || user.status !== 'active') {
@@ -286,7 +286,7 @@ router.post("/bind", async (req: Request, res: Response) => {
     try {
       const tokenUrl = `https://api.weixin.qq.com/sns/oauth2/access_token?appid=${appId}&secret=${appSecret}&code=${code}&grant_type=authorization_code`;
       const response = await fetch(tokenUrl);
-      const data: any = await response.json();
+      const data = await response.json() as Record<string, unknown>; // [2026-05-24] 类型安全
 
       if (data.errcode) {
         return res.status(400).json({ error: data.errmsg || '微信授权失败' });

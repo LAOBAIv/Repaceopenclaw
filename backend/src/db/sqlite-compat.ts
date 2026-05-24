@@ -19,9 +19,20 @@ import path from 'path';
 import fs from 'fs';
 import { getErrorMessage } from "../types/ilink";
 
+/** [2026-05-24] 类型安全：数据库兼容接口，替代 :any */
+export interface DbLike {
+  exec(sql: string, params?: unknown[]): SqlJsCompatResult[];
+  run(sql: string, params?: unknown[]): void;
+  prepare(sql: string): { all(...params: unknown[]): unknown[]; run(...params: unknown[]): { changes: number } };
+  transaction<T>(fn: (...args: unknown[]) => T): (...args: unknown[]) => T;
+  getRowsModified?(): number;
+  queryOne?<T>(sql: string, params?: unknown[]): T | undefined;
+  get?(property: string): unknown;
+}
+
 export interface SqlJsCompatResult {
   columns: string[];
-  values: any[][];
+  values: unknown[][]; // [2026-05-24] 类型安全
 }
 
 export class SqliteCompat {
@@ -43,14 +54,14 @@ export class SqliteCompat {
    * 兼容 sql.js 的 exec 接口
    * sql.js: db.exec(sql, params) → [{columns, values}]
    */
-  exec(sql: string, params?: any[]): SqlJsCompatResult[] {
+  exec(sql: string, params?: unknown[]): SqlJsCompatResult[] { // [2026-05-24] 类型安全
     try {
       const stmt = this.db.prepare(sql);
       if (this.isReadQuery(sql)) {
         const rows = params ? stmt.all(...params) : stmt.all();
         if (rows.length === 0) return [];
         const columns = Object.keys(rows[0]);
-        const values = rows.map(row => columns.map(col => (row as any)[col]));
+        const values = rows.map(row => columns.map(col => (row as Record<string, unknown>)[col])); // [2026-05-24] 类型安全
         return [{ columns, values }];
       } else {
         // 写操作也可能通过 exec 调用（如 CREATE TABLE）
@@ -72,7 +83,7 @@ export class SqliteCompat {
    * 兼容 sql.js 的 run 接口
    * sql.js: db.run(sql, params) → void
    */
-  run(sql: string, params?: any[]): void {
+  run(sql: string, params?: unknown[]): void { // [2026-05-24] 类型安全
     const stmt = this.db.prepare(sql);
     if (params) {
       stmt.run(...params);

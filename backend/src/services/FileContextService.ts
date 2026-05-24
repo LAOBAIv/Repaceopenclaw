@@ -2,13 +2,15 @@ import fs from 'fs';
 import path from 'path';
 import { execFileSync } from 'child_process';
 import { getDb } from '../db/client';
+import { DbRow } from './AgentService'; // [2026-05-24] 类型安全
 
-function execToRows(db: any, sql: string, params?: any[]): any[] {
+// [2026-05-24] 类型安全：any → DbLike/DbRow
+function execToRows(db: { exec(sql: string, params?: unknown[]): unknown[] }, sql: string, params?: unknown[]): DbRow[] {
   const result = params ? db.exec(sql, params) : db.exec(sql);
   if (!result.length) return [];
-  const cols = result[0].columns;
-  return result[0].values.map((row: any[]) => {
-    const obj: Record<string, unknown> = {}; // [2026-05-24] 类型安全：any → Record<string, unknown>
+  const cols = (result[0] as { columns: string[]; values: unknown[][] }).columns;
+  return (result[0] as { columns: string[]; values: unknown[][] }).values.map((row: unknown[]) => {
+    const obj: DbRow = {}; // [2026-05-24] 类型安全：any → DbRow
     cols.forEach((c: string, i: number) => (obj[c] = row[i]));
     return obj;
   });
@@ -94,7 +96,8 @@ print(json.dumps(summary, ensure_ascii=False))
   }
 }
 
-async function buildSingleFileSummary(file: any): Promise<string> {
+// [2026-05-24] 类型安全：any → DbRow
+async function buildSingleFileSummary(file: DbRow): Promise<string> {
   const relPath = String(file.storage_path || '');
   const filePath = absStoragePath(relPath);
   const ext = String(file.extension || '').toLowerCase();

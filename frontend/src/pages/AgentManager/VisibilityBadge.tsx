@@ -6,7 +6,7 @@ import { Eye, EyeOff } from 'lucide-react';
 
 export function VisibilityBadge({ visibility }: { visibility?: string }) {
   const v = visibility || 'private';
-  const config: Record<string, { icon: any; label: string; bg: string; color: string }> = {
+  const config: Record<string, { icon: React.ComponentType<{ size?: number }>; label: string; bg: string; color: string }> = { // [2026-05-24] 类型安全
     private: { icon: EyeOff, label: '私有', bg: '#f3f4f6', color: '#6b7280' },
     public:  { icon: Eye,    label: '公开', bg: '#dcfce7', color: '#16a34a' },
     template:{ icon: Eye,    label: '模板', bg: '#dbeafe', color: '#2563eb' },

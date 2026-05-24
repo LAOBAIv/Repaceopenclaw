@@ -11,7 +11,7 @@
  * 2. 其余会话按 last_message_at 倒序（最近活跃的在左）
  */
 
-import { Conversation, Message } from "../../types";
+import { Agent, Conversation, Message } from "../../types";
 import { conversationsApi } from "../../api/conversations";
 
 // 平台助手 / 微信助手 ID 集合
@@ -71,7 +71,8 @@ export interface RestoreResult {
 export async function buildPanelAndTab(
   convId: string,
   conv: Conversation | undefined,
-  agents: any[],
+  // [2026-05-24] 类型安全
+  agents: Agent[],
   onCacheUpdate?: (convId: string, messages: Message[]) => void
 ): Promise<{ panel: PanelData; tab: TabData } | null> {
   let messages: Message[] = [];
@@ -94,7 +95,8 @@ export async function buildPanelAndTab(
   if (!messages || messages.length === 0) return null;
 
   const agentId = conv?.currentAgentId || conv?.agentId || conv?.agentIds?.[0] || '';
-  const agent = agents.find((a: any) => a.id === agentId);
+  // [2026-05-24] 类型安全
+  const agent = agents.find((a: Agent) => a.id === agentId);
   const agentName = agent?.name || conv?.title || '会话';
   const agentColor = agent?.color || '#6366f1';
 
@@ -131,7 +133,8 @@ export async function buildPanelAndTab(
  * 4. 一次性设置，不分批加载
  */
 export async function restoreTabs(
-  agents: any[],
+  // [2026-05-24] 类型安全
+  agents: Agent[],
   onCacheUpdate: (convId: string, messages: Message[]) => void
 ): Promise<RestoreResult> {
   // 并行获取：所有进行中会话 + 微信助手

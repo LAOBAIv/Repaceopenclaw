@@ -196,8 +196,9 @@ export async function restartGateway(): Promise<void> {
     logger.info('[ConfigSync] Restarting Gateway...');
     await execAsync('openclaw gateway restart');
     logger.info('[ConfigSync] Gateway restarted successfully');
-  } catch (error: any) {
-    logger.error('[ConfigSync] Gateway restart failed:', error.message);
+  // [2026-05-24] 类型安全：any → unknown
+  } catch (error: unknown) {
+    logger.error('[ConfigSync] Gateway restart failed', { message: (error as Error).message });
     // 不抛异常，允许注册继续（下次重启自动生效）
   }
 }

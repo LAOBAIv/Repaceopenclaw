@@ -7,6 +7,16 @@
 import React from 'react';
 import { createPortal } from 'react-dom';
 
+// [2026-05-24] 类型安全
+interface TabItem {
+  id: string;
+  type: string;
+  title: string;
+  panelId: string | null;
+  color?: string;
+  agentId?: string;
+}
+
 /**
  * TabBar — 浏览器风格多标签栏
  *
@@ -51,7 +61,7 @@ export function TabBar({
   onSwitchModel,
   onWechatTabClick,
 }: {
-  allTabs: any[];
+  allTabs: TabItem[]; // [2026-05-24] 类型安全
   storeActiveId: string | null;
   editingTabId: string | null;
   editingTabTitle: string;
@@ -60,8 +70,8 @@ export function TabBar({
   modelDropdownTabId: string | null;
   modelDropdownRef: React.RefObject<HTMLDivElement | null>;
   availableModels: { id: string; label: string; provider: string }[];
-  agents: any[];
-  onTabClick: (tab: any) => void;
+  agents: { id: string; modelName?: string; name?: string; color?: string }[]; // [2026-05-24] 类型安全
+  onTabClick: (tab: TabItem) => void; // [2026-05-24] 类型安全
   onTabClose: (tabId: string) => void;
   onRenameStart: (tabId: string, title: string) => void;
   onRenameConfirm: (tabId: string, newTitle: string) => void;

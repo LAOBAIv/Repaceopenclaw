@@ -1,6 +1,7 @@
 import { Router, Request, Response } from "express";
 import { ProjectService, WorkflowNode } from "../services/ProjectService";
 import { getDb, saveDb } from "../db/client";
+import type { DbLike } from "../db/sqlite-compat"; // [2026-05-24] 类型安全
 import { v4 as uuidv4 } from "uuid";
 import { z } from "zod";
 import { authenticate } from "../middleware/auth";
@@ -53,11 +54,11 @@ const DocumentUpdateSchema = z.object({
 // ── Document version history (P1-3) ─────────────────────────────────────────
 // Must be before /documents/:docId to avoid Express mis-routing "versions" as docId
 
-function execToRows(db: any, sql: string, params?: any[]): any[] {
+function execToRows(db: DbLike, sql: string, params?: unknown[]): Record<string, unknown>[] { // [2026-05-24] 类型安全
   const result = params ? db.exec(sql, params) : db.exec(sql);
   if (!result.length) return [];
   const cols = result[0].columns;
-  return result[0].values.map((row: any[]) => {
+  return result[0].values.map((row: unknown[]) => { // [2026-05-24] 类型安全
     const obj: Record<string, unknown> = {}; // [2026-05-24] 类型安全：any → Record<string, unknown>
     cols.forEach((c: string, i: number) => (obj[c] = row[i]));
     return obj;

@@ -35,7 +35,8 @@ export interface GatewayMessage {
 }
 
 // ─── HTTP 请求封装 ──────────────────────────────────────────────────────
-function gatewayFetch(path: string, body: any): Promise<any> {
+// [2026-05-24] 类型安全：any → unknown
+function gatewayFetch(path: string, body: unknown): Promise<unknown> {
   return new Promise((resolve, reject) => {
     const url = new URL(`${GATEWAY_URL}${path}`);
     const payload = JSON.stringify(body);

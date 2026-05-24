@@ -37,8 +37,8 @@ export function AgentChannelOverview() {
         apiClient.get('/models'), apiClient.get('/model-providers'),
       ]);
       const provs = pRes.data?.data || [];
-      const list = (mRes.data?.data || []).filter((m: any) => m.enabled).map((m: any) => {
-        const p = provs.find((x: any) => x.id === m.providerId);
+      const list = (mRes.data?.data || []).filter((m: { enabled?: boolean }) => m.enabled).map((m: { providerId?: string; name?: string }) => { // [2026-05-24] 类型安全
+        const p = provs.find((x: { id?: string; name?: string }) => x.id === m.providerId);
         return { id: `${p?.name || ''}/${m.name}`, label: m.name, provider: p?.name || '' };
       });
       setModels(list);
@@ -53,7 +53,7 @@ export function AgentChannelOverview() {
       await apiClient.put(`/agents/channel/${ocAgentId}/model`, { model: editModel || 'auto' });
       setEditId(null);
       await load();
-    } catch (err: any) { alert('保存失败: ' + (err?.response?.data?.error || err.message)); }
+    } catch (err: unknown) { alert('保存失败: ' + ((err as any)?.response?.data?.error || (err as Error).message)); } // [2026-05-24] 类型安全
     finally { setSaving(false); }
   }
 
@@ -134,7 +134,7 @@ export function AgentChannelOverview() {
                       <span style={{ fontSize: 12, color: '#334155' }}>
                         <b>{ch.rcAgentCount}</b> 个智能体
                         <span style={{ color: '#9ca3af', marginLeft: 6 }}>
-                          {new Set(ch.rcAgents.map((a: any) => a.userId).filter(Boolean)).size} 个用户
+                          {new Set(ch.rcAgents.map((a: { userId?: string }) => a.userId).filter(Boolean)).size} 个用户 // [2026-05-24] 类型安全
                         </span>
                       </span>
                     )}

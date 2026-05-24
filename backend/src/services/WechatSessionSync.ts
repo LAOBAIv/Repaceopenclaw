@@ -52,14 +52,15 @@ function parseSessionsJson(): Map<string, SessionEntry> {
     for (const [key, val] of Object.entries(data)) {
       if (!key.includes('openclaw-weixin')) continue;
 
-      const entry = val as any;
+      // [2026-05-24] 类型安全：any → Record<string, unknown>
+      const entry = val as Record<string, unknown>;
       sessions.set(key, {
         sessionKey: key,
-        sessionId: entry.sessionId || '',
-        sessionFile: entry.sessionFile || '',
-        updatedAt: entry.updatedAt || 0,
-        lastChannel: entry.lastChannel,
-        provider: entry.origin?.provider || entry.provider,
+        sessionId: (entry.sessionId as string) || '',
+        sessionFile: (entry.sessionFile as string) || '',
+        updatedAt: (entry.updatedAt as number) || 0,
+        lastChannel: entry.lastChannel as string | undefined,
+        provider: ((entry.origin as Record<string, unknown> | undefined)?.provider as string) || (entry.provider as string),
       });
     }
   } catch (err) {
@@ -96,8 +97,10 @@ function parseSessionFile(filePath: string): Array<{
           content = msg.content;
         } else if (Array.isArray(msg.content)) {
           content = msg.content
-            .filter((c: any) => c.type === 'text')
-            .map((c: any) => c.text)
+            // [2026-05-24] 类型安全：any → unknown
+            .filter((c: unknown) => (c as Record<string, unknown>).type === 'text')
+            // [2026-05-24] 类型安全：any → unknown
+            .map((c: unknown) => (c as Record<string, unknown>).text as string)
             .join('');
         }
 

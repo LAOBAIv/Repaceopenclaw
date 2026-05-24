@@ -48,7 +48,7 @@ function getLogFilePath(): string {
 
 function format(level: LogLevel, message: string, meta?: Record<string, any>): string {
   const ts = new Date().toISOString();
-  const entry: any = { level, timestamp: ts, message };
+  const entry: Record<string, unknown> = { level, timestamp: ts, message }; // [2026-05-24] 类型安全
 
   // 自动注入 requestId（如果上下文中有）
   if (globalThis.__requestId) entry.requestId = globalThis.__requestId;
@@ -61,7 +61,7 @@ function format(level: LogLevel, message: string, meta?: Record<string, any>): s
 
 // 敏感字段脱敏
 const SENSITIVE_KEYS = ["password", "api_key", "apikey", "token", "secret", "authorization", "password_hash"];
-function sanitize(obj: any): any {
+function sanitize(obj: unknown): unknown { // [2026-05-24] 类型安全
   if (!obj || typeof obj !== "object") return obj;
   const sanitized = { ...obj };
   for (const key of Object.keys(sanitized)) {

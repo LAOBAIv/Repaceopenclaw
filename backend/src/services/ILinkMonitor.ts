@@ -98,7 +98,9 @@ function apiPost(baseUrl: string, endpoint: string, body: string, token?: string
 }
 
 // ── iLink API ─────────────────────────────────────────────────
-async function getUpdates(config: ILinkConfig, syncBuf: string): Promise<any> {
+// [2026-05-24] 类型安全：any → unknown
+// [2026-05-24] 类型安全：any → unknown
+async function getUpdates(config: ILinkConfig, syncBuf: string): Promise<unknown> {
   const body = JSON.stringify({ get_updates_buf: syncBuf, base_info: buildBaseInfo() });
   const raw = await apiPost(config.baseUrl, 'ilink/bot/getupdates', body, config.token, LONG_POLL_TIMEOUT_MS + 5000);
   return JSON.parse(raw);
@@ -106,7 +108,8 @@ async function getUpdates(config: ILinkConfig, syncBuf: string): Promise<any> {
 
 export async function sendMessage(config: ILinkConfig, toUserId: string, text: string, contextToken?: string): Promise<boolean> {
   // [2026-05-18] 修复：必须使用 message_type=2(BOT) + message_state=2(FINISH) + client_id + context_token
-  const msgPayload: any = {
+  // [2026-05-24] 类型安全：any → Record<string, unknown>
+  const msgPayload: Record<string, unknown> = {
     from_user_id: '',
     to_user_id: toUserId,
     client_id: `rc-${Date.now()}`,
@@ -145,7 +148,8 @@ export async function sendTyping(config: ILinkConfig, ilinkUserId: string, typin
 }
 
 // [2026-05-18] 获取 bot config（含 typing_ticket）
-async function getConfig(config: ILinkConfig, ilinkUserId: string, contextToken?: string): Promise<any> {
+// [2026-05-24] 类型安全：any → unknown
+async function getConfig(config: ILinkConfig, ilinkUserId: string, contextToken?: string): Promise<unknown> {
   const body = JSON.stringify({
     ilink_user_id: ilinkUserId,
     context_token: contextToken || '',
@@ -163,12 +167,14 @@ async function getConfig(config: ILinkConfig, ilinkUserId: string, contextToken?
  *   2. 用 AES-128-ECB 解密
  *   3. 转为 base64 data URL
  */
-async function downloadImageAsBase64(config: ILinkConfig, imageItem: any): Promise<string | null> {
+// [2026-05-24] 类型安全：any → unknown
+async function downloadImageAsBase64(config: ILinkConfig, imageItem: unknown): Promise<string | null> {
   try {
+    const item = imageItem as Record<string, unknown>;
     // 调试：打印完整的 image_item 结构
     logger.info(`[iLink] image_item structure: ${JSON.stringify(imageItem).slice(0, 500)}`);
 
-    const media = imageItem.media;
+    const media = item.media as Record<string, unknown> | undefined;
     if (!media) {
       logger.warn('[iLink] No media field in image_item');
       return null;
@@ -177,10 +183,10 @@ async function downloadImageAsBase64(config: ILinkConfig, imageItem: any): Promi
     // 获取下载 URL
     let downloadUrl = '';
     if (media.full_url) {
-      downloadUrl = media.full_url;
+      downloadUrl = media.full_url as string;
     } else if (media.encrypt_query_param) {
       // 拼接 CDN 下载 URL
-      downloadUrl = `${config.baseUrl}/download?encrypted_query_param=${encodeURIComponent(media.encrypt_query_param)}`;
+      downloadUrl = `${config.baseUrl}/download?encrypted_query_param=${encodeURIComponent(media.encrypt_query_param as string)}`;
     }
 
     if (!downloadUrl) {
@@ -190,11 +196,11 @@ async function downloadImageAsBase64(config: ILinkConfig, imageItem: any): Promi
 
     // 获取 AES 密钥
     let aesKeyBase64 = '';
-    if (imageItem.aeskey) {
+    if (item.aeskey) {
       // aeskey 是 hex 格式，转为 base64
-      aesKeyBase64 = Buffer.from(imageItem.aeskey, 'hex').toString('base64');
+      aesKeyBase64 = Buffer.from(item.aeskey as string, 'hex').toString('base64');
     } else if (media.aes_key) {
-      aesKeyBase64 = media.aes_key;
+      aesKeyBase64 = media.aes_key as string;
     }
 
     logger.info(`[iLink] Downloading image: url=${downloadUrl.slice(0, 80)}... hasAesKey=${!!aesKeyBase64}`);
@@ -302,22 +308,25 @@ function downloadImage(imageUrl: string): Promise<string> {
 }
 
 // ── 消息处理 ──────────────────────────────────────────────────
-async function handleIncomingMessage(config: ILinkConfig, msg: any): Promise<void> {
-  const fromUserId = msg.from_user_id;
+// [2026-05-24] 类型安全：any → unknown
+async function handleIncomingMessage(config: ILinkConfig, msg: unknown): Promise<void> {
+  const m = msg as Record<string, unknown>;
+  const fromUserId = m.from_user_id as string | undefined;
   if (!fromUserId) return;
 
   // [2026-05-18] 提取 context_token，回复时必须带回
-  const contextToken = msg.context_token || '';
+  const contextToken = m.context_token || '';
 
   // [2026-05-19] 提取文本和图片内容
   let text = '';
   const imageUrls: string[] = [];
 
-  if (msg.item_list && Array.isArray(msg.item_list)) {
-    for (const item of msg.item_list) {
+  if (m.item_list && Array.isArray(m.item_list)) {
+    for (const item of m.item_list as Array<Record<string, unknown>>) {
       // 文本消息 (type=1)
-      if (item.type === 1 && item.text_item?.text) {
-        text += item.text_item.text;
+      const textItem = item.text_item as Record<string, unknown> | undefined;
+      if (item.type === 1 && textItem?.text) {
+        text += textItem.text as string;
       }
       // 图片消息 (type=2, IMAGE)
       if (item.type === 2 && item.image_item) {
@@ -348,8 +357,8 @@ async function handleIncomingMessage(config: ILinkConfig, msg: any): Promise<voi
   // [2026-05-18] 获取 typing_ticket 并发送 typing 状态
   let typingTicket = '';
   try {
-    const configResp = await getConfig(config, fromUserId, contextToken);
-    typingTicket = configResp?.typing_ticket || '';
+    const configResp = await getConfig(config, fromUserId, contextToken) as Record<string, unknown> | undefined;
+    typingTicket = (configResp?.typing_ticket as string) || '';
   } catch {}
   if (typingTicket) {
     sendTyping(config, fromUserId, typingTicket).catch(() => {});
@@ -358,17 +367,17 @@ async function handleIncomingMessage(config: ILinkConfig, msg: any): Promise<voi
   // 调用现有的 wechatIncoming 处理逻辑
   try {
     const { handleILinkMessage } = await import('../routes/wechatIncoming');
-    const reply = await handleILinkMessage(fromUserId, text, msg.create_time_ms, imageUrls);
+    const reply = await handleILinkMessage(fromUserId, text, m.create_time_ms as number | undefined, imageUrls);
     
     if (reply) {
-      await sendMessage(config, fromUserId, reply, contextToken);
+      await sendMessage(config, fromUserId, reply, contextToken as string | undefined);
       logger.info(`[iLink][RC-ILinkMonitor] Reply sent to ${fromUserId.slice(0, 15)}...`);
     }
   } catch (e: unknown) {
     // [2026-05-24] 类型安全：any → unknown
     logger.error(`[iLink] handleIncomingMessage error: ${getErrorMessage(e)}`);
     // 回复错误信息
-    await sendMessage(config, fromUserId, '⚠️ 系统处理异常，请稍后重试', contextToken);
+    await sendMessage(config, fromUserId, '⚠️ 系统处理异常，请稍后重试', contextToken as string | undefined);
   }
 }
 
@@ -399,24 +408,25 @@ export async function startILinkMonitor(): Promise<void> {
   while (isRunning && !abortController.signal.aborted) {
     try {
       logger.info(`[iLink] Polling... (syncBuf=${syncBuf ? syncBuf.length + 'chars' : 'empty'})`);
-      const resp = await getUpdates(config, syncBuf);
+      const resp = await getUpdates(config, syncBuf) as Record<string, unknown>;
 
       // 更新 sync buf
       if (resp.get_updates_buf) {
-        syncBuf = resp.get_updates_buf;
+        syncBuf = resp.get_updates_buf as string;
         saveSyncBuf(syncBuf);
       }
 
       consecutiveFailures = 0;
 
       // 处理消息
-      const messages = resp.msgs || [];
+      const messages = (resp.msgs as Array<Record<string, unknown>>) || [];
       logger.info(`[iLink] Poll returned: ${messages.length} messages`);
       updatePollStatus(messages.length);
       for (const msg of messages) {
         // [2026-05-18] bot 的真实 ID 是 to_user_id 中的 @im.bot 地址
         // 如果 from_user_id 包含 @im.bot，说明是 bot 自己发的消息，跳过
-        if (msg.from_user_id && msg.from_user_id.includes('@im.bot')) {
+        const fromId = msg.from_user_id as string | undefined;
+        if (fromId && fromId.includes('@im.bot')) {
           continue;
         }
         await handleIncomingMessage(config, msg);

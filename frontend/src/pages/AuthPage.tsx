@@ -80,8 +80,10 @@ export function AuthPage() {
       clearAllRcStorage();
       // 强制刷新页面，store 用新用户的 auth 重新初始化
       window.location.replace(fromPath);
-    } catch (err: any) {
-      setError(err.response?.data?.error || "操作失败，请重试");
+    } catch (err: unknown) { // [2026-05-24] 类型安全
+      const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error
+        || (err as { message?: string })?.message || '操作失败，请重试';
+      setError(msg);
     } finally {
       setLoading(false);
     }
@@ -92,7 +94,8 @@ export function AuthPage() {
     setQrLoading(true);
     setError('');
     try {
-      const res: any = await apiClient.post('/wechat-clawbot/qrcode');
+      interface WechatQrRes { data?: { data?: { qrcode_url?: string; qrcode?: string } } }
+      const res: WechatQrRes = await apiClient.post('/wechat-clawbot/qrcode');
       const d = res.data?.data;
       if (!d?.qrcode_url) { setError('获取二维码失败'); setQrLoading(false); return; }
       setQrcodeUrl(d.qrcode_url);
@@ -101,14 +104,17 @@ export function AuthPage() {
       // 轮询扫码状态
       qrPollRef.current = setInterval(async () => {
         try {
-          const r: any = await apiClient.post('/wechat-clawbot/qrcode/status', { qrcode: qrToken });
+          interface WechatQrStatusRes { data?: { data?: { status?: string; credentials?: { ilink_user_id?: string } } } }
+          const r: WechatQrStatusRes = await apiClient.post('/wechat-clawbot/qrcode/status', { qrcode: qrToken });
           const status = r.data?.data?.status;
           if (status === 'confirmed') {
             const ilinkUserId = r.data?.data?.credentials?.ilink_user_id;
             if (ilinkUserId) {
               // 调用后端扫码登录接口
-              const loginRes: any = await apiClient.post('/auth/wechat/callback', { openid: ilinkUserId });
-              const loginData = loginRes.data?.data || loginRes.data;
+              interface WechatLoginData { token?: string; user?: unknown }
+              interface WechatLoginRes { data?: WechatLoginData }
+              const loginRes: WechatLoginRes = await apiClient.post('/auth/wechat/callback', { openid: ilinkUserId });
+              const loginData = loginRes.data;
               if (loginData?.token && loginData?.user) {
                 login(loginData.user, loginData.token);
                 sessionStorage.setItem('repaceclaw-auth', JSON.stringify({
@@ -135,7 +141,7 @@ export function AuthPage() {
         if (qrPollRef.current) { clearInterval(qrPollRef.current); qrPollRef.current = null; }
         setShowQrcode(false);
       }, 180000);
-    } catch (e: any) {
+    } catch (e: unknown) { // [2026-05-24] 类型安全
       setError('获取微信二维码失败');
     } finally {
       setQrLoading(false);

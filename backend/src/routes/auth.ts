@@ -1,5 +1,5 @@
 import { Router, Request, Response } from "express";
-import { UserService } from "../services/UserService";
+import { UserService, User } from "../services/UserService";
 import { authenticate, requireRole } from "../middleware/auth";
 import { AuditService } from "../services/AuditService";
 import { ConversationService } from "../services/ConversationService";
@@ -151,7 +151,7 @@ router.put("/password", authenticate, async (req: Request, res: Response) => {
 router.get("/members", authenticate, (_req: Request, res: Response) => {
   const users = UserService.listUsers();
   // 只返回安全字段，不暴露密码哈希
-  const safeUsers = users.map((u: any) => ({
+  const safeUsers = users.map((u: User) => ({ // [2026-05-24] 类型安全
     id: u.id,
     username: u.username,
     email: u.email,

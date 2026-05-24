@@ -40,14 +40,14 @@ export function useTabs() {
       try {
         const authRaw = sessionStorage.getItem('repaceclaw-auth') || localStorage.getItem('repaceclaw-auth');
         const token = authRaw ? JSON.parse(authRaw)?.state?.token : '';
-        const headers: any = token ? { Authorization: `Bearer ${token}` } : {};
+        const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {}; // [2026-05-24] 类型安全
         const [mRes, pRes] = await Promise.all([
           fetch('/api/models', { headers }).then(r => r.json()),
           fetch('/api/model-providers', { headers }).then(r => r.json()),
         ]);
         const provs = pRes.data || [];
-        const models = (mRes.data || []).filter((m: any) => m.enabled).map((m: any) => {
-          const prov = provs.find((p: any) => p.id === m.providerId);
+        const models = (mRes.data || []).filter((m: Record<string, unknown>) => m.enabled).map((m: Record<string, unknown>) => { // [2026-05-24] 类型安全
+          const prov = provs.find((p: Record<string, unknown>) => p.id === m.providerId); // [2026-05-24] 类型安全
           return { id: m.name, label: `${m.name} · ${prov?.name || ''}`, provider: prov?.name || '' };
         });
         setAvailableModels([{ id: 'auto', label: '自动选择', provider: 'auto' }, ...models]);

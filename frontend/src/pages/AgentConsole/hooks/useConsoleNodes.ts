@@ -5,10 +5,11 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { useProjectStore } from '@/stores/projectStore';
-import { Agent } from '@/types';
+import { Agent, Project } from '@/types';
 import { makeDefaultNode } from '../constants';
 import type { FlowNode, NodeType } from '../constants';
 import { showToast } from '@/components/Toast';
+import type { ConsoleEditTask, ConsoleEditProject } from './useConsoleState'; // [2026-05-24] 类型安全
 
 export interface ConsoleNodesReturn {
   nodes: FlowNode[];
@@ -28,9 +29,9 @@ export interface ConsoleNodesReturn {
 
 export function useConsoleNodes(
   agentList: Agent[],
-  editTask: any,
-  editProject: any,
-  backendProjects: any[],
+  editTask: ConsoleEditTask | null, // [2026-05-24] 类型安全
+  editProject: ConsoleEditProject | null, // [2026-05-24] 类型安全
+  backendProjects: Project[], // [2026-05-24] 类型安全
 ): ConsoleNodesReturn {
   const [nodes, setNodes] = useState<FlowNode[]>(() => [makeDefaultNode()]);
 
@@ -59,12 +60,12 @@ export function useConsoleNodes(
     const backendMatch = backendProjects.find(p => p.title === editProject.title);
     if (backendMatch?.workflowNodes?.length) {
       // 把后端 workflowNodes 转成前端 FlowNode 格式
-      const restored: FlowNode[] = backendMatch.workflowNodes.map((n: any) => ({
-        id: n.id,
-        name: n.name,
-        nodeType: n.nodeType as 'serial' | 'parallel',
-        agentIds: n.agentIds,
-        desc: n.taskDesc ?? '',
+      const restored: FlowNode[] = backendMatch.workflowNodes.map((n: unknown) => ({ // [2026-05-24] 类型安全
+        id: (n as { id: string }).id,
+        name: (n as { name: string }).name,
+        nodeType: (n as { nodeType: string }).nodeType as 'serial' | 'parallel',
+        agentIds: (n as { agentIds: string[] }).agentIds,
+        desc: (n as { taskDesc?: string }).taskDesc ?? '',
       }));
       setNodes(restored);
       editProjectNodesInitialized.current = true;

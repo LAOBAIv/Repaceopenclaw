@@ -31,36 +31,36 @@ export interface Model {
   createdAt: string;
 }
 
-function rowToProvider(r: any): ModelProvider {
+function rowToProvider(r: Record<string, unknown>): ModelProvider { // [2026-05-24] 类型安全
   return {
-    id: r.id,
-    name: r.name,
-    baseUrl: r.base_url,
-    apiFormat: r.api_format || "openai",
-    apiKey: r.api_key || "",
-    enabled: !!r.enabled,
-    priority: r.priority ?? 0,
-    description: r.description || "",
-    createdAt: r.created_at,
-    updatedAt: r.updated_at,
+    id: r['id'] as string,
+    name: r['name'] as string,
+    baseUrl: r['base_url'] as string,
+    apiFormat: ((r['api_format'] as string) || "openai") as "openai" | "anthropic" | "gemini", // [2026-05-24] 类型安全
+    apiKey: (r['api_key'] as string) || "",
+    enabled: !!r['enabled'],
+    priority: (r['priority'] as number) ?? 0,
+    description: (r['description'] as string) || "",
+    createdAt: r['created_at'] as string,
+    updatedAt: r['updated_at'] as string,
   };
 }
 
-function rowToModel(r: any): Model {
+function rowToModel(r: Record<string, unknown>): Model { // [2026-05-24] 类型安全
   return {
-    id: r.id,
-    providerId: r.provider_id,
-    providerName: r.provider_name || "",
-    name: r.name,
-    displayName: r.display_name || r.name,
-    contextWindow: r.context_window ?? 128000,
-    maxTokens: r.max_tokens ?? 8192,
-    costInput: r.cost_input ?? 0,
-    costOutput: r.cost_output ?? 0,
-    capabilities: JSON.parse(r.capabilities || '["text"]'),
-    enabled: !!r.enabled,
-    description: r.description || "",
-    createdAt: r.created_at,
+    id: r['id'] as string,
+    providerId: r['provider_id'] as string,
+    providerName: (r['provider_name'] as string) || "",
+    name: r['name'] as string,
+    displayName: (r['display_name'] as string) || (r['name'] as string),
+    contextWindow: (r['context_window'] as number) ?? 128000,
+    maxTokens: (r['max_tokens'] as number) ?? 8192,
+    costInput: (r['cost_input'] as number) ?? 0,
+    costOutput: (r['cost_output'] as number) ?? 0,
+    capabilities: JSON.parse((r['capabilities'] as string) || '["text"]'),
+    enabled: !!r['enabled'],
+    description: (r['description'] as string) || "",
+    createdAt: r['created_at'] as string,
   };
 }
 
@@ -108,7 +108,7 @@ export const ModelService = {
     const existing = this.getProvider(id);
     if (!existing) return null;
     const fields: string[] = [];
-    const values: any[] = [];
+    const values: unknown[] = []; // [2026-05-24] 类型安全：any → unknown
     if (data.name !== undefined) { fields.push("name=?"); values.push(data.name); }
     if (data.baseUrl !== undefined) { fields.push("base_url=?"); values.push(data.baseUrl); }
     if (data.apiFormat !== undefined) { fields.push("api_format=?"); values.push(data.apiFormat); }
@@ -177,7 +177,7 @@ export const ModelService = {
     const existing = this.getModel(id);
     if (!existing) return null;
     const fields: string[] = [];
-    const values: any[] = [];
+    const values: unknown[] = []; // [2026-05-24] 类型安全：any → unknown
     if (data.providerId !== undefined) { fields.push("provider_id=?"); values.push(data.providerId); }
     if (data.name !== undefined) { fields.push("name=?"); values.push(data.name); }
     if (data.displayName !== undefined) { fields.push("display_name=?"); values.push(data.displayName); }

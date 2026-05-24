@@ -9,6 +9,7 @@
  */
 import { X, Check, KeyRound, Copy } from 'lucide-react';
 import type { CodeChannel, CodeModel } from './types';
+import type { TokenChannel } from '@/api/tokenChannels';
 import { BADGE_COLOR } from './constants';
 import { AUTH_TYPE_LABEL } from './utils';
 
@@ -18,7 +19,8 @@ interface TokenModalProps {
   onConfirm: () => void;
   selectedChannel: CodeChannel;
   hasBackendKey: boolean;
-  presetChannel: any;
+  // [2026-05-24] 类型安全
+  presetChannel: TokenChannel | null;
   // 弹窗内临时状态
   tempTokenValue: string;
   onTempTokenValueChange: (v: string) => void;

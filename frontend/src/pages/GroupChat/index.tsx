@@ -53,7 +53,7 @@ export default function GroupChat() {
       .then(r => r.json())
       .then(res => {
         if (res.data) {
-          const agents = res.data.map((a: any) => ({
+          const agents = res.data.map((a: { id: string; name?: string; title?: string }) => ({ // [2026-05-24] 类型安全
             id: a.id,
             name: a.name || a.title || 'Agent',
             avatar: '🤖',

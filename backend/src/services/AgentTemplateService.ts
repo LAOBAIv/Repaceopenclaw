@@ -1,5 +1,6 @@
 import { v4 as uuidv4 } from "uuid";
 import { getDb, saveDb } from "../db/client";
+import { DbRow } from "./AgentService"; // [2026-05-24] 类型安全
 
 function categoryToAgentType(category?: string): string {
   switch (category) {
@@ -44,21 +45,23 @@ export interface AgentTemplate {
   createdAt: string;
 }
 
-function rowToTemplate(obj: any): AgentTemplate {
+// [2026-05-24] 类型安全：any → DbRow（unknown 索引签名需断言）
+function rowToTemplate(obj: DbRow): AgentTemplate {
+  const r = obj as Record<string, unknown>;
   return {
-    id: obj.id,
-    name: obj.name,
-    category: obj.category,
-    emoji: obj.emoji,
-    color: obj.color,
-    vibe: obj.vibe,
-    description: obj.description,
-    systemPrompt: obj.system_prompt,
-    writingStyle: obj.writing_style,
-    expertise: JSON.parse(obj.expertise || "[]"),
-    outputFormat: obj.output_format,
-    githubSource: obj.github_source,
-    createdAt: obj.created_at,
+    id: r.id as string,
+    name: r.name as string,
+    category: r.category as string,
+    emoji: r.emoji as string,
+    color: r.color as string,
+    vibe: r.vibe as string,
+    description: (r.description as string) || '',
+    systemPrompt: (r.system_prompt as string) || '',
+    writingStyle: (r.writing_style as string) || '',
+    expertise: JSON.parse((r.expertise as string) || "[]"),
+    outputFormat: (r.output_format as string) || '',
+    githubSource: (r.github_source as string) || '',
+    createdAt: r.created_at as string,
   };
 }
 
@@ -74,8 +77,8 @@ export const AgentTemplateService = {
     if (!result.length) return [];
     const cols = result[0].columns;
     return result[0].values.map((row) => {
-      // [2026-05-24] 类型安全：any → Record<string, unknown>
-      const obj: Record<string, unknown> = {};
+      // [2026-05-24] 类型安全：any → DbRow
+      const obj: DbRow = {};
       cols.forEach((c, i) => (obj[c] = row[i]));
       return rowToTemplate(obj);
     });
@@ -87,8 +90,8 @@ export const AgentTemplateService = {
     const result = db.exec("SELECT * FROM agent_templates WHERE id = ?", [id]);
     if (!result.length || !result[0].values.length) return null;
     const cols = result[0].columns;
-    // [2026-05-24] 类型安全：any → Record<string, unknown>
-    const obj: Record<string, unknown> = {};
+    // [2026-05-24] 类型安全：any → DbRow
+    const obj: DbRow = {};
     cols.forEach((c, i) => (obj[c] = result[0].values[0][i]));
     return rowToTemplate(obj);
   },
@@ -102,7 +105,8 @@ export const AgentTemplateService = {
   },
 
   /** 基于模板创建真实 Agent */
-  createAgentFromTemplate(templateId: string, overrides: Record<string, any>): any {
+  // [2026-05-24] 类型安全：any → unknown
+  createAgentFromTemplate(templateId: string, overrides: Record<string, unknown>): unknown {
     const template = this.getById(templateId);
     if (!template) throw new Error("Template not found");
 
@@ -166,7 +170,8 @@ export const AgentTemplateService = {
 
     const db = getDb();
     const updates: string[] = [];
-    const values: any[] = [];
+    // [2026-05-24] 类型安全：any → unknown
+    const values: unknown[] = [];
 
     if (data.name !== undefined) { updates.push("name = ?"); values.push(data.name); }
     if (data.category !== undefined) { updates.push("category = ?"); values.push(data.category); }
