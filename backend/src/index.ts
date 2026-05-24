@@ -54,7 +54,7 @@ async function main(): Promise<void> {
     logger.info(`[AgentBridge] Sync result: ${report.registered}/${report.total} registered, ${report.errors.length} errors`);
   } catch (err: unknown) {
     // [2026-05-24] 类型安全：any → unknown
-    logger.error('[AgentBridge] Startup sync failed:', getErrorMessage(err));
+    logger.error('[AgentBridge] Startup sync failed: ' + getErrorMessage(err));
   }
 
   // 1.6 初始化 OpenClaw Gateway WebSocket 客户端

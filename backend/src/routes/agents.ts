@@ -138,10 +138,10 @@ router.get(
             );
             if (modelRows.length && modelRows[0].values.length) {
               const cols = modelRows[0].columns;
-              const row: any = {};
+              const row: Record<string, unknown> = {}; // [2026-05-24] 类型安全：any → Record<string, unknown>
               modelRows[0].values[0].forEach((v: any, i: number) => { row[cols[i]] = v; });
-              effectiveChannel = row.provider_name || "未知";
-              effectiveModel = row.model_name || agentModelName;
+              effectiveChannel = (row.provider_name as string) || "未知";
+              effectiveModel = (row.model_name as string) || agentModelName;
               source = "global";
             } else {
               effectiveChannel = "openclaw";

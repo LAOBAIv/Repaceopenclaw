@@ -74,7 +74,8 @@ export const AgentTemplateService = {
     if (!result.length) return [];
     const cols = result[0].columns;
     return result[0].values.map((row) => {
-      const obj: any = {};
+      // [2026-05-24] 类型安全：any → Record<string, unknown>
+      const obj: Record<string, unknown> = {};
       cols.forEach((c, i) => (obj[c] = row[i]));
       return rowToTemplate(obj);
     });
@@ -86,7 +87,8 @@ export const AgentTemplateService = {
     const result = db.exec("SELECT * FROM agent_templates WHERE id = ?", [id]);
     if (!result.length || !result[0].values.length) return null;
     const cols = result[0].columns;
-    const obj: any = {};
+    // [2026-05-24] 类型安全：any → Record<string, unknown>
+    const obj: Record<string, unknown> = {};
     cols.forEach((c, i) => (obj[c] = result[0].values[0][i]));
     return rowToTemplate(obj);
   },

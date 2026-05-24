@@ -6,16 +6,17 @@ import { dbConfig } from "./config";
 import { IdGenerator } from "../utils/IdGenerator";
 import { SqliteCompat } from "./sqlite-compat";
 import logger from "../utils/logger";
+import { getErrorMessage } from "../types/ilink";
 
 /** 安全执行 ALTER/CREATE 等幂等 DDL，只静默 "duplicate column" 类错误，其他异常打日志 */
 function safeAlter(db: any, sql: string): void {
   try {
     db.run(sql);
-  } catch (e: any) {
-    const msg = (e?.message || '').toLowerCase();
+  } catch (e: unknown) { // [2026-05-24] 类型安全：any → unknown
+    const msg = (getErrorMessage(e) || '').toLowerCase();
     // SQLite: "duplicate column name" / "already exists"
     if (msg.includes('duplicate column') || msg.includes('already exists')) return;
-    logger.warn(`[DB Migration] DDL failed: ${sql.slice(0, 80)}... | ${e.message}`);
+    logger.warn(`[DB Migration] DDL failed: ${sql.slice(0, 80)}... | ${getErrorMessage(e)}`);
   }
 }
 
@@ -55,7 +56,7 @@ export function execToRows(db: any, sql: string, params?: any[]): any[] {
   if (!result.length) return [];
   const cols = result[0].columns;
   return result[0].values.map((row: any[]) => {
-    const obj: any = {};
+    const obj: Record<string, unknown> = {}; // [2026-05-24] 类型安全：any → Record<string, unknown>
     cols.forEach((c: string, i: number) => (obj[c] = row[i]));
     return obj;
   });

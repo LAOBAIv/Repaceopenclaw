@@ -22,7 +22,7 @@ export function loadAgentSkillsPrompt(agentId: string): string {
 
     const cols = result[0].columns;
     const skills = result[0].values.map((row: any[]) => {
-      const obj: any = {};
+      const obj: Record<string, unknown> = {}; // [2026-05-24] 类型安全：any → Record<string, unknown>
       cols.forEach((c: string, i: number) => (obj[c] = row[i]));
       return obj;
     });

@@ -38,7 +38,8 @@ router.get("/", ...adminOnly, (_req: Request, res: Response) => {
   const rows = !result.length
     ? []
     : result[0].values.map((valueRow: any[]) => {
-        const obj: any = {};
+        // [2026-05-24] 类型安全：any → Record<string, unknown>
+        const obj: Record<string, unknown> = {};
         result[0].columns.forEach((col: string, i: number) => {
           obj[col] = valueRow[i];
         });
@@ -89,7 +90,8 @@ router.get("/", ...adminOnly, (_req: Request, res: Response) => {
   const statsResult = db.exec(statsQuery);
   const stats = statsResult.length
     ? (() => {
-        const s: any = {};
+        // [2026-05-24] 类型安全：any → Record<string, unknown>
+        const s: Record<string, unknown> = {};
         statsResult[0].columns.forEach((col: string, i: number) => {
           s[col] = Number(statsResult[0].values[0][i]);
         });

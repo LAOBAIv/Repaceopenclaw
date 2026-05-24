@@ -186,39 +186,41 @@ function buildWechatAssistantAgent(): Agent {
   }
   const cols = result[0].columns;
   const row = result[0].values[0];
-  const r: any = {};
+  // [2026-05-24] 类型安全：any → Record<string, unknown>
+  const r: Record<string, unknown> = {};
   cols.forEach((c, i) => { r[c] = row[i]; });
+  const d = r as Record<string, any>;
   return {
-    id: r.id,
-    agentCode: r.agent_code || 'rc-wechat-agent',
-    userId: r.user_id || '',
-    name: r.name || '微信助手',
-    color: r.color || '#2563eb',
-    systemPrompt: r.system_prompt || '',
-    writingStyle: r.writing_style || 'professional',
-    expertise: JSON.parse(r.expertise || '[]'),
-    description: r.description || '',
-    status: r.status || 'active',
-    modelName: r.model_name || 'qwen3.6-plus',
-    modelProvider: r.model_provider || 'linkApi',
-    temperature: r.temperature ?? 0.7,
-    maxTokens: r.max_tokens ?? 4096,
-    topP: r.top_p ?? 1,
-    frequencyPenalty: r.frequency_penalty ?? 0,
-    presencePenalty: r.presence_penalty ?? 0,
-    tokenProvider: r.token_provider || '',
-    tokenApiKey: r.token_api_key || '',
-    tokenBaseUrl: r.token_base_url || '',
-    outputFormat: r.output_format || 'Markdown',
-    boundary: r.boundary || '',
-    memoryTurns: r.memory_turns ?? 0,
-    temperatureOverride: r.temperature_override ?? null,
-    tokenUsed: r.token_used ?? 0,
-    visibility: r.visibility || 'public',
-    skillsConfig: JSON.parse(r.skills_config || '{}'),
-    quotaConfig: JSON.parse(r.quota_config || '{}'),
-    openclawAgentId: r.openclaw_agent_id || 'rc-wechat-agent',
-    createdAt: r.created_at,
+    id: d.id,
+    agentCode: d.agent_code || 'rc-wechat-agent',
+    userId: d.user_id || '',
+    name: d.name || '微信助手',
+    color: d.color || '#2563eb',
+    systemPrompt: d.system_prompt || '',
+    writingStyle: d.writing_style || 'professional',
+    expertise: JSON.parse(d.expertise || '[]'),
+    description: d.description || '',
+    status: d.status || 'active',
+    modelName: d.model_name || 'qwen3.6-plus',
+    modelProvider: d.model_provider || 'linkApi',
+    temperature: d.temperature ?? 0.7,
+    maxTokens: d.max_tokens ?? 4096,
+    topP: d.top_p ?? 1,
+    frequencyPenalty: d.frequency_penalty ?? 0,
+    presencePenalty: d.presence_penalty ?? 0,
+    tokenProvider: d.token_provider || '',
+    tokenApiKey: d.token_api_key || '',
+    tokenBaseUrl: d.token_base_url || '',
+    outputFormat: d.output_format || 'Markdown',
+    boundary: d.boundary || '',
+    memoryTurns: d.memory_turns ?? 0,
+    temperatureOverride: d.temperature_override ?? null,
+    tokenUsed: d.token_used ?? 0,
+    visibility: d.visibility || 'public',
+    skillsConfig: JSON.parse(d.skills_config || '{}'),
+    quotaConfig: JSON.parse(d.quota_config || '{}'),
+    openclawAgentId: d.openclaw_agent_id || 'rc-wechat-agent',
+    createdAt: d.created_at,
     isSystem: true,
   };
 }
@@ -261,7 +263,8 @@ export const AgentService = {
     sql += " ORDER BY created_at DESC";
     const result = db.exec(sql, params.length ? params : undefined);
     let agents = !result.length ? [] : result[0].values.map((row) => {
-      const obj: any = {};
+      // [2026-05-24] 类型安全：any → Record<string, unknown>
+      const obj: Record<string, unknown> = {};
       result[0].columns.forEach((c, i) => (obj[c] = row[i]));
       return rowToAgent(obj);
     });
@@ -311,7 +314,8 @@ export const AgentService = {
     if (!result.length || !result[0].values.length) return null;
     const cols = result[0].columns;
     const row = result[0].values[0];
-    const obj: any = {};
+    // [2026-05-24] 类型安全：any → Record<string, unknown>
+    const obj: Record<string, unknown> = {};
     cols.forEach((c, i) => (obj[c] = row[i]));
     return rowToAgent(obj);
   },
@@ -339,7 +343,8 @@ export const AgentService = {
     if (!result.length || !result[0].values.length) return null;
     const cols = result[0].columns;
     const row = result[0].values[0];
-    const obj: any = {};
+    // [2026-05-24] 类型安全：any → Record<string, unknown>
+    const obj: Record<string, unknown> = {};
     cols.forEach((c, i) => (obj[c] = row[i]));
     return rowToAgent(obj);
   },
@@ -356,7 +361,8 @@ export const AgentService = {
     if (!result.length || !result[0].values.length) return null;
     const cols = result[0].columns;
     const row = result[0].values[0];
-    const obj: any = {};
+    // [2026-05-24] 类型安全：any → Record<string, unknown>
+    const obj: Record<string, unknown> = {};
     cols.forEach((c, i) => (obj[c] = row[i]));
     return rowToAgent(obj);
   },

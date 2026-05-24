@@ -7,6 +7,7 @@ import { AuditService } from "../services/AuditService";
 import { logger } from "../utils/logger";
 import { v4 as uuidv4 } from "uuid";
 import { IdGenerator } from "../utils/IdGenerator";
+import { getErrorMessage } from "../types/ilink";
 
 const router = Router();
 
@@ -128,8 +129,9 @@ router.post("/callback", async (req: Request, res: Response) => {
           }
 
           wechatOpenid = data.openid;
-        } catch (err: any) {
-          logger.error(`[WechatLogin] Failed to exchange code for openid: ${err.message}`);
+        } catch (err: unknown) {
+          // [2026-05-24] 类型安全：any → unknown
+          logger.error(`[WechatLogin] Failed to exchange code for openid: ${getErrorMessage(err)}`);
           if (loginState) loginState.status = 'expired';
           return res.status(500).json({ error: "微信授权失败" });
         }
@@ -221,8 +223,9 @@ router.post("/callback", async (req: Request, res: Response) => {
           ConversationService.bindOpenClawSession(conv.id, ocSessionKey, waAgent.id, [waAgent.id]);
           logger.info(`[WechatLogin] Auto-created WeChat assistant conversation for user ${userId}`);
         }
-      } catch (err: any) {
-        logger.error(`[WechatLogin] Failed to create assistant conversation: ${err.message}`);
+      } catch (err: unknown) {
+        // [2026-05-24] 类型安全：any → unknown
+        logger.error(`[WechatLogin] Failed to create assistant conversation: ${getErrorMessage(err)}`);
       }
 
       // 审计日志
@@ -252,8 +255,9 @@ router.post("/callback", async (req: Request, res: Response) => {
         token,
       },
     });
-  } catch (err: any) {
-    logger.error(`[WechatLogin] Callback error: ${err.message}`);
+  } catch (err: unknown) {
+    // [2026-05-24] 类型安全：any → unknown
+    logger.error(`[WechatLogin] Callback error: ${getErrorMessage(err)}`);
     if (loginState) loginState.status = 'expired';
     res.status(500).json({ error: "登录失败" });
   }
@@ -289,7 +293,8 @@ router.post("/bind", async (req: Request, res: Response) => {
       }
 
       wechatOpenid = data.openid;
-    } catch (err: any) {
+    } catch (err: unknown) {
+      // [2026-05-24] 类型安全：any → unknown
       return res.status(500).json({ error: "微信授权失败" });
     }
   }

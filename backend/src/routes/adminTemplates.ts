@@ -2,6 +2,7 @@ import { Router, Request, Response } from "express";
 import { AgentTemplateService } from "../services/AgentTemplateService";
 import { authenticate, requireRole } from "../middleware/auth";
 import { z } from "zod";
+import { getErrorMessage } from "../types/ilink";
 
 const router = Router();
 
@@ -44,8 +45,9 @@ router.post("/", ...adminOnly, (req: Request, res: Response) => {
   try {
     const template = AgentTemplateService.create(parsed.data);
     res.status(201).json({ data: template });
-  } catch (err: any) {
-    res.status(400).json({ error: err.message });
+  } catch (err: unknown) {
+    // [2026-05-24] 类型安全：any → unknown
+    res.status(400).json({ error: getErrorMessage(err) });
   }
 });
 
@@ -56,8 +58,9 @@ router.put("/:id", ...adminOnly, (req: Request, res: Response) => {
   try {
     const updated = AgentTemplateService.update(req.params.id, req.body);
     res.json({ data: updated });
-  } catch (err: any) {
-    res.status(400).json({ error: err.message });
+  } catch (err: unknown) {
+    // [2026-05-24] 类型安全：any → unknown
+    res.status(400).json({ error: getErrorMessage(err) });
   }
 });
 

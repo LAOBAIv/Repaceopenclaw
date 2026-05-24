@@ -9,6 +9,7 @@ import * as http from 'http';
 import * as fs from 'fs';
 import * as path from 'path';
 import { logger } from '../utils/logger';
+import { getErrorMessage } from '../types/ilink';
 
 // ── 配置 ──────────────────────────────────────────────────────
 const ILINK_ACCOUNT_PATH = '/root/.openclaw/openclaw-weixin/accounts/868c6e16ab10-im-bot.json';
@@ -124,8 +125,9 @@ export async function sendMessage(config: ILinkConfig, toUserId: string, text: s
     const resp = await apiPost(config.baseUrl, 'ilink/bot/sendmessage', body, config.token);
     logger.info(`[iLink][RC-ILinkMonitor] sendMessage resp: ${resp.slice(0, 200)}`);
     return true;
-  } catch (e: any) {
-    logger.error(`[iLink] sendMessage failed: ${e.message}`);
+  } catch (e: unknown) {
+    // [2026-05-24] 类型安全：any → unknown
+    logger.error(`[iLink] sendMessage failed: ${getErrorMessage(e)}`);
     return false;
   }
 }
@@ -214,8 +216,9 @@ async function downloadImageAsBase64(config: ILinkConfig, imageItem: any): Promi
     // 转为 base64 data URL
     const base64 = imageBuf.toString('base64');
     return `data:image/jpeg;base64,${base64}`;
-  } catch (e: any) {
-    logger.error(`[iLink] Failed to download/decrypt image: ${e.message}`);
+  } catch (e: unknown) {
+    // [2026-05-24] 类型安全：any → unknown
+    logger.error(`[iLink] Failed to download/decrypt image: ${getErrorMessage(e)}`);
     return null;
   }
 }
@@ -324,8 +327,9 @@ async function handleIncomingMessage(config: ILinkConfig, msg: any): Promise<voi
             imageUrls.push(base64);
             logger.info(`[iLink] Downloaded image from ${fromUserId.slice(0, 15)}...`);
           }
-        } catch (e: any) {
-          logger.error(`[iLink] Image download failed: ${e.message}`);
+        } catch (e: unknown) {
+          // [2026-05-24] 类型安全：any → unknown
+          logger.error(`[iLink] Image download failed: ${getErrorMessage(e)}`);
         }
       }
     }
@@ -360,8 +364,9 @@ async function handleIncomingMessage(config: ILinkConfig, msg: any): Promise<voi
       await sendMessage(config, fromUserId, reply, contextToken);
       logger.info(`[iLink][RC-ILinkMonitor] Reply sent to ${fromUserId.slice(0, 15)}...`);
     }
-  } catch (e: any) {
-    logger.error(`[iLink] handleIncomingMessage error: ${e.message}`);
+  } catch (e: unknown) {
+    // [2026-05-24] 类型安全：any → unknown
+    logger.error(`[iLink] handleIncomingMessage error: ${getErrorMessage(e)}`);
     // 回复错误信息
     await sendMessage(config, fromUserId, '⚠️ 系统处理异常，请稍后重试', contextToken);
   }
@@ -419,16 +424,17 @@ export async function startILinkMonitor(): Promise<void> {
 
       // 正常间隔
       await sleep(100);
-    } catch (e: any) {
-      if (e.message === 'TIMEOUT') {
+    } catch (e: unknown) {
+      // [2026-05-24] 类型安全：any → unknown
+      if (getErrorMessage(e) === 'TIMEOUT') {
         // long-poll 超时是正常的，直接重试
         logger.info('[iLink] Poll timeout, retrying...');
         continue;
       }
 
       consecutiveFailures++;
-      updatePollError(e.message);
-      logger.error(`[iLink] Poll error (${consecutiveFailures}/${MAX_CONSECUTIVE_FAILURES}): ${e.message}`);
+      updatePollError(getErrorMessage(e));
+      logger.error(`[iLink] Poll error (${consecutiveFailures}/${MAX_CONSECUTIVE_FAILURES}): ${getErrorMessage(e)}`);
 
       if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
         logger.error(`[iLink] Too many failures, backing off ${BACKOFF_DELAY_MS}ms`);

@@ -7,6 +7,7 @@ import { authenticate } from "../middleware/auth";
 import { z } from "zod";
 import { broadcastToConversation } from "../ws/wsHandler";
 import { logger } from "../utils/logger";
+import { getErrorMessage } from "../types/ilink";
 
 const router = Router();
 router.use(authenticate);
@@ -230,8 +231,9 @@ router.post("/", (req: Request, res: Response) => {
   let scope;
   try {
     scope = normalizeConversationScope(parsed.data, userId, userRole);
-  } catch (err: any) {
-    return res.status(400).json({ error: err.message || 'scope invalid' });
+  } catch (err: unknown) {
+    // [2026-05-24] 类型安全：any → unknown
+    return res.status(400).json({ error: getErrorMessage(err) || 'scope invalid' });
   }
 
   // 统一成数组(兼容旧版单 agentId 传参)
@@ -315,8 +317,9 @@ router.put("/:id", (req: Request, res: Response) => {
   let scope;
   try {
     scope = normalizeConversationScope({ scopeType, scopeId, memoryPolicy }, userId, userRole);
-  } catch (err: any) {
-    return res.status(400).json({ error: err.message || 'scope invalid' });
+  } catch (err: unknown) {
+    // [2026-05-24] 类型安全：any → unknown
+    return res.status(400).json({ error: getErrorMessage(err) || 'scope invalid' });
   }
   const updated = ConversationService.update(conv.id, { title, projectId, taskId: resolvedTask?.id || undefined, scopeType: scope.scopeType, scopeId: scope.scopeId, memoryPolicy: scope.memoryPolicy, summary });
   if (!updated) return res.status(404).json({ error: "Conversation not found" });
@@ -447,8 +450,9 @@ router.post("/:id/messages", async (req: Request, res: Response) => {
             systemPrompt = `[相关记忆]\n${memoryText}\n\n${systemPrompt}`;
             logger.info(`[Memory Inject] ${memoryContext.length} memories injected for conv=${conv.id}`);
           }
-        } catch (err: any) {
-          logger.warn(`[Memory Inject] Failed to retrieve memories: ${err.message}`);
+        } catch (err: unknown) {
+          // [2026-05-24] 类型安全：any → unknown
+          logger.warn(`[Memory Inject] Failed to retrieve memories: ${getErrorMessage(err)}`);
         }
 
         const historyMessages = ConversationService.getMessages(conv.id);
@@ -545,8 +549,9 @@ router.post("/:id/messages", async (req: Request, res: Response) => {
           break;
         }
       }
-    } catch (err: any) {
-      logger.error('[Platform Assistant] AI reply failed:', err.message);
+    } catch (err: unknown) {
+      // [2026-05-24] 类型安全：any → unknown
+      logger.error('[Platform Assistant] AI reply failed: ' + getErrorMessage(err));
     }
   }
 
@@ -785,8 +790,9 @@ ${typeLabel}名称：${title}
       } else {
         logger.warn(`[create-with-overview] Async overview failed for conv=${convId}: ${errorMsg}`);
       }
-    } catch (err: any) {
-      logger.error(`[create-with-overview] Async overview error for conv=${convId}:`, { error: err.message });
+    } catch (err: unknown) {
+      // [2026-05-24] 类型安全：any → unknown
+      logger.error(`[create-with-overview] Async overview error for conv=${convId}:`, { error: getErrorMessage(err) });
     }
   });
 });

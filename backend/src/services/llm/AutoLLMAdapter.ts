@@ -187,7 +187,8 @@ function loadAgentSkillsPrompt(agentId: string): string {
 
     const cols = result[0].columns;
     const skills = result[0].values.map((row) => {
-      const obj: any = {};
+      // [2026-05-24] 类型安全：any → Record<string, unknown>
+      const obj: Record<string, unknown> = {};
       cols.forEach((c, i) => (obj[c] = row[i]));
       return obj;
     });
@@ -236,7 +237,8 @@ function loadProviders(): TokenChannel[] {
     if (!result.length) return [];
     const cols = result[0].columns;
     return result[0].values.map((row) => {
-      const obj: any = {};
+      // [2026-05-24] 类型安全：any → Record<string, unknown>
+      const obj: Record<string, unknown> = {};
       cols.forEach((c, i) => (obj[c] = row[i]));
       return {
         id: obj.id,
@@ -533,13 +535,15 @@ export class AutoLLMAdapter implements ILLMAdapter {
         );
         if (presetResult.length && presetResult[0].values.length) {
           const cols = presetResult[0].columns;
-          const p: any = {};
+          // [2026-05-24] 类型安全：any → Record<string, unknown>
+          const p: Record<string, unknown> = {};
           cols.forEach((c, i) => (p[c] = presetResult[0].values[0][i]));
-          const presetProvider = p.provider || "custom";
+          const pd = p as Record<string, any>;
+          const presetProvider = pd.provider || "custom";
           const presetProviderLower = presetProvider.toLowerCase();
-          const presetModelId = p.model_name || "auto";
-          const presetBaseUrl = p.base_url || "https://api.openai.com/v1";
-          const presetAuthType = p.auth_type || "Bearer";
+          const presetModelId = pd.model_name || "auto";
+          const presetBaseUrl = pd.base_url || "https://api.openai.com/v1";
+          const presetAuthType = pd.auth_type || "Bearer";
 
           if (OPENCLAW_PROVIDERS.has(presetProviderLower)) {
             const { OpenClawAdapter } = await import('./OpenClawAdapter');
@@ -551,17 +555,17 @@ export class AutoLLMAdapter implements ILLMAdapter {
           }
 
           // 使用渠道级模型参数，若未设置则使用 agent 的值
-          const chTemp = p.temperature != null ? p.temperature : temperature;
-          const chMaxTokens = p.max_tokens != null ? p.max_tokens : maxTokens;
-          const chTopP = p.top_p != null ? p.top_p : topP;
-          const chFreqPenalty = p.frequency_penalty != null ? p.frequency_penalty : frequencyPenalty;
-          const chPresPenalty = p.presence_penalty != null ? p.presence_penalty : presencePenalty;
+          const chTemp = pd.temperature != null ? pd.temperature : temperature;
+          const chMaxTokens = pd.max_tokens != null ? pd.max_tokens : maxTokens;
+          const chTopP = pd.top_p != null ? pd.top_p : topP;
+          const chFreqPenalty = pd.frequency_penalty != null ? pd.frequency_penalty : frequencyPenalty;
+          const chPresPenalty = pd.presence_penalty != null ? pd.presence_penalty : presencePenalty;
 
           const controller = new AbortController();
           try {
             logger.info(`[Auto] Using preset fallback: provider=${presetProvider} model=${presetModelId} temp=${chTemp} maxTokens=${chMaxTokens}`);
             const tokenCount = await callOpenAIStream(
-              presetBaseUrl, p.api_key, presetAuthType, presetModelId,
+              presetBaseUrl, pd.api_key, presetAuthType, presetModelId,
               systemPrompt, truncated,
               chTemp, chMaxTokens, chTopP, chFreqPenalty, chPresPenalty,
               onChunk, onComplete, controller
@@ -604,20 +608,22 @@ export class AutoLLMAdapter implements ILLMAdapter {
         );
         if (modelRows.length && modelRows[0].values.length) {
           const cols = modelRows[0].columns;
-          const m: any = {};
+          // [2026-05-24] 类型安全：any → Record<string, unknown>
+          const m: Record<string, unknown> = {};
           cols.forEach((c, i) => (m[c] = modelRows[0].values[0][i]));
+          const md = m as Record<string, any>;
           matchedProvider = {
-            id: m.provider_id || "",
-            provider: m.provider_name || "",
-            modelName: m.name,
-            baseUrl: m.base_url || "",
-            apiKey: m.api_key || "",
+            id: md.provider_id || "",
+            provider: md.provider_name || "",
+            modelName: md.name,
+            baseUrl: md.base_url || "",
+            apiKey: md.api_key || "",
             authType: "Bearer",
             enabled: true,
             priority: 0,
           };
-          matchedModelId = m.name || agentModelName;
-          logger.info(`[Auto] Model matched: ${agentModelName} → provider=${m.provider_name} url=${m.base_url}`);
+          matchedModelId = md.name || agentModelName;
+          logger.info(`[Auto] Model matched: ${agentModelName} → provider=${md.provider_name} url=${md.base_url}`);
         }
       } catch (e) {
         logger.warn(`[Auto] Model lookup failed: ${e}`);

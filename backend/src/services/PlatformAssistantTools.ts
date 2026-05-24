@@ -9,6 +9,7 @@
  */
 
 import { getDb } from '../db/client';
+import { getErrorMessage } from '../types/ilink';
 
 /** 内部工具函数：执行 SQL 并返回行数组 */
 function execToRows(db: any, sql: string, params?: any[]): any[] {
@@ -16,7 +17,7 @@ function execToRows(db: any, sql: string, params?: any[]): any[] {
   if (!result.length) return [];
   const cols = result[0].columns;
   return result[0].values.map((row: any[]) => {
-    const obj: any = {};
+    const obj: Record<string, unknown> = {}; // [2026-05-24] 类型安全：any → Record<string, unknown>
     cols.forEach((c: string, i: number) => (obj[c] = row[i]));
     return obj;
   });
@@ -130,8 +131,9 @@ export async function executeToolCall(toolCall: ToolCall, userId?: string): Prom
       default:
         return JSON.stringify({ error: `Unknown tool: ${toolCall.name}` });
     }
-  } catch (err: any) {
-    return JSON.stringify({ error: `Tool execution failed: ${err.message}` });
+  } catch (err: unknown) {
+    // [2026-05-24] 类型安全：any → unknown
+    return JSON.stringify({ error: `Tool execution failed: ${getErrorMessage(err)}` });
   }
 }
 
@@ -216,7 +218,8 @@ function executeDbQuery(args: any): string {
       total: rows.length,
       rows,
     });
-  } catch (err: any) {
-    return JSON.stringify({ error: err.message });
+  } catch (err: unknown) {
+    // [2026-05-24] 类型安全：any → unknown
+    return JSON.stringify({ error: getErrorMessage(err) });
   }
 }

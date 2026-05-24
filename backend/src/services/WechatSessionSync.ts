@@ -15,6 +15,7 @@ import path from 'path';
 import crypto from 'crypto';
 import { logger } from '../utils/logger';
 import { getDb } from '../db/client';
+import { getErrorMessage } from '../types/ilink';
 
 // ─── 配置 ────────────────────────────────────────────────────────────────
 
@@ -282,8 +283,10 @@ function getOrCreateConversation(sessionKey: string, ilinkUserId: string): strin
       [conversationId, sessionKey, now, now]
     );
     logger.info(`[WechatSessionSync] Created conversation for ${ilinkUserId}`);
-  } catch (err: any) {
-    if (err.message?.includes('UNIQUE') || err.message?.includes('PRIMARY KEY')) {
+  } catch (err: unknown) {
+    // [2026-05-24] 类型安全：any → unknown
+    const errMsg = getErrorMessage(err);
+    if (errMsg?.includes('UNIQUE') || errMsg?.includes('PRIMARY KEY')) {
       db.run(`UPDATE conversations SET oc_session_key = ?, last_message_at = ? WHERE id = ?`,
         [sessionKey, now, conversationId]);
     } else {
@@ -308,8 +311,10 @@ function saveMessage(conversationId: string, role: string, content: string, time
     );
     db.run(`UPDATE conversations SET last_message_at = ? WHERE id = ?`, [createdAt, conversationId]);
     return true;
-  } catch (err: any) {
-    if (err.message?.includes('UNIQUE') || err.message?.includes('PRIMARY KEY')) {
+  } catch (err: unknown) {
+    // [2026-05-24] 类型安全：any → unknown
+    const errMsg = getErrorMessage(err);
+    if (errMsg?.includes('UNIQUE') || errMsg?.includes('PRIMARY KEY')) {
       return false;
     }
     logger.warn('[WechatSessionSync] Failed to save message', err);
@@ -356,8 +361,9 @@ class WechatSessionSync {
       try {
         const newCount = this.syncSession(sessionKey, entry);
         totalNew += newCount;
-      } catch (err: any) {
-        logger.error(`[WechatSessionSync] Failed to sync session ${sessionKey}: ${err.message}`);
+      } catch (err: unknown) {
+        // [2026-05-24] 类型安全：any → unknown
+        logger.error(`[WechatSessionSync] Failed to sync session ${sessionKey}: ${getErrorMessage(err)}`);
       }
     }
 

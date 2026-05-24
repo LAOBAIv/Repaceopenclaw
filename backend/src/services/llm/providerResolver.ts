@@ -52,7 +52,7 @@ export function loadProviders(): TokenChannel[] {
     if (!result.length) return [];
     const cols = result[0].columns;
     return result[0].values.map((row: any[]) => {
-      const obj: any = {};
+      const obj: Record<string, unknown> = {}; // [2026-05-24] 类型安全：any → Record<string, unknown>
       cols.forEach((c: string, i: number) => (obj[c] = row[i]));
       return {
         id: obj.id,

@@ -17,6 +17,7 @@
 import Database from 'better-sqlite3';
 import path from 'path';
 import fs from 'fs';
+import { getErrorMessage } from "../types/ilink";
 
 export interface SqlJsCompatResult {
   columns: string[];
@@ -60,9 +61,9 @@ export class SqliteCompat {
         }
         return [];
       }
-    } catch (e: any) {
+    } catch (e: unknown) { // [2026-05-24] 类型安全：any → unknown
       // sql.js 对不存在的表等返回空数组，better-sqlite3 会抛异常
-      if (e.message?.includes('no such table')) return [];
+      if (getErrorMessage(e)?.includes('no such table')) return [];
       throw e;
     }
   }

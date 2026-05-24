@@ -32,7 +32,8 @@ function listBots() {
   if (!result.length) return [];
   const cols = result[0].columns;
   return result[0].values.map((row) => {
-    const obj: any = {};
+    // [2026-05-24] 类型安全：any → Record<string, unknown>
+    const obj: Record<string, unknown> = {};
     cols.forEach((c, i) => (obj[c] = row[i]));
     return rowToBot(obj);
   });
@@ -81,7 +82,8 @@ router.get("/:type", (req: Request, res: Response) => {
     return res.json({ data: null });
   }
   const cols = result[0].columns;
-  const obj: any = {};
+  // [2026-05-24] 类型安全：any → Record<string, unknown>
+  const obj: Record<string, unknown> = {};
   cols.forEach((c, i) => (obj[c] = result[0].values[0][i]));
   res.json({ data: rowToBot(obj) });
 });

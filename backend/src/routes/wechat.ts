@@ -3,6 +3,7 @@ import { getDb, saveDb } from "../db/client";
 import { authenticate } from "../middleware/auth";
 import { logger } from "../utils/logger";
 import { v4 as uuidv4 } from "uuid";
+import { getErrorMessage } from "../types/ilink";
 
 const router = Router();
 
@@ -135,8 +136,9 @@ router.get("/user-binding", (req: Request, res: Response) => {
     } else {
       res.json({ data: { bound: false } });
     }
-  } catch (err: any) {
-    logger.error(`[UserWechatBinding] Query failed: ${err.message}`);
+  } catch (err: unknown) {
+    // [2026-05-24] 类型安全：any → unknown
+    logger.error(`[UserWechatBinding] Query failed: ${getErrorMessage(err)}`);
     res.status(500).json({ error: "查询失败" });
   }
 });
@@ -181,8 +183,9 @@ router.post("/user-binding", (req: Request, res: Response) => {
     saveDb();
     logger.info(`[UserWechatBinding] User ${userId} bound to wechat ${wechatOpenid}`);
     res.json({ data: { bound: true, wechatOpenid, boundAt: now } });
-  } catch (err: any) {
-    logger.error(`[UserWechatBinding] Bind failed: ${err.message}`);
+  } catch (err: unknown) {
+    // [2026-05-24] 类型安全：any → unknown
+    logger.error(`[UserWechatBinding] Bind failed: ${getErrorMessage(err)}`);
     res.status(500).json({ error: "绑定失败" });
   }
 });
@@ -201,8 +204,9 @@ router.delete("/user-binding", (req: Request, res: Response) => {
     saveDb();
     logger.info(`[UserWechatBinding] User ${userId} unbound wechat`);
     res.json({ data: { bound: false } });
-  } catch (err: any) {
-    logger.error(`[UserWechatBinding] Unbind failed: ${err.message}`);
+  } catch (err: unknown) {
+    // [2026-05-24] 类型安全：any → unknown
+    logger.error(`[UserWechatBinding] Unbind failed: ${getErrorMessage(err)}`);
     res.status(500).json({ error: "解绑失败" });
   }
 });

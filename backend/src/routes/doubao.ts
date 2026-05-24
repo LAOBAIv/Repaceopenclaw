@@ -10,6 +10,7 @@
 import { Router, Request, Response } from "express";
 import { OpenClawAdapter } from "../services/llm/OpenClawAdapter";
 import { AgentService } from "../services/AgentService";
+import { getErrorMessage } from "../types/ilink";
 
 const router = Router();
 const gatewayAdapter = new OpenClawAdapter();
@@ -124,8 +125,9 @@ router.post("/context-chat", async (req: Request, res: Response) => {
       },
       routedBy: "gateway",
     });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
+  } catch (err: unknown) {
+    // [2026-05-24] 类型安全：any → unknown
+    res.status(500).json({ error: getErrorMessage(err) });
   }
 });
 
@@ -134,8 +136,9 @@ router.delete("/context/:agentId", (req: Request, res: Response) => {
   try {
     const { agentId } = req.params;
     res.json({ success: true, message: `Gateway 路径下不再维护本地 Doubao context cache（agent=${agentId}）` });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
+  } catch (err: unknown) {
+    // [2026-05-24] 类型安全：any → unknown
+    res.status(500).json({ error: getErrorMessage(err) });
   }
 });
 
@@ -143,8 +146,9 @@ router.delete("/context/:agentId", (req: Request, res: Response) => {
 router.delete("/context", (_req: Request, res: Response) => {
   try {
     res.json({ success: true, message: "Gateway 路径下不再维护本地 Doubao context cache" });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
+  } catch (err: unknown) {
+    // [2026-05-24] 类型安全：any → unknown
+    res.status(500).json({ error: getErrorMessage(err) });
   }
 });
 

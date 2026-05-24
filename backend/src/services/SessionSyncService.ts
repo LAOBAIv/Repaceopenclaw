@@ -165,8 +165,9 @@ export function syncToDatabase(db: any, userId: string = ''): { synced: number; 
       }
 
       synced++;
-    } catch (err: any) {
-      errors.push(`${session.sessionKey.slice(-8)}: ${err.message}`);
+    } catch (err: unknown) {
+      // [2026-05-24] 类型安全：any → unknown
+      errors.push(`${session.sessionKey.slice(-8)}: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 

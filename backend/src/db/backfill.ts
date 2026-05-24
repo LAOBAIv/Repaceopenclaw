@@ -1,6 +1,7 @@
 // [2026-05-18] 从 client.ts 拆分出业务码回填逻辑
 import { execToRows } from "./client";
 import { IdGenerator } from "../utils/IdGenerator";
+import { getErrorMessage } from "../types/ilink";
 
 // ── Dual-code backfill（idempotent）──────────────────────────────────────────
 export function backfillBusinessCodes(db: any) {
@@ -81,9 +82,9 @@ export function backfillBusinessCodes(db: any) {
       if (!msg.message_code) {
         try {
           db.run("UPDATE messages SET message_code=? WHERE id=?", [IdGenerator.messageCode(conv.session_code, seq), msg.id]);
-        } catch (e: any) {
+        } catch (e: unknown) { // [2026-05-24] 类型安全：any → unknown
           // UNIQUE 约束冲突时跳过（已存在的 message_code）
-          if (!e?.message?.includes('UNIQUE')) throw e;
+          if (!getErrorMessage(e)?.includes('UNIQUE')) throw e;
         }
       }
       seq += 1;

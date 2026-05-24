@@ -72,7 +72,8 @@ export const ModelService = {
     if (!rows.length) return [];
     const cols = rows[0].columns;
     return rows[0].values.map((v) => {
-      const obj: any = {};
+      // [2026-05-24] 类型安全：any → Record<string, unknown>
+      const obj: Record<string, unknown> = {};
       cols.forEach((c, i) => (obj[c] = v[i]));
       return rowToProvider(obj);
     });
@@ -83,7 +84,8 @@ export const ModelService = {
     const rows = db.exec("SELECT * FROM model_providers WHERE id=?", [id]);
     if (!rows.length || !rows[0].values.length) return null;
     const cols = rows[0].columns;
-    const obj: any = {};
+    // [2026-05-24] 类型安全：any → Record<string, unknown>
+    const obj: Record<string, unknown> = {};
     cols.forEach((c, i) => (obj[c] = rows[0].values[0][i]));
     return rowToProvider(obj);
   },
@@ -139,7 +141,8 @@ export const ModelService = {
     if (!rows.length) return [];
     const cols = rows[0].columns;
     return rows[0].values.map((v) => {
-      const obj: any = {};
+      // [2026-05-24] 类型安全：any → Record<string, unknown>
+      const obj: Record<string, unknown> = {};
       cols.forEach((c, i) => (obj[c] = v[i]));
       return rowToModel(obj);
     });
@@ -150,7 +153,8 @@ export const ModelService = {
     const rows = db.exec(`SELECT m.*, mp.name as provider_name FROM models m LEFT JOIN model_providers mp ON m.provider_id=mp.id WHERE m.id=?`, [id]);
     if (!rows.length || !rows[0].values.length) return null;
     const cols = rows[0].columns;
-    const obj: any = {};
+    // [2026-05-24] 类型安全：any → Record<string, unknown>
+    const obj: Record<string, unknown> = {};
     cols.forEach((c, i) => (obj[c] = rows[0].values[0][i]));
     return rowToModel(obj);
   },

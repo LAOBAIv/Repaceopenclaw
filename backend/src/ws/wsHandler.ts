@@ -14,6 +14,7 @@ import http from "http";
 import https from "https";
 import { v4 as uuidv4 } from "uuid";
 import { REPACECLAW_MESSAGE_CHANNEL, resolveOpenClawGateway } from '../utils/openclawGateway';
+import { getErrorMessage } from '../types/ilink';
 
 const { url: GATEWAY_URL, token: GATEWAY_TOKEN } = resolveOpenClawGateway();
 
@@ -242,8 +243,9 @@ export function setupWebSocket(server: http.Server) {
         const doCall = async () => {
           try {
             await callGateway(ws, conv.id, targetAgentId, ocAgentId, systemPrompt, history, content, client.userId);
-          } catch (err: any) {
-            if (err?.message === 'GATEWAY_TIMEOUT' && !retried) {
+          } catch (err: unknown) {
+            // [2026-05-24] 类型安全：any → unknown
+            if (err instanceof Error && err?.message === 'GATEWAY_TIMEOUT' && !retried) {
               retried = true;
               logger.info(`[Gateway] Timeout for conv=${conv.id}, retrying...`);
               // [2026-05-17] 重试前先结束前端上一次的"正在生成"状态
@@ -253,8 +255,9 @@ export function setupWebSocket(server: http.Server) {
               // 重试一次
               try {
                 await callGateway(ws, conv.id, targetAgentId, ocAgentId, systemPrompt, history, content, client.userId);
-              } catch (retryErr: any) {
-                logger.error(`[Gateway] Retry also failed for conv=${conv.id}: ${retryErr?.message}`);
+              } catch (retryErr: unknown) {
+                // [2026-05-24] 类型安全：any → unknown
+                logger.error(`[Gateway] Retry also failed for conv=${conv.id}: ${retryErr instanceof Error ? retryErr.message : String(retryErr)}`);
                 // 重试也失败，发 agent_done 结束前端"思考中"
                 if (ws.readyState === WebSocket.OPEN) {
                   ws.send(JSON.stringify({ type: "agent_done", messageId: `timeout-${Date.now()}`, agentId: targetAgentId, conversationId: conv.id, message: { id: `timeout-${Date.now()}`, conversationId: conv.id, role: 'agent', content: '⚠️ 响应超时，请稍后重试', createdAt: new Date().toISOString() } }));

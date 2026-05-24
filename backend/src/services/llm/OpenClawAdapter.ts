@@ -8,6 +8,7 @@
 import { ILLMAdapter } from "./LLMAdapter";
 import { logger } from '../../utils/logger';
 import { REPACECLAW_MESSAGE_CHANNEL, resolveOpenClawGateway } from '../../utils/openclawGateway';
+import { getErrorMessage } from '../../types/ilink';
 
 export class OpenClawAdapter implements ILLMAdapter {
   async generateStream(
@@ -138,9 +139,10 @@ export class OpenClawAdapter implements ILLMAdapter {
       logger.info(`[OpenClawAdapter] ✓ tokens=${totalTokens}`);
       onComplete(totalTokens);
 
-    } catch (err: any) {
-      logger.error('[OpenClawAdapter] ✗', err.message);
-      onError(err);
+    } catch (err: unknown) {
+      // [2026-05-24] 类型安全：any → unknown
+      logger.error('[OpenClawAdapter] ✗ ' + getErrorMessage(err));
+      onError(err instanceof Error ? err : new Error(getErrorMessage(err)));
       return;
     }
   }

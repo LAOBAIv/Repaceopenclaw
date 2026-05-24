@@ -13,6 +13,7 @@ import { MockLLMAdapter } from "./MockLLMAdapter";
 import https from "https";
 import http from "http";
 import { URL } from "url";
+import { getErrorMessage } from '../../types/ilink';
 
 interface DoubaoConfig {
   apiKey: string;
@@ -220,9 +221,10 @@ export class DoubaoContextAdapter implements ILLMAdapter {
       );
 
       logger.info(`[DoubaoContext] Success, tokens=${result.tokenCount}`);
-    } catch (err: any) {
-      logger.error(`[DoubaoContext] Error: ${err.message}`);
-      onError(err);
+    } catch (err: unknown) {
+      // [2026-05-24] 类型安全：any → unknown
+      logger.error(`[DoubaoContext] Error: ${getErrorMessage(err)}`);
+      onError(err instanceof Error ? err : new Error(getErrorMessage(err)));
     }
   }
 

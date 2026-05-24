@@ -23,6 +23,7 @@ import { broadcastToConversation } from "../ws/wsHandler"; // [2026-05-16] 推�
 import http from "http";
 import https from "https";
 import crypto from "crypto";
+import { getErrorMessage } from "../types/ilink";
 
 const router = Router();
 
@@ -138,9 +139,10 @@ router.post("/", async (req: Request, res: Response) => {
 
     logger.info(`[WechatIncoming] Reply ready for=${ilinkUserId} text="${formattedReply.substring(0, 50)}..."`);
     res.json({ ok: true, reply: formattedReply });
-  } catch (err: any) {
-    logger.error(`[WechatIncoming] Error processing message: ${err.message}`);
-    res.json({ ok: false, error: err.message || "处理失败" });
+  } catch (err: unknown) {
+    // [2026-05-24] 类型安全：any → unknown
+    logger.error(`[WechatIncoming] Error processing message: ${getErrorMessage(err)}`);
+    res.json({ ok: false, error: getErrorMessage(err) || "处理失败" });
   }
 });
 
@@ -196,8 +198,10 @@ function getOrCreateConversation(ilinkUserId: string): { conversationId: string;
     );
     saveDb();
     logger.info(`[WechatIncoming] Created conversation ${conversationId} for user ${boundUserId} wechat ${ilinkUserId}`);
-  } catch (err: any) {
-    if (!err.message?.includes("UNIQUE") && !err.message?.includes("PRIMARY KEY")) {
+  } catch (err: unknown) {
+    // [2026-05-24] 类型安全：any → unknown
+    const errMsg = getErrorMessage(err);
+    if (!errMsg?.includes("UNIQUE") && !errMsg?.includes("PRIMARY KEY")) {
       logger.warn("[WechatIncoming] Insert conversation failed", err);
     }
   }
@@ -220,8 +224,9 @@ function saveMessage(conversationId: string, userId: string, role: string, conte
     db.run(`UPDATE conversations SET last_message_at = ? WHERE id = ?`, [createdAt, conversationId]);
     saveDb();
     logger.info(`[WechatIncoming] saveMessage OK: id=${messageId.slice(0,12)} conv=${conversationId.slice(0,8)} role=${role}`);
-  } catch (err: any) {
-    logger.error(`[WechatIncoming] saveMessage FAILED: ${err.message}`);
+  } catch (err: unknown) {
+    // [2026-05-24] 类型安全：any → unknown
+    logger.error(`[WechatIncoming] saveMessage FAILED: ${getErrorMessage(err)}`);
   }
 }
 
@@ -345,8 +350,9 @@ export async function handleILinkMessage(
     saveMessage(conversationId, boundUserId, "agent", formattedReply, replyTime);
 
     return formattedReply;
-  } catch (e: any) {
-    logger.error(`[handleILinkMessage] Error: ${e.message}`);
+  } catch (e: unknown) {
+    // [2026-05-24] 类型安全：any → unknown
+    logger.error(`[handleILinkMessage] Error: ${getErrorMessage(e)}`);
     return null;
   }
 }

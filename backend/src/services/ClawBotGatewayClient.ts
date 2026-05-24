@@ -18,6 +18,7 @@
 import WebSocket from 'ws';
 import { logger } from '../utils/logger';
 import { resolveOpenClawGateway } from '../utils/openclawGateway';
+import { getErrorMessage } from '../types/ilink';
 
 // ─── 类型定义 ────────────────────────────────────────────────────────────
 
@@ -66,8 +67,9 @@ class ClawBotGatewayClient {
 
     try {
       this.ws = new WebSocket(wsUrl);
-    } catch (err: any) {
-      logger.error('[ClawBotGateway] WebSocket creation failed: ' + err.message);
+    } catch (err: unknown) {
+      // [2026-05-24] 类型安全：any → unknown
+      logger.error('[ClawBotGateway] WebSocket creation failed: ' + getErrorMessage(err));
       this.scheduleReconnect();
       return;
     }
@@ -81,8 +83,9 @@ class ClawBotGatewayClient {
       try {
         const msg = JSON.parse(data.toString());
         this.handleMessage(msg);
-      } catch (err: any) {
-        logger.warn('[ClawBotGateway] Failed to parse message: ' + err.message);
+      } catch (err: unknown) {
+        // [2026-05-24] 类型安全：any → unknown
+        logger.warn('[ClawBotGateway] Failed to parse message: ' + getErrorMessage(err));
       }
     });
 
@@ -165,8 +168,9 @@ class ClawBotGatewayClient {
       for (const cb of listeners) {
         try {
           cb(data);
-        } catch (err: any) {
-          logger.error('[ClawBotGateway] Event handler error for "' + event + '": ' + err.message);
+        } catch (err: unknown) {
+          // [2026-05-24] 类型安全：any → unknown
+          logger.error('[ClawBotGateway] Event handler error for "' + event + '": ' + getErrorMessage(err));
         }
       }
     }
@@ -177,8 +181,9 @@ class ClawBotGatewayClient {
       for (const cb of wildcards) {
         try {
           cb(enriched);
-        } catch (err: any) {
-          logger.error('[ClawBotGateway] Wildcard handler error: ' + err.message);
+        } catch (err: unknown) {
+          // [2026-05-24] 类型安全：any → unknown
+          logger.error('[ClawBotGateway] Wildcard handler error: ' + getErrorMessage(err));
         }
       }
     }

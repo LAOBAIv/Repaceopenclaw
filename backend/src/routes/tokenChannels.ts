@@ -5,6 +5,7 @@ import { z } from "zod";
 import https from "https";
 import http from "http";
 import { authenticate, requireRole } from "../middleware/auth";
+import { getErrorMessage } from "../types/ilink";
 
 const router = Router();
 
@@ -30,7 +31,8 @@ function listChannels() {
   if (!result.length) return [];
   const cols = result[0].columns;
   return result[0].values.map((row) => {
-    const obj: any = {};
+    // [2026-05-24] 类型安全：any → Record<string, unknown>
+    const obj: Record<string, unknown> = {};
     cols.forEach((c, i) => (obj[c] = row[i]));
     return {
       id: obj.id,
@@ -66,7 +68,8 @@ router.get("/preset", authenticate, (_req: Request, res: Response) => {
     return res.json({ data: null });
   }
   const cols = result[0].columns;
-  const obj: any = {};
+  // [2026-05-24] 类型安全：any → Record<string, unknown>
+  const obj: Record<string, unknown> = {};
   cols.forEach((c, i) => (obj[c] = result[0].values[0][i]));
   res.json({ data: {
     id: obj.id,
@@ -143,12 +146,14 @@ router.post("/:id/test", authenticate, async (req: Request, res: Response) => {
     return res.status(404).json({ error: "Channel not found" });
   }
   const cols = result[0].columns;
-  const obj: any = {};
+  // [2026-05-24] 类型安全：any → Record<string, unknown>
+  const obj: Record<string, unknown> = {};
   cols.forEach((c, i) => (obj[c] = result[0].values[0][i]));
+  const d = obj as Record<string, any>;
 
-  const baseUrl: string = obj.base_url || "";
-  const apiKey: string = obj.api_key || "";
-  const authType: string = obj.auth_type || "Bearer";
+  const baseUrl: string = d.base_url || "";
+  const apiKey: string = d.api_key || "";
+  const authType: string = d.auth_type || "Bearer";
 
   if (!baseUrl) {
     return res.status(400).json({ error: "Channel has no base_url configured" });
@@ -206,13 +211,13 @@ router.post("/:id/test", authenticate, async (req: Request, res: Response) => {
           : `HTTP ${statusCode}`,
       },
     });
-  } catch (err: any) {
+  } catch (err: unknown) { // [2026-05-24] 类型安全：any → unknown
     res.json({
       data: {
         connected: false,
         statusCode: 0,
         latencyMs: null,
-        note: err.message || "Connection failed",
+        note: getErrorMessage(err) || "Connection failed",
       },
     });
   }

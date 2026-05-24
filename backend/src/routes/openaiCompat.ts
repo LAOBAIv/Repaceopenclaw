@@ -21,6 +21,7 @@ import { Router, Request, Response } from "express";
 import { logger } from '../utils/logger';
 import { AgentService } from "../services/AgentService";
 import { OpenClawAdapter } from "../services/llm/OpenClawAdapter";
+import { getErrorMessage } from '../types/ilink';
 
 const router = Router();
 
@@ -50,8 +51,9 @@ router.get("/models", (_req: Request, res: Response) => {
     });
 
     res.json({ object: "list", data: models });
-  } catch (err: any) {
-    res.status(500).json({ error: { message: err.message, type: "internal_error" } });
+  } catch (err: unknown) {
+    // [2026-05-24] 类型安全：any → unknown
+    res.status(500).json({ error: { message: getErrorMessage(err), type: "internal_error" } });
   }
 });
 
@@ -263,10 +265,11 @@ router.post("/chat/completions", async (req: Request, res: Response) => {
         total_tokens: 0,
       },
     });
-  } catch (err: any) {
+  } catch (err: unknown) {
+    // [2026-05-24] 类型安全：any → unknown
     logger.error("[OpenAI Compat] Unhandled error:", err);
     res.status(500).json({
-      error: { message: err.message || "Internal server error", type: "internal_error" },
+      error: { message: getErrorMessage(err) || "Internal server error", type: "internal_error" },
     });
   }
 });

@@ -12,6 +12,7 @@ import { logger } from '../utils/logger';
 import { REPACECLAW_MESSAGE_CHANNEL, resolveOpenClawGateway } from '../utils/openclawGateway';
 import http from 'http';
 import { URL } from 'url';
+import { getErrorMessage } from '../types/ilink';
 
 // ─── 配置 ────────────────────────────────────────────────────────────────
 const { url: GATEWAY_URL, token: GATEWAY_TOKEN } = resolveOpenClawGateway();
@@ -209,8 +210,9 @@ export const GatewaySessionService = {
       req.write(payload);
       req.end();
 
-    } catch (err: any) {
-      onError(err);
+    } catch (err: unknown) {
+      // [2026-05-24] 类型安全：any → unknown
+      onError(err instanceof Error ? err : new Error(getErrorMessage(err)));
     }
   },
 
