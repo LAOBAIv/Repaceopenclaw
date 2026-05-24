@@ -54,13 +54,9 @@ export interface Message {
   createdAt: string;
 }
 
-// [2026-05-24] 类型安全：better-sqlite3 Database 最小接口
-interface BetterSqlite3Db {
-  exec(sql: string, params?: unknown[]): Array<{ columns: string[]; values: unknown[][] }>;
-  run(sql: string, params?: unknown[]): void;
-  prepare(sql: string): { get(params?: unknown[]): unknown | undefined; all(params?: unknown[]): unknown[] };
-  getRowsModified(): number;
-}
+// [2026-05-24] P1 修复：使用统一 DbLike 接口，避免类型不匹配
+import type { DbLike } from '../db/sqlite-compat';
+type BetterSqlite3Db = DbLike;
 
 function execToRows(db: BetterSqlite3Db, sql: string, params?: unknown[]): Record<string, unknown>[] {
   const result = params ? db.exec(sql, params) : db.exec(sql);

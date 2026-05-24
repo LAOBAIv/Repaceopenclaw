@@ -19,11 +19,20 @@ import path from 'path';
 import fs from 'fs';
 import { getErrorMessage } from "../types/ilink";
 
+/** [2026-05-24] P1 修复：预编译语句接口，包含 .get() 方法 */
+export interface PreparedStmt {
+  all(...params: unknown[]): unknown[];
+  run(...params: unknown[]): { changes: number };
+  get(...params: unknown[]): unknown;
+}
+
 /** [2026-05-24] 类型安全：数据库兼容接口，替代 :any */
 export interface DbLike {
   exec(sql: string, params?: unknown[]): SqlJsCompatResult[];
   run(sql: string, params?: unknown[]): void;
-  prepare(sql: string): { all(...params: unknown[]): unknown[]; run(...params: unknown[]): { changes: number } };
+  prepare(sql: string): PreparedStmt;
+  /** 单行查询快捷方法 [2026-05-24] P1 修复 */
+  getRow(sql: string, params?: unknown[]): unknown;
   transaction<T>(fn: (...args: unknown[]) => T): (...args: unknown[]) => T;
   getRowsModified?(): number;
   queryOne?<T>(sql: string, params?: unknown[]): T | undefined;
@@ -90,6 +99,28 @@ export class SqliteCompat {
     } else {
       stmt.run();
     }
+  }
+
+  /** [2026-05-24] P1 修复：单行查询快捷方法 */
+  getRow(sql: string, params?: unknown[]): unknown {
+    const stmt = this.db.prepare(sql);
+    return params ? stmt.get(...params) : stmt.get();
+  }
+
+  /** [2026-05-24] P1 修复：预编译语句 */
+  prepare(sql: string) {
+    const stmt = this.db.prepare(sql);
+    return {
+      all: (...params: unknown[]) => stmt.all(...params),
+      run: (...params: unknown[]) => stmt.run(...params),
+      get: (...params: unknown[]) => stmt.get(...params),
+    };
+  }
+
+  /** [2026-05-24] P1 修复：事务支持 */
+  transaction<T>(fn: (...args: unknown[]) => T): (...args: unknown[]) => T {
+    const tx = this.db.transaction(fn as (...args: unknown[]) => T);
+    return tx;
   }
 
   /**

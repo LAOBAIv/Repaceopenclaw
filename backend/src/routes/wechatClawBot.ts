@@ -733,10 +733,11 @@ router.get('/accounts', (_req: Request, res: Response) => {
        LEFT JOIN departments root_d ON root_d.id = d.parent_id AND d.parent_id IS NOT NULL`);
     const bindingMap = new Map<string, { username: string; nickname: string; department: string }>();
     for (const row of bindingsResult) {
-      const key = row.bot_id || row.wechat_openid;
-      const info = { username: row.username || '', nickname: row.nickname || '', department: row.department || '' };
+      const rowObj = row as Record<string, unknown>; // [2026-05-24] P1 修复
+      const key = (rowObj.bot_id || rowObj.wechat_openid) as string; // [2026-05-24] P1 修复
+      const info = { username: (rowObj.username as string) || '', nickname: (rowObj.nickname as string) || '', department: (rowObj.department as string) || '' };
       bindingMap.set(key, info);
-      if (row.wechat_openid) bindingMap.set(row.wechat_openid, info);
+      if (rowObj.wechat_openid) bindingMap.set(rowObj.wechat_openid as string, info);
     }
     res.json({
       success: true,

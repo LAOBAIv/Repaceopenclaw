@@ -357,7 +357,7 @@ async function handleIncomingMessage(config: ILinkConfig, msg: unknown): Promise
   // [2026-05-18] 获取 typing_ticket 并发送 typing 状态
   let typingTicket = '';
   try {
-    const configResp = await getConfig(config, fromUserId, contextToken) as Record<string, unknown> | undefined;
+    const configResp = await getConfig(config, fromUserId as string, typeof contextToken === 'string' ? contextToken : undefined) as Record<string, unknown> | undefined; // [2026-05-24] P1 修复
     typingTicket = (configResp?.typing_ticket as string) || '';
   } catch {}
   if (typingTicket) {

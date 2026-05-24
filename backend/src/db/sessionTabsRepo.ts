@@ -19,16 +19,9 @@ export const SessionTabService = {
   /** 获取用户的所有 session tabs */
   list(userId: string): SessionTabRecord[] {
     const db = getDb();
-    const stmt = db.prepare(
+    return db.prepare(
       "SELECT * FROM session_tabs WHERE user_id = ? ORDER BY updated_at DESC"
-    );
-    stmt.run([userId]);
-    const rows: SessionTabRecord[] = [];
-    while (stmt.step()) {
-      rows.push(stmt.getAsObject() as unknown as SessionTabRecord);
-    }
-    stmt.free();
-    return rows;
+    ).all(userId) as unknown as SessionTabRecord[];
   },
 
   /** 创建或更新（upsert） */

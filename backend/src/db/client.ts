@@ -32,7 +32,7 @@ export async function initDb(): Promise<DbLike> { // [2026-05-24] 类型安全
     const { initPostgresSync } = await import("./postgres");
     const pgDb = await initPostgresSync();
     (globalThis as Record<string, unknown>).__pgDb = pgDb; // [2026-05-24] 类型安全
-    return pgDb;
+    return pgDb as unknown as DbLike; // [2026-05-24] P1 修复：PGDatabase 实现 DbLike
   }
 
   if (db) return db;
@@ -64,7 +64,8 @@ export function saveDb() {
 
 export function getDb(): DbLike { // [2026-05-24] 类型安全
   if (dbConfig.type === "postgres") {
-    return (globalThis as Record<string, unknown>).__pgDb; // [2026-05-24] 类型安全
+    return (globalThis as Record<string, unknown>).__pgDb as DbLike; // [2026-05-24] P1 修复
   }
+  if (!db) throw new Error('Database not initialized'); // [2026-05-24] P1 修复
   return db;
 }

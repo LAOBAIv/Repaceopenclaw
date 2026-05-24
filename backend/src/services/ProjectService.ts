@@ -1,5 +1,9 @@
 import { v4 as uuidv4 } from "uuid";
 import { getDb, saveDb } from "../db/client";
+import type { DbLike } from '../db/sqlite-compat'; // [2026-05-24] P1 修复
+
+// [2026-05-24] P1 修复：使用统一 DbLike 接口
+type BetterSqlite3Db = DbLike;
 
 export interface WorkflowNode {
   id: string;
@@ -73,13 +77,7 @@ const rowToDoc = (obj: Record<string, unknown>): DocumentNode => ({ // [2026-05-
   updatedAt: rv(obj, 'updated_at')!,
 });
 
-// [2026-05-24] 类型安全：better-sqlite3 Database 最小接口
-interface BetterSqlite3Db {
-  exec(sql: string, params?: unknown[]): Array<{ columns: string[]; values: unknown[][] }>;
-  run(sql: string, params?: unknown[]): void;
-  prepare(sql: string): { get(params?: unknown[]): unknown | undefined; all(params?: unknown[]): unknown[] };
-  getRowsModified(): number;
-}
+// [2026-05-24] P1 修复：已迁移到顶部 type BetterSqlite3Db = DbLike
 
 function execToRows(db: BetterSqlite3Db, sql: string, params?: unknown[]): Record<string, unknown>[] { // [2026-05-24] 类型安全
   const result = params ? db.exec(sql, params) : db.exec(sql);

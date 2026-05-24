@@ -535,7 +535,7 @@ export const AgentService = {
     const db = getDb();
     const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
 
-    const row = db.get(
+    const row = db.getRow(
       `SELECT tokens_used, conv_count FROM usage_stats
        WHERE user_id = ? AND agent_id = ? AND date = ?`,
       [userId, agentId, today],

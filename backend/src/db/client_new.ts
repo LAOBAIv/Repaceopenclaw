@@ -31,7 +31,7 @@ export async function initDb(): Promise<DbLike> { // [2026-05-24] 类型安全
     const pgDb = await initPostgresSync();
     // 将 pgDb 挂载到全局 _pgDb，供 getDb() 返回
     (globalThis as Record<string, unknown>).__pgDb = pgDb; // [2026-05-24] 类型安全
-    return pgDb;
+    return pgDb as unknown as DbLike; // [2026-05-24] P1 修复
   }
 
   // SQLite 模式（默认）— 使用 better-sqlite3 兼容层
@@ -81,7 +81,8 @@ export function saveDb() {
  */
 export function getDb(): DbLike { // [2026-05-24] 类型安全
   if (dbConfig.type === "postgres") {
-    return (globalThis as Record<string, unknown>).__pgDb; // [2026-05-24] 类型安全
+    return (globalThis as Record<string, unknown>).__pgDb as DbLike; // [2026-05-24] P1 修复
   }
+  if (!db) throw new Error('Database not initialized'); // [2026-05-24] P1 修复
   return db;
 }

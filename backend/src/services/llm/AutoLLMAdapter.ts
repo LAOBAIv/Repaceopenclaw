@@ -559,11 +559,11 @@ export class AutoLLMAdapter implements ILLMAdapter {
           }
 
           // 使用渠道级模型参数，若未设置则使用 agent 的值
-          const chTemp = pd.temperature != null ? pd.temperature : temperature;
-          const chMaxTokens = pd.max_tokens != null ? pd.max_tokens : maxTokens;
-          const chTopP = pd.top_p != null ? pd.top_p : topP;
-          const chFreqPenalty = pd.frequency_penalty != null ? pd.frequency_penalty : frequencyPenalty;
-          const chPresPenalty = pd.presence_penalty != null ? pd.presence_penalty : presencePenalty;
+          const chTemp = pd.temperature != null ? pd.temperature as number : temperature; // [2026-05-24] P1 修复
+          const chMaxTokens = pd.max_tokens != null ? pd.max_tokens as number : maxTokens;
+          const chTopP = pd.top_p != null ? pd.top_p as number : topP;
+          const chFreqPenalty = pd.frequency_penalty != null ? pd.frequency_penalty as number : frequencyPenalty;
+          const chPresPenalty = pd.presence_penalty != null ? pd.presence_penalty as number : presencePenalty;
 
           const controller = new AbortController();
           try {
