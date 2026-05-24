@@ -17,6 +17,7 @@ import { resolveOpenClawGateway } from '../utils/openclawGateway';
 import { clawBotClient } from '../services/ClawBotGatewayClient';
 import { wechatMessageBridge, loadWechatAccounts } from '../services/WechatMessageBridge';
 import { getDb, execToRows } from '../db/client';
+import { ILinkResponse, getErrorMessage } from '../types/ilink';
 import http from 'http';
 import https from 'https';
 import crypto from 'crypto';
@@ -131,9 +132,9 @@ const { url: GATEWAY_URL, token: GATEWAY_TOKEN } = resolveOpenClawGateway();
 function proxyToGateway(
   method: string,
   path: string,
-  body?: any,
+  body?: unknown,
   timeout = 30000
-): Promise<{ status: number; data: any }> {
+): Promise<ILinkResponse> {
   return new Promise((resolve, reject) => {
     const url = new URL(GATEWAY_URL + path);
     const payload = body ? JSON.stringify(body) : '';
@@ -186,9 +187,9 @@ function proxyToGateway(
 function callILink(
   method: string,
   path: string,
-  body?: any,
+  body?: unknown,
   timeout = 30000
-): Promise<{ status: number; data: any }> {
+): Promise<ILinkResponse> {
   return new Promise((resolve, reject) => {
     const url = new URL(ILINK_BASE + path);
     const payload = body ? JSON.stringify(body) : '';
@@ -246,7 +247,7 @@ function callILink(
 function callILinkGet(
   path: string,
   timeout = 35000
-): Promise<{ status: number; data: any }> {
+): Promise<ILinkResponse> {
   return new Promise((resolve, reject) => {
     const url = new URL(ILINK_BASE + path);
 
@@ -289,7 +290,7 @@ function callILinkGet(
 type SseCallback = (event: string, payload: string) => void;
 const sseClients = new Set<SseCallback>();
 
-function broadcastSse(event: string, data: any): void {
+function broadcastSse(event: string, data: unknown): void {
   const payload = JSON.stringify(data);
   for (const client of sseClients) {
     try {
@@ -314,8 +315,8 @@ clawBotClient.on('disconnect', () => {
 });
 
 // 透传 Gateway 事件（通过通配符监听）
-clawBotClient.on('*', (data: any) => {
-  if (data?.event) {
+clawBotClient.on('*', (data: unknown) => {
+  if ((data as { event?: string })?.event) {
     broadcastSse('gateway_event', data);
   }
 });
@@ -340,8 +341,9 @@ router.post('/qrcode', async (req: Request, res: Response) => {
       { local_token_list: localTokenList }
     );
 
-    if (result.status >= 400 || (result.data && result.data.ret !== 0)) {
-      const errMsg = result.data?.msg || result.data?.message || 'iLink error';
+    if (result.status >= 400 || (result.data && (result.data as { ret?: number }).ret !== 0)) {
+      const d = result.data as Record<string, unknown>;
+      const errMsg = (d.msg as string) || (d.message as string) || 'iLink error';
       logger.error('[WechatClawBot] iLink error: ' + result.status + ' ' + errMsg);
       return res.status(result.status >= 400 ? result.status : 500).json({
         success: false,
@@ -352,11 +354,11 @@ router.post('/qrcode', async (req: Request, res: Response) => {
 
     cleanupQrcodeCache();
 
-    const ilinkData = result.data;
-    const qrToken = ilinkData.qrcode;
+    const ilinkData = result.data as Record<string, unknown>;
+    const qrToken = ilinkData.qrcode as string;
     // 获取 iLink 返回的原始二维码数据（可能是网页链接或 base64 图片）
-    const originalQrUrl = ilinkData.qrcode_url || ilinkData.qrcode_img_content;
-    const qrImageContent = ilinkData.qrcode_img_content || null;
+    const originalQrUrl = (ilinkData.qrcode_url as string) || (ilinkData.qrcode_img_content as string);
+    const qrImageContent = (ilinkData.qrcode_img_content as string) || null;
 
     if (!originalQrUrl) {
       logger.error('[WechatClawBot] iLink returned no qrcode_url or qrcode_img_content');
@@ -407,9 +409,9 @@ router.post('/qrcode', async (req: Request, res: Response) => {
         qrcode_img_content: qrImageContent,
       },
     });
-  } catch (err: any) {
-    logger.error('[WechatClawBot] QR code fetch failed: ' + err.message);
-    res.status(500).json({ success: false, error: err.message });
+  } catch (err: unknown) {
+    logger.error('[WechatClawBot] QR code fetch failed: ' + getErrorMessage(err));
+    res.status(500).json({ success: false, error: getErrorMessage(err) });
   }
 });
 
@@ -461,16 +463,17 @@ router.post('/qrcode/status', async (req: Request, res: Response) => {
     logger.info('[WechatClawBot] QR status response: ' + JSON.stringify(result.data).substring(0, 200));
 
     // iLink 返回格式: { status: "wait"|"scaned"|"confirmed"|"expired", bot_token?, ilink_bot_id?, ilink_user_id?, baseurl? }
-    if (result.data && result.data.status) {
-      const status = result.data.status;
-      const baseUrl = result.data.baseurl || 'https://ilinkai.weixin.qq.com';
+    const statusData = result.data as Record<string, unknown>;
+    if (result.data && statusData.status) {
+      const status = statusData.status as string;
+      const baseUrl = (statusData.baseurl as string) || 'https://ilinkai.weixin.qq.com';
 
       // 如果扫码成功（confirmed），保存 token 到账号文件并触发 Gateway 热重载
-      if (status === 'confirmed' && result.data.bot_token) {
+      if (status === 'confirmed' && statusData.bot_token) {
         try {
-          const botId = result.data.ilink_bot_id;
-          const botToken = result.data.bot_token;
-          const userId = result.data.ilink_user_id;
+          const botId = statusData.ilink_bot_id as string;
+          const botToken = statusData.bot_token as string;
+          const userId = statusData.ilink_user_id as string;
 
           if (botId && botToken && userId) {
             const accountsDir = path.resolve('/root/.openclaw/openclaw-weixin/accounts');
@@ -512,8 +515,8 @@ router.post('/qrcode/status', async (req: Request, res: Response) => {
               logger.info('[WechatClawBot] Gateway hot reload triggered');
             }
           }
-        } catch (saveErr: any) {
-          logger.error('[WechatClawBot] Failed to save account: ' + saveErr.message);
+        } catch (saveErr: unknown) {
+          logger.error('[WechatClawBot] Failed to save account: ' + getErrorMessage(saveErr));
         }
       }
 
@@ -522,9 +525,9 @@ router.post('/qrcode/status', async (req: Request, res: Response) => {
         data: {
           status: status,
           credentials: status === 'confirmed' ? {
-            bot_token: result.data.bot_token,
-            ilink_bot_id: result.data.ilink_bot_id,
-            ilink_user_id: result.data.ilink_user_id,
+            bot_token: statusData.bot_token,
+            ilink_bot_id: statusData.ilink_bot_id,
+            ilink_user_id: statusData.ilink_user_id,
           } : undefined,
           baseurl: baseUrl,
         },
@@ -538,9 +541,9 @@ router.post('/qrcode/status', async (req: Request, res: Response) => {
         },
       });
     }
-  } catch (err: any) {
-    logger.error('[WechatClawBot] QR status poll failed: ' + err.message);
-    res.status(500).json({ success: false, error: err.message });
+  } catch (err: unknown) {
+    logger.error('[WechatClawBot] QR status poll failed: ' + getErrorMessage(err));
+    res.status(500).json({ success: false, error: getErrorMessage(err) });
   }
 });
 
@@ -561,12 +564,12 @@ router.post('/channel/reset', async (req: Request, res: Response) => {
       { channel_id }
     );
     res.json({
-      success: result.data?.ret === 0,
+      success: (result.data as { ret?: number })?.ret === 0,
       data: result.data,
     });
-  } catch (err: any) {
-    logger.error('[WechatClawBot] Channel reset failed: ' + err.message);
-    res.status(500).json({ success: false, error: err.message });
+  } catch (err: unknown) {
+    logger.error('[WechatClawBot] Channel reset failed: ' + getErrorMessage(err));
+    res.status(500).json({ success: false, error: getErrorMessage(err) });
   }
 });
 
@@ -608,12 +611,12 @@ function getWeixinAccounts() {
           hasToken: !!account.token,
           savedAt: account.savedAt || 'unknown',
         });
-      } catch (err: any) {
+      } catch (err: unknown) {
         logger.warn(`[WechatClawBot] Failed to parse account file: ${file}`, err);
       }
     }
-  } catch (err: any) {
-    logger.error('[WechatClawBot] Failed to read weixin accounts: ' + err.message);
+  } catch (err: unknown) {
+    logger.error('[WechatClawBot] Failed to read weixin accounts: ' + getErrorMessage(err));
   }
 
   return accounts;
@@ -645,8 +648,8 @@ router.get('/status', async (_req: Request, res: Response) => {
         timestamp: new Date().toISOString(),
       },
     });
-  } catch (err: any) {
-    res.status(500).json({ success: false, error: err.message });
+  } catch (err: unknown) {
+    res.status(500).json({ success: false, error: getErrorMessage(err) });
   }
 });
 
@@ -667,9 +670,9 @@ router.get('/models', async (_req: Request, res: Response) => {
   try {
     const result = await proxyToGateway('GET', '/v1/models', undefined, 10000);
     res.json(result.data);
-  } catch (err: any) {
-    logger.error('[WechatClawBot] Models fetch failed: ' + err.message);
-    res.status(500).json({ success: false, error: err.message });
+  } catch (err: unknown) {
+    logger.error('[WechatClawBot] Models fetch failed: ' + getErrorMessage(err));
+    res.status(500).json({ success: false, error: getErrorMessage(err) });
   }
 });
 
@@ -752,8 +755,8 @@ router.get('/accounts', (_req: Request, res: Response) => {
         }),
       },
     });
-  } catch (err: any) {
-    res.status(500).json({ success: false, error: err.message });
+  } catch (err: unknown) {
+    res.status(500).json({ success: false, error: getErrorMessage(err) });
   }
 });
 
@@ -807,8 +810,8 @@ router.delete('/accounts/:accountId', (req: Request, res: Response) => {
     } else {
       res.status(404).json({ success: false, error: '账号不存在: ' + accountId });
     }
-  } catch (err: any) {
-    res.status(500).json({ success: false, error: err.message });
+  } catch (err: unknown) {
+    res.status(500).json({ success: false, error: getErrorMessage(err) });
   }
 });
 
@@ -835,8 +838,8 @@ router.get('/stats', (_req: Request, res: Response) => {
         rcAssistant: { sent: rcUser[0]?.cnt || 0, replied: rcAgent[0]?.cnt || 0 },
       },
     });
-  } catch (err: any) {
-    res.status(500).json({ success: false, error: err.message });
+  } catch (err: unknown) {
+    res.status(500).json({ success: false, error: getErrorMessage(err) });
   }
 });
 
@@ -849,8 +852,8 @@ router.get('/sync-status', (_req: Request, res: Response) => {
     const { ILinkMonitor } = require('../services/ILinkMonitor');
     const status = ILinkMonitor.getStatus();
     res.json({ success: true, data: status });
-  } catch (err: any) {
-    res.status(500).json({ success: false, error: err.message });
+  } catch (err: unknown) {
+    res.status(500).json({ success: false, error: getErrorMessage(err) });
   }
 });
 
@@ -862,8 +865,8 @@ router.post('/sync-now', async (_req: Request, res: Response) => {
   try {
     await wechatMessageBridge.syncOnce();
     res.json({ success: true, message: '同步完成' });
-  } catch (err: any) {
-    res.status(500).json({ success: false, error: err.message });
+  } catch (err: unknown) {
+    res.status(500).json({ success: false, error: getErrorMessage(err) });
   }
 });
 
@@ -882,14 +885,14 @@ router.get('/conversations', (_req: Request, res: Response) => {
        LEFT JOIN users u ON c.user_id = u.id
        WHERE c.conversation_type = 'wechat_assistant' OR c.scope_type = 'wechat'
        ORDER BY c.last_message_at DESC`);
-    const conversations = rows.map((row: any) => ({
+    const conversations = rows.map((row: Record<string, unknown>) => ({
       id: row.id, title: row.title, oc_session_key: row.oc_session_key,
       created_at: row.created_at, last_message_at: row.last_message_at, status: row.status,
       username: row.nickname || row.username || '',
     }));
     res.json({ success: true, data: { conversations } });
-  } catch (err: any) {
-    res.status(500).json({ success: false, error: err.message });
+  } catch (err: unknown) {
+    res.status(500).json({ success: false, error: getErrorMessage(err) });
   }
 });
 
@@ -917,8 +920,8 @@ router.get('/conversations/:id/messages', (req: Request, res: Response) => {
         })).reverse()
       : [];
     res.json({ success: true, data: { messages } });
-  } catch (err: any) {
-    res.status(500).json({ success: false, error: err.message });
+  } catch (err: unknown) {
+    res.status(500).json({ success: false, error: getErrorMessage(err) });
   }
 });
 

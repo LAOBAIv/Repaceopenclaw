@@ -17,6 +17,7 @@ import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 import { logger } from '../utils/logger';
+import { ILinkResponse, isError, getErrorMessage } from '../types/ilink';
 import { resolveOpenClawGateway } from '../utils/openclawGateway';
 import { getDb } from '../db/client';
 
@@ -52,9 +53,9 @@ function ilinkFetch(
   apiPath: string,
   token: string,
   method: string = 'POST',
-  body?: any,
+  body?: unknown,
   timeoutMs: number = 30000
-): Promise<{ status: number; data: any }> {
+): Promise<ILinkResponse> {
   return new Promise((resolve, reject) => {
     const url = new URL(apiPath.startsWith('http') ? apiPath : ILINK_BASE + apiPath);
     const payload = body ? JSON.stringify(body) : '';
@@ -188,12 +189,12 @@ function loadWechatAccounts(): WechatAccount[] {
             baseUrl: data.baseUrl || ILINK_BASE,
           });
         }
-      } catch (err) {
-        logger.warn(`[WechatBridge] Failed to parse account file: ${file}`, err);
+      } catch (err: unknown) {
+        logger.warn(`[WechatBridge] Failed to parse account file: ${file}`, { error: getErrorMessage(err) });
       }
     }
-  } catch (err) {
-    logger.error('[WechatBridge] Failed to read accounts directory', err);
+  } catch (err: unknown) {
+    logger.error('[WechatBridge] Failed to read accounts directory', { error: getErrorMessage(err) });
   }
   return accounts;
 }
@@ -221,8 +222,8 @@ function saveSyncState(state: SyncState): void {
     if (!fs.existsSync(BRIDGE_STATE_DIR)) fs.mkdirSync(BRIDGE_STATE_DIR, { recursive: true });
     const file = path.join(BRIDGE_STATE_DIR, `${state.ilinkUserId}.json`);
     fs.writeFileSync(file, JSON.stringify(state, null, 2));
-  } catch (err) {
-    logger.warn('[WechatBridge] Failed to save sync state', err);
+  } catch (err: unknown) {
+    logger.warn('[WechatBridge] Failed to save sync state', { error: getErrorMessage(err) });
   }
 }
 
@@ -253,8 +254,9 @@ function getOrCreateConversation(ilinkUserId: string): string {
       [conversationId, ocSessionKey, now, now]
     );
     logger.info(`[WechatBridge] Created bridge conversation for ${ilinkUserId}`);
-  } catch (err: any) {
-    if (err.message?.includes('UNIQUE') || err.message?.includes('PRIMARY KEY')) {
+  } catch (err: unknown) {
+    const errMsg = getErrorMessage(err);
+    if (errMsg?.includes('UNIQUE') || errMsg?.includes('PRIMARY KEY')) {
       db.run(`UPDATE conversations SET oc_session_key = ?, last_message_at = ? WHERE id = ?`,
         [ocSessionKey, now, conversationId]);
     } else {
@@ -275,9 +277,10 @@ function saveMessage(conversationId: string, role: string, content: string, crea
       [messageId, conversationId, role, content, role === 'assistant' ? 'rc-wechat-agent' : null, createdAt]
     );
     db.run(`UPDATE conversations SET last_message_at = ? WHERE id = ?`, [createdAt, conversationId]);
-  } catch (err: any) {
-    if (!err.message?.includes('UNIQUE') && !err.message?.includes('PRIMARY KEY')) {
-      logger.warn('[WechatBridge] Failed to save message', err);
+  } catch (err: unknown) {
+    const errMsg = getErrorMessage(err);
+    if (!errMsg?.includes('UNIQUE') && !errMsg?.includes('PRIMARY KEY')) {
+      logger.warn('[WechatBridge] Failed to save message', { error: errMsg });
     }
   }
 }
@@ -289,7 +292,7 @@ function saveMessage(conversationId: string, role: string, content: string, crea
  * 超时设为 25s，与 timeout_ms 参数匹配，避免误报超时
  */
 async function fetchMessages(account: WechatAccount, syncState?: SyncState): Promise<{
-  messages: any[];
+  messages: unknown[];
   newBuf: string;
 }> {
   const result = await ilinkFetch(
@@ -303,16 +306,17 @@ async function fetchMessages(account: WechatAccount, syncState?: SyncState): Pro
     30000 // socket 超时 30s，留有 10s 余量
   );
 
-  if (result.status !== 200 || result.data?.ret !== 0) {
-    logger.warn(`[WechatBridge] getUpdates failed for ${account.userId}: status=${result.status}, ret=${result.data?.ret}`);
+  const data = result.data as { ret?: number; msgs?: unknown[]; get_updates_buf?: string } | undefined;
+  if (result.status !== 200 || data?.ret !== 0) {
+    logger.warn(`[WechatBridge] getUpdates failed for ${account.userId}: status=${result.status}, ret=${data?.ret}`);
     return { messages: [], newBuf: syncState?.getUpdatesBuf || '' };
   }
 
-  const msgs = result.data.msgs || [];
-  const newBuf = result.data.get_updates_buf || syncState?.getUpdatesBuf || '';
+  const msgs = data?.msgs || [];
+  const newBuf = data?.get_updates_buf || syncState?.getUpdatesBuf || '';
 
   // 只返回用户消息（message_type = 1）
-  const userMsgs = msgs.filter((m: any) => m.message_type === 1);
+  const userMsgs = msgs.filter((m: Record<string, unknown>) => m.message_type === 1);
 
   return { messages: userMsgs, newBuf };
 }
@@ -334,15 +338,16 @@ async function sendReply(account: WechatAccount, toUser: string, text: string): 
       15000
     );
 
-    if (result.status === 200 && result.data?.ret === 0) {
+    const data = result.data as { ret?: number } | undefined;
+    if (result.status === 200 && data?.ret === 0) {
       logger.info(`[WechatBridge] Reply sent OK to ${toUser}`);
       return true;
     } else {
-      logger.warn(`[WechatBridge] Reply failed: status=${result.status}, ret=${result.data?.ret}`);
+      logger.warn(`[WechatBridge] Reply failed: status=${result.status}, ret=${data?.ret}`);
       return false;
     }
-  } catch (err: any) {
-    logger.error(`[WechatBridge] Reply error: ${err.message}`);
+  } catch (err: unknown) {
+    logger.error(`[WechatBridge] Reply error: ${getErrorMessage(err)}`);
     return false;
   }
 }
@@ -352,24 +357,26 @@ async function sendReply(account: WechatAccount, toUser: string, text: string): 
  */
 async function processUserMessage(
   account: WechatAccount,
-  msg: any,
+  msg: unknown,
   conversationId: string
 ): Promise<void> {
   // 提取用户消息文本
+  const msgObj = msg as Record<string, unknown>;
   let userText = '';
-  const items = msg.item_list || [];
+  const items = (msgObj.item_list as Record<string, unknown>[]) || [];
   for (const item of items) {
-    if (item.type === 1 && item.text_item?.text) {
-      userText += item.text_item.text;
-    } else if (item.type === 2) {
+    const itemObj = item as Record<string, unknown>;
+    if ((itemObj.type as number) === 1 && (itemObj.text_item as Record<string, unknown>)?.text) {
+      userText += (itemObj.text_item as Record<string, unknown>).text as string;
+    } else if ((itemObj.type as number) === 2) {
       userText += '[图片]';
     }
   }
 
   if (!userText) return;
 
-  const createdAt = msg.create_time_ms
-    ? new Date(msg.create_time_ms).toISOString()
+  const createdAt = (msgObj.create_time_ms as number)
+    ? new Date(msgObj.create_time_ms as number).toISOString()
     : new Date().toISOString();
 
   // 1. 存用户消息
@@ -396,8 +403,8 @@ async function processUserMessage(
 
     // 5. 发回微信
     await sendReply(account, ilinkUserId, replyText);
-  } catch (err: any) {
-    logger.error(`[WechatBridge] Gateway call failed: ${err.message}`);
+  } catch (err: unknown) {
+    logger.error(`[WechatBridge] Gateway call failed: ${getErrorMessage(err)}`);
     // 降级：存一条错误提示
     saveMessage(conversationId, 'assistant', '⚠️ 处理消息时出错，请稍后再试。', new Date().toISOString());
   }
@@ -468,8 +475,8 @@ class WechatMessageBridge {
     for (const account of accounts) {
       try {
         await this.pollAccount(account);
-      } catch (err: any) {
-        logger.error(`[WechatBridge] Poll failed for ${account.userId}: ${err.message}`);
+      } catch (err: unknown) {
+        logger.error(`[WechatBridge] Poll failed for ${account.userId}: ${getErrorMessage(err)}`);
       }
     }
   }
@@ -503,8 +510,8 @@ class WechatMessageBridge {
     for (const msg of messages) {
       try {
         await processUserMessage(account, msg, conversationId);
-      } catch (err: any) {
-        logger.error(`[WechatBridge] Failed to process message: ${err.message}`);
+      } catch (err: unknown) {
+        logger.error(`[WechatBridge] Failed to process message: ${getErrorMessage(err)}`);
       }
     }
   }

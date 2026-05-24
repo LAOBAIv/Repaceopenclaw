@@ -15,6 +15,7 @@ import fs from 'fs';
 import path from 'path';
 import { logger } from '../utils/logger';
 import { resolveOpenClawGateway } from '../utils/openclawGateway';
+import { ILinkResponse, isError, getErrorMessage, MediaItem } from '../types/ilink';
 
 // ─── 配置 ────────────────────────────────────────────────────────────────
 
@@ -47,10 +48,10 @@ interface WeixinMessage {
 interface MessageItem {
   type: number; // 1 = TEXT, 2 = IMAGE, 3 = VOICE, 4 = FILE, 5 = VIDEO
   text_item?: { text: string };
-  image_item?: any;
-  voice_item?: any;
-  file_item?: any;
-  video_item?: any;
+  image_item?: MediaItem;
+  voice_item?: MediaItem;
+  file_item?: MediaItem;
+  video_item?: MediaItem;
 }
 
 interface GetUpdatesResponse {
@@ -117,12 +118,12 @@ function loadWechatAccountsFromFile(): WechatAccount[] {
           
           logger.info(`[WechatMessageService] Loaded account from file: ${data.userId}`);
         }
-      } catch (err: any) {
-        logger.warn(`[WechatMessageService] Failed to load account file ${file}: ${err.message}`);
+      } catch (err: unknown) {
+        logger.warn(`[WechatMessageService] Failed to load account file ${file}: ${getErrorMessage(err)}`);
       }
     }
-  } catch (err: any) {
-    logger.error(`[WechatMessageService] Failed to read accounts directory: ${err.message}`);
+  } catch (err: unknown) {
+    logger.error(`[WechatMessageService] Failed to read accounts directory: ${getErrorMessage(err)}`);
   }
   
   return accounts;
@@ -134,9 +135,9 @@ function makeRequest(
   method: string,
   url: string,
   token: string,
-  body?: any,
+  body?: unknown,
   timeout = REQUEST_TIMEOUT
-): Promise<{ status: number; data: any }> {
+): Promise<ILinkResponse> {
   return new Promise((resolve, reject) => {
     const urlObj = new URL(url);
     const payload = body ? JSON.stringify(body) : '';
@@ -229,7 +230,7 @@ async function callGatewayChat(
   }
 
   // 解析响应
-  const data = response.data;
+  const data = response.data as { choices?: Array<{ message?: { content?: string } }> };
   if (data.choices && data.choices[0]?.message?.content) {
     return data.choices[0].message.content;
   }
@@ -356,9 +357,9 @@ class WechatMessageService {
         POLL_TIMEOUT + 10000 // 长轮询超时 + 10秒缓冲
       );
 
-      if (result.status !== 200 || result.data?.ret !== 0) {
-        const errCode = result.data?.errcode;
-        const errMsg = result.data?.errmsg || JSON.stringify(result.data);
+      if (result.status !== 200 || (result.data as GetUpdatesResponse)?.ret !== 0) {
+        const errCode = (result.data as GetUpdatesResponse)?.errcode;
+        const errMsg = (result.data as GetUpdatesResponse)?.errmsg || JSON.stringify(result.data);
         
         // -14 表示 session timeout，需要重新登录
         if (errCode === -14) {
@@ -372,13 +373,13 @@ class WechatMessageService {
       }
 
       // 更新 get_updates_buf
-      if (result.data.get_updates_buf) {
-        account.getUpdatesBuf = result.data.get_updates_buf;
+      if ((result.data as GetUpdatesResponse).get_updates_buf) {
+        account.getUpdatesBuf = (result.data as GetUpdatesResponse).get_updates_buf;
         // 保存到文件
         this.saveSyncState(account);
       }
 
-      const msgs = result.data.msgs || [];
+      const msgs = (result.data as GetUpdatesResponse).msgs || [];
       if (msgs.length === 0) {
         // 长轮询超时，没有新消息，这是正常情况
         logger.debug(`[WechatMessageService] No new messages for ${account.userId}`);
@@ -391,7 +392,7 @@ class WechatMessageService {
       for (const msg of msgs) {
         await this.processMessage(account, msg);
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       // 网络错误或超时
       throw err;
     }
@@ -436,8 +437,8 @@ class WechatMessageService {
       await this.sendMessage(account, userId, reply, contextToken);
 
       logger.info(`[WechatMessageService] Reply sent to ${userId}`);
-    } catch (err: any) {
-      logger.error(`[WechatMessageService] Failed to process message: ${err.message}`);
+    } catch (err: unknown) {
+      logger.error(`[WechatMessageService] Failed to process message: ${getErrorMessage(err)}`);
     }
   }
 
@@ -465,7 +466,7 @@ class WechatMessageService {
       }
     );
 
-    if (result.status !== 200 || result.data?.ret !== 0) {
+    if (result.status !== 200 || (result.data as SendMessageResponse)?.ret !== 0) {
       throw new Error(`sendMessage failed: ${result.status} ${JSON.stringify(result.data)}`);
     }
   }
@@ -480,8 +481,8 @@ class WechatMessageService {
       fs.writeFileSync(syncPath, JSON.stringify({
         get_updates_buf: account.getUpdatesBuf
       }, null, 2));
-    } catch (err: any) {
-      logger.warn(`[WechatMessageService] Failed to save sync state: ${err.message}`);
+    } catch (err: unknown) {
+      logger.warn(`[WechatMessageService] Failed to save sync state: ${getErrorMessage(err)}`);
     }
   }
 }
