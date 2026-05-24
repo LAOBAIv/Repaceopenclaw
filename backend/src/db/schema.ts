@@ -1,17 +1,8 @@
 // [2026-05-18] 从 client.ts 拆分出表结构定义（DDL）
-import { saveDb } from './client';
+import { saveDb, safeAlter } from './client';
 import logger from '../utils/logger';
 
-/** 安全执行 ALTER/CREATE 等幂等 DDL，只静默 "duplicate column" 类错误 */
-function safeAlter(db: any, sql: string): void {
-  try {
-    db.run(sql);
-  } catch (e: any) {
-    const msg = (e?.message || '').toLowerCase();
-    if (msg.includes('duplicate column') || msg.includes('already exists')) return;
-    logger.warn(`[DB Schema] DDL failed: ${sql.slice(0, 80)}... | ${e.message}`);
-  }
-}
+
 
 /** 创建所有表结构（幂等，CREATE IF NOT EXISTS） */
 export function createTables(db: any) {
@@ -324,7 +315,11 @@ export function createTables(db: any) {
   safeAlter(db, "ALTER TABLE messages ADD COLUMN user_id TEXT NOT NULL DEFAULT ''");
   // Dual-code Phase 1: message_code 作为业务消息编码，底层主键仍为 id(UUID)
   safeAlter(db, "ALTER TABLE messages ADD COLUMN message_code TEXT NOT NULL DEFAULT ''");
-  safeAlter(db, "CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_message_code ON messages(message_code)");
+  // [2026-05-24] 修复：旧的全量 UNIQUE INDEX 会将所有空字符串 '' 视为重复值
+  // 导致 backfillBusinessCodes 在 UPDATE message_code 时触发 UNIQUE constraint failed
+  // 服务崩溃重启循环。必须 DROP 旧索引再重建 partial index。
+  safeAlter(db, "DROP INDEX IF EXISTS idx_messages_message_code");
+  safeAlter(db, "CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_message_code ON messages(message_code) WHERE message_code != ''");
   // Migrate: add token_count to existing messages table (idempotent)
   safeAlter(db, "ALTER TABLE messages ADD COLUMN token_count INTEGER NOT NULL DEFAULT 0");
 

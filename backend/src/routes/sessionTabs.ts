@@ -6,7 +6,7 @@
  * DELETE /api/session-tabs/:key — 删除指定 tab
  */
 import { Router, Request, Response } from 'express';
-import { SessionTabService } from '../db/client';
+import { SessionTabService } from '../db/sessionTabsRepo';
 
 const router = Router();
 

@@ -79,7 +79,12 @@ export function backfillBusinessCodes(db: any) {
     let seq = 1;
     for (const msg of msgs) {
       if (!msg.message_code) {
-        db.run("UPDATE messages SET message_code=? WHERE id=?", [IdGenerator.messageCode(conv.session_code, seq), msg.id]);
+        try {
+          db.run("UPDATE messages SET message_code=? WHERE id=?", [IdGenerator.messageCode(conv.session_code, seq), msg.id]);
+        } catch (e: any) {
+          // UNIQUE 约束冲突时跳过（已存在的 message_code）
+          if (!e?.message?.includes('UNIQUE')) throw e;
+        }
       }
       seq += 1;
     }

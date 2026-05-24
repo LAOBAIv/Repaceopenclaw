@@ -97,9 +97,9 @@ router.get(
 router.get(
   "/routing-overview",
   authenticate,
-  asyncHandler(async (_req: Request, res: Response) => {
+  asyncHandler(async (req: Request, res: Response) => {
     const db = getDb();
-    const agents = AgentService.list();
+    const agents = AgentService.list((req as any).user?.id);
 
     const overview = agents.map(agent => {
       const hasPrivateToken = !!(agent.tokenApiKey?.trim());
