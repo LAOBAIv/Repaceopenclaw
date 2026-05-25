@@ -23,7 +23,7 @@ const router = Router();
 router.post(
   '/',
   asyncHandler(async (req: Request, res: Response) => {
-    const userId = (req as any).user?.id;
+    const userId = req.user?.id;
     if (!userId) {
       res.status(401).json({ error: '未登录' });
       return;
@@ -51,7 +51,7 @@ router.post(
 router.get(
   '/',
   asyncHandler(async (req: Request, res: Response) => {
-    const userId = (req as any).user?.id;
+    const userId = req.user?.id;
     if (!userId) {
       res.status(401).json({ error: '未登录' });
       return;
@@ -121,7 +121,7 @@ router.delete(
 router.post(
   '/search',
   asyncHandler(async (req: Request, res: Response) => {
-    const userId = (req as any).user?.id;
+    const userId = req.user?.id;
     if (!userId) {
       res.status(401).json({ error: '未登录' });
       return;
@@ -151,7 +151,7 @@ router.post(
 router.get(
   '/stats',
   asyncHandler(async (req: Request, res: Response) => {
-    const userId = (req as any).user?.id;
+    const userId = req.user?.id;
     if (!userId) {
       res.status(401).json({ error: '未登录' });
       return;

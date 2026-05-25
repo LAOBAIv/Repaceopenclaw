@@ -67,8 +67,8 @@ export function normalizeConversationScope(
 /**
  * 判断是否全局助手会话
  */
-export function isGlobalAssistantConv(conv: any): boolean {
-  return conv.agentIds.some((id: string) => AgentService.isPlatformAssistantId(id))
+export function isGlobalAssistantConv(conv: { agentIds?: string[]; title?: string; conversationType?: string }): boolean {
+  return conv.agentIds?.some((id) => AgentService.isPlatformAssistantId(id))
     || conv.title === 'RepaceClaw 平台助手'
     || conv.title === '微信助手'
     || conv.conversationType === 'wechat_assistant';

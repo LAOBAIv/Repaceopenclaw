@@ -237,7 +237,7 @@ router.post("/callback", async (req: Request, res: Response) => {
         detail: { username, email, method: 'wechat' },
         ipAddress: req.ip,
         userAgent: req.headers['user-agent'],
-        requestId: (req as any).requestId,
+        requestId: req.requestId,
       });
 
       logger.info(`[WechatLogin] New user ${userId} created and bound to WeChat ${wechatOpenid}`);
@@ -268,7 +268,7 @@ router.post("/callback", async (req: Request, res: Response) => {
  * 已登录用户绑定微信（用于账号设置页面）
  */
 router.post("/bind", async (req: Request, res: Response) => {
-  const userId = (req as any).user?.id;
+  const userId = req.user?.id;
   if (!userId) return res.status(401).json({ error: "未认证" });
 
   const { openid, code } = req.body;

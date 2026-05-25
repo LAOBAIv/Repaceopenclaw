@@ -31,7 +31,7 @@ export function requestLogger(req: Request, res: Response, next: NextFunction) {
       }
     }
 
-    return originalEnd.call(this, chunk as any, encoding as any, cb);
+    return originalEnd.call(this, chunk, encoding as BufferEncoding, cb);
   };
 
   next();

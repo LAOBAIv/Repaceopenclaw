@@ -30,7 +30,7 @@ const CODE_FIELD_MAP: Partial<Record<ResourceType, string>> = {
  */
 export function ensureOwnership(resourceType: ResourceType) {
   return (req: Request, res: Response, next: NextFunction) => {
-    const user = (req as any).user;
+    const user = req.user;
     if (!user) return res.status(401).json({ error: "未登录" });
 
     // 管理员跳过归属校验

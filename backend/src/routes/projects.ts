@@ -112,12 +112,12 @@ router.delete("/documents/:docId", authenticate, (req: Request, res: Response) =
 
 // Projects CRUD
 router.get("/", authenticate, (req: Request, res: Response) => {
-  const userId = (req as any).user?.id;
+  const userId = req.user?.id;
   res.json({ data: ProjectService.list(userId) });
 });
 
 router.post("/", authenticate, (req: Request, res: Response) => {
-  const userId = (req as any).user?.id;
+  const userId = req.user?.id;
   const parsed = ProjectSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
   const { title, description, tags, status, goal, priority, startTime, endTime, decisionMaker, createdBy } = parsed.data;
@@ -128,12 +128,12 @@ router.post("/", authenticate, (req: Request, res: Response) => {
 });
 
 router.get("/:id", authenticate, (req: Request, res: Response) => {
-  const userId = (req as any).user?.id;
+  const userId = req.user?.id;
   const p = ProjectService.getById(req.params.id);
   if (!p) return res.status(404).json({ error: "Project not found" });
   // 越权检查
-  if (p.createdBy && (req as any).user?.role !== "admin" && (req as any).user?.role !== "super_admin") {
-    if (p.createdBy !== userId && (p as any).user_id && (p as any).user_id !== userId) {
+  if (p.createdBy && req.user?.role !== "admin" && req.user?.role !== "super_admin") {
+    if (p.createdBy !== userId && (p as Record<string, unknown>).user_id && (p as Record<string, unknown>).user_id !== userId) {
       return res.status(403).json({ error: "无权限访问此项目" });
     }
   }
@@ -143,7 +143,7 @@ router.get("/:id", authenticate, (req: Request, res: Response) => {
 router.put("/:id", authenticate, ensureOwnership("project"), (req: Request, res: Response) => {
   const parsed = ProjectSchema.partial().safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
-  const p = ProjectService.update(req.params.id, parsed.data as any);
+  const p = ProjectService.update(req.params.id, parsed.data);
   if (!p) return res.status(404).json({ error: "Project not found" });
   res.json({ data: p });
 });

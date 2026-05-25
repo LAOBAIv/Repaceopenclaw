@@ -40,7 +40,7 @@ const CreateSchema = z.object({
 }).passthrough();
 
 router.post("/:id/create", authenticate, (req: Request, res: Response) => {
-  const userId = (req as any).user?.id;
+  const userId = req.user?.id;
   const parsed = CreateSchema.safeParse(req.body);
   if (!parsed.success) {
     return res.status(400).json({ error: parsed.error.flatten() });

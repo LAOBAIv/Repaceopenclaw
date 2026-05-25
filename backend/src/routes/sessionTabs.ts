@@ -12,14 +12,14 @@ const router = Router();
 
 /** GET /api/session-tabs — 获取用户的所有 session tabs */
 router.get('/', (req: Request, res: Response) => {
-  const userId = (req as any).userId || '';
+  const userId = req.userId || '';
   const tabs = SessionTabService.list(userId);
   res.json({ code: 0, data: tabs, msg: 'ok' });
 });
 
 /** POST /api/session-tabs/upsert — 创建或更新单个 tab */
 router.post('/upsert', (req: Request, res: Response) => {
-  const userId = (req as any).userId || '';
+  const userId = req.userId || '';
   const { browser_tab_key, title, conversation_id, agent_id, agent_name, color } = req.body;
   const id = `stab_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   const tab = SessionTabService.upsert({
@@ -37,7 +37,7 @@ router.post('/upsert', (req: Request, res: Response) => {
 
 /** POST /api/session-tabs/batch — 批量保存所有 tabs */
 router.post('/batch', (req: Request, res: Response) => {
-  const userId = (req as any).userId || '';
+  const userId = req.userId || '';
   const { tabs } = req.body;
   if (!Array.isArray(tabs)) {
     return res.status(400).json({ code: 400, data: null, msg: 'tabs 必须是数组' });
@@ -48,7 +48,7 @@ router.post('/batch', (req: Request, res: Response) => {
 
 /** DELETE /api/session-tabs/:key — 删除指定 tab */
 router.delete('/:key', (req: Request, res: Response) => {
-  const userId = (req as any).userId || '';
+  const userId = req.userId || '';
   const { key } = req.params;
   SessionTabService.delete(userId, key);
   res.json({ code: 0, data: null, msg: 'deleted' });

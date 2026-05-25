@@ -20,6 +20,8 @@ import {
   normalizeConversationScope,
   isGlobalAssistantConv,
 } from "./helpers";
+import type { Message } from "../../services/ConversationService/helpers";
+import type { SearchResult } from "../../services/memory/VectorStore";
 
 // ─── Schema ─────────────────────────────────────────────────────────────
 
@@ -41,7 +43,7 @@ export const CreateConvSchema = z.object({
 // ─── 列表 & 专属助手 ────────────────────────────────────────────────────
 
 export const listConversations = (req: Request, res: Response) => {
-  const userId = (req as any).user?.id;
+  const userId = req.user?.id;
   const projectId = req.query.projectId as string | undefined;
   const status = req.query.status as string | undefined;
   logger.debug(`[conversations.list] userId=${userId} status=${status} projectId=${projectId}`);
@@ -51,7 +53,7 @@ export const listConversations = (req: Request, res: Response) => {
 };
 
 export const getPlatformAssistant = (req: Request, res: Response) => {
-  const userId = (req as any).user?.id;
+  const userId = req.user?.id;
   if (!userId) return res.status(401).json({ error: '未认证' });
 
   const existingList = ConversationService.list(userId).filter(
@@ -84,7 +86,7 @@ export const getPlatformAssistant = (req: Request, res: Response) => {
 };
 
 export const getWechatAssistant = (req: Request, res: Response) => {
-  const userId = (req as any).user?.id;
+  const userId = req.user?.id;
   if (!userId) return res.status(401).json({ error: '未认证' });
 
   const existingList = ConversationService.list(userId).filter(
@@ -123,8 +125,8 @@ export const getWechatAssistant = (req: Request, res: Response) => {
 // ─── CRUD ───────────────────────────────────────────────────────────────
 
 export const createConversation = (req: Request, res: Response) => {
-  const userId = (req as any).user?.id;
-  const userRole = (req as any).user?.role;
+  const userId = req.user?.id;
+  const userRole = req.user?.role;
   const parsed = CreateConvSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
 
@@ -154,8 +156,8 @@ export const createConversation = (req: Request, res: Response) => {
 };
 
 export const updateConversation = (req: Request, res: Response) => {
-  const userId = (req as any).user?.id;
-  const userRole = (req as any).user?.role;
+  const userId = req.user?.id;
+  const userRole = req.user?.role;
   const { title, projectId, taskId, scopeType, scopeId, memoryPolicy, summary } = req.body;
   const conv = resolveConversationOr404(req.params.id, userId);
   if (!conv) return res.status(404).json({ error: "Conversation not found" });
@@ -177,8 +179,8 @@ export const updateConversation = (req: Request, res: Response) => {
 };
 
 export const deleteConversation = (req: Request, res: Response) => {
-  const userId = (req as any).user?.id;
-  const userRole = (req as any).user?.role;
+  const userId = req.user?.id;
+  const userRole = req.user?.role;
   const conv = resolveConversationOr404(req.params.id, userId);
   if (!conv) return res.status(404).json({ error: "Conversation not found" });
   if (conv.agentIds.some(id => AgentService.isPlatformAssistantId(id))) {
@@ -192,8 +194,8 @@ export const deleteConversation = (req: Request, res: Response) => {
 };
 
 export const updateConversationStatus = (req: Request, res: Response) => {
-  const userId = (req as any).user?.id;
-  const userRole = (req as any).user?.role;
+  const userId = req.user?.id;
+  const userRole = req.user?.role;
   const { status } = req.body;
   if (!status || !['active', 'in_progress', 'completed', 'archived', 'deleted', 'closed'].includes(status)) {
     return res.status(400).json({ error: "status must be one of: active, in_progress, completed, archived, deleted, closed" });
@@ -212,8 +214,8 @@ export const updateConversationStatus = (req: Request, res: Response) => {
 };
 
 export const switchAgent = (req: Request, res: Response) => {
-  const userId = (req as any).user?.id;
-  const userRole = (req as any).user?.role;
+  const userId = req.user?.id;
+  const userRole = req.user?.role;
   const { agentId } = req.body;
   if (!agentId) return res.status(400).json({ error: "agentId required" });
 
@@ -244,8 +246,8 @@ export const switchAgent = (req: Request, res: Response) => {
 // ─── Agent 管理 ─────────────────────────────────────────────────────────
 
 export const addAgentToConversation = (req: Request, res: Response) => {
-  const userId = (req as any).user?.id;
-  const userRole = (req as any).user?.role;
+  const userId = req.user?.id;
+  const userRole = req.user?.role;
   const conv = resolveConversationOr404(req.params.id, userId);
   if (!conv) return res.status(404).json({ error: "Conversation not found" });
   if (!canAccessConversation(conv, userId, userRole)) return res.status(403).json({ error: "无权操作此会话" });
@@ -262,8 +264,8 @@ export const addAgentToConversation = (req: Request, res: Response) => {
 };
 
 export const removeAgentFromConversation = (req: Request, res: Response) => {
-  const userId = (req as any).user?.id;
-  const userRole = (req as any).user?.role;
+  const userId = req.user?.id;
+  const userRole = req.user?.role;
   const conv = resolveConversationOr404(req.params.id, userId);
   if (!conv) return res.status(404).json({ error: "Conversation not found" });
   if (!canAccessConversation(conv, userId, userRole)) return res.status(403).json({ error: "无权操作此会话" });
@@ -279,8 +281,8 @@ export const removeAgentFromConversation = (req: Request, res: Response) => {
 // ─── 消息 ───────────────────────────────────────────────────────────────
 
 export const getMessages = (req: Request, res: Response) => {
-  const userId = (req as any).user?.id;
-  const userRole = (req as any).user?.role;
+  const userId = req.user?.id;
+  const userRole = req.user?.role;
   const conv = resolveConversationOr404(req.params.id, userId);
   if (!conv) return res.status(404).json({ error: "Conversation not found" });
   if (!canAccessConversation(conv, userId, userRole)) return res.status(403).json({ error: "无权限访问此会话消息" });
@@ -288,8 +290,8 @@ export const getMessages = (req: Request, res: Response) => {
 };
 
 export const addMessage = async (req: Request, res: Response) => {
-  const userId = (req as any).user?.id;
-  const userRole = (req as any).user?.role;
+  const userId = req.user?.id;
+  const userRole = req.user?.role;
   const { content } = req.body;
   if (!content) return res.status(400).json({ error: "content required" });
 
@@ -304,7 +306,7 @@ export const addMessage = async (req: Request, res: Response) => {
     try {
       const paAgent = conv.agentIds
         .map((id: string) => AgentService.getByIdOrCode(id, userId))
-        .find((a: any) => a && AgentService.isPlatformAssistantId(a.id));
+        .find((a) => a && AgentService.isPlatformAssistantId(a.id));
 
       if (paAgent) {
         const { resolveOpenClawGateway } = require('../../utils/openclawGateway');
@@ -326,7 +328,7 @@ export const addMessage = async (req: Request, res: Response) => {
         try {
           const memoryContext = await MemoryService.search({ query: content, userId, agentId: paAgent.id, topK: 3 }).catch(() => []);
           if (memoryContext.length > 0) {
-            const memoryText = memoryContext.map((m: any) => `【记忆】${m.title || m.content.slice(0, 100)} (相关度: ${(m.score * 100).toFixed(0)}%)`).join('\n');
+            const memoryText = memoryContext.map((m: SearchResult) => `【记忆】${m.title || m.content.slice(0, 100)} (相关度: ${(m.score * 100).toFixed(0)}%)`).join('\n');
             systemPrompt = `[相关记忆]\n${memoryText}\n\n${systemPrompt}`;
             logger.info(`[Memory Inject] ${memoryContext.length} memories injected for conv=${conv.id}`);
           }
@@ -337,7 +339,7 @@ export const addMessage = async (req: Request, res: Response) => {
         const historyMessages = ConversationService.getMessages(conv.id);
         const messages: Array<{ role: string; content: string | null; tool_calls?: unknown[]; tool_call_id?: string }> = [
           { role: "system", content: systemPrompt },
-          ...historyMessages.slice(-20).map((m: any) => ({
+          ...historyMessages.slice(-20).map((m: Message) => ({
             role: m.role === "agent" ? "assistant" : "user", content: m.content,
           })),
         ];
@@ -402,7 +404,7 @@ export const addMessage = async (req: Request, res: Response) => {
 // ─── 生成 & 概述 ────────────────────────────────────────────────────────
 
 export const generateReply = async (req: Request, res: Response) => {
-  const userId = (req as any).user?.id;
+  const userId = req.user?.id;
   const { agentId } = req.body;
   if (!agentId) return res.status(400).json({ error: "agentId required" });
 
@@ -443,7 +445,7 @@ export const generateReply = async (req: Request, res: Response) => {
 };
 
 export const createWithOverview = async (req: Request, res: Response) => {
-  const userId = (req as any).user?.id;
+  const userId = req.user?.id;
   const { title, agentIds, projectId, description } = req.body;
 
   if (!title || !agentIds || !agentIds.length) {

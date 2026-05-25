@@ -12,13 +12,13 @@ import { authenticate } from '../middleware/auth';
 const router = Router();
 
 router.get('/', authenticate, (req: Request, res: Response) => {
-  const userId = (req as any).user?.id || '';
+  const userId = req.user?.id || '';
   const sessions = ConversationService.getSessionIndex(userId);
   res.json({ code: 0, data: sessions, msg: 'ok' });
 });
 
 router.get('/:id', authenticate, (req: Request, res: Response) => {
-  const userId = (req as any).user?.id || '';
+  const userId = req.user?.id || '';
   const conv = ConversationService.getByIdOrCode(req.params.id, userId);
   if (!conv) {
     return res.status(404).json({ code: 404, data: null, msg: '会话不存在' });
@@ -36,7 +36,7 @@ router.get('/:id', authenticate, (req: Request, res: Response) => {
 });
 
 router.get('/:id/preview', authenticate, (req: Request, res: Response) => {
-  const userId = (req as any).user?.id || '';
+  const userId = req.user?.id || '';
   const limit = Math.min(parseInt(req.query.limit as string) || 20, 100);
   const conv = ConversationService.getByIdOrCode(req.params.id, userId);
   if (!conv) {

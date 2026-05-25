@@ -19,7 +19,7 @@ import { AgentSchema, AgentUpdateSchema, isAdmin } from './helpers';
  * 获取所有智能体列表
  */
 export const listAgents = asyncHandler(async (req: Request, res: Response) => {
-  const userId = (req as any).user?.id;
+  const userId = req.user?.id;
   const agents = AgentService.list(userId);
   sendSuccess(res, agents);
 });
@@ -30,7 +30,7 @@ export const listAgents = asyncHandler(async (req: Request, res: Response) => {
  */
 export const routingOverview = asyncHandler(async (req: Request, res: Response) => {
   const db = getDb();
-  const agents = AgentService.list((req as any).user?.id);
+  const agents = AgentService.list(req.user?.id);
 
   const overview = agents.map(agent => {
     const hasPrivateToken = !!(agent.tokenApiKey?.trim());
@@ -192,7 +192,7 @@ export const channelOverview = asyncHandler(async (_req: Request, res: Response)
  * [2026-05-23] 修改 OC agent 的模型配置（写入 openclaw.json）
  */
 export const updateChannelModel = asyncHandler(async (req: Request, res: Response) => {
-  const role = (req as any).user?.role;
+  const role = req.user?.role;
   if (!isAdmin(role)) {
     throw Errors.forbidden('仅管理员可修改通道模型');
   }
@@ -223,11 +223,11 @@ export const updateChannelModel = asyncHandler(async (req: Request, res: Respons
  * 获取单个智能体详情
  */
 export const getAgent = asyncHandler(async (req: Request, res: Response) => {
-  const agent = AgentService.getByIdOrCode(req.params.id, (req as any).user?.id);
+  const agent = AgentService.getByIdOrCode(req.params.id, req.user?.id);
   if (!agent) {
     throw Errors.notFound('智能体');
   }
-  if (agent.isSystem && (req as any).user?.role !== 'admin' && (req as any).user?.role !== 'super_admin') {
+  if (agent.isSystem && req.user?.role !== 'admin' && req.user?.role !== 'super_admin') {
     throw Errors.forbidden('平台助手设置仅管理员可查看');
   }
   sendSuccess(res, agent);
@@ -238,7 +238,7 @@ export const getAgent = asyncHandler(async (req: Request, res: Response) => {
  * 获取智能体 Token 用量统计
  */
 export const getTokenStats = asyncHandler(async (req: Request, res: Response) => {
-  const agent = AgentService.getByIdOrCode(req.params.id, (req as any).user?.id);
+  const agent = AgentService.getByIdOrCode(req.params.id, req.user?.id);
   if (!agent) {
     throw Errors.notFound('智能体');
   }
@@ -312,7 +312,7 @@ export const createAgent = asyncHandler(async (req: Request, res: Response) => {
     throw Errors.validation('参数验证失败', parsed.error.flatten());
   }
 
-  const userId = (req as any).user?.id;
+  const userId = req.user?.id;
   const agent = AgentService.create({ ...parsed.data, name: parsed.data.name, userId });
   sendCreated(res, agent, '智能体创建成功');
 });
@@ -328,20 +328,20 @@ export const updateAgent = asyncHandler(async (req: Request, res: Response) => {
     throw Errors.validation('参数验证失败', parsed.error.flatten());
   }
 
-  const current = AgentService.getByIdOrCode(req.params.id, (req as any).user?.id);
+  const current = AgentService.getByIdOrCode(req.params.id, req.user?.id);
   if (!current) {
     throw Errors.notFound('智能体');
   }
   const isWechat = current.agentCode === 'rc-wechat-agent' || current.id === 'rc-wechat-agent' || AgentService.isWechatAssistantId(current.id);
   const onlyModelUpdate = Object.keys(parsed.data).length === 1 && 'modelName' in parsed.data;
-  if (current.isSystem && !onlyModelUpdate && (req as any).user?.role !== 'admin' && (req as any).user?.role !== 'super_admin') {
+  if (current.isSystem && !onlyModelUpdate && req.user?.role !== 'admin' && req.user?.role !== 'super_admin') {
     throw Errors.forbidden('平台助手参数仅管理员可修改');
   }
-  if (current.isSystem && onlyModelUpdate && !isWechat && (req as any).user?.role !== 'admin' && (req as any).user?.role !== 'super_admin') {
+  if (current.isSystem && onlyModelUpdate && !isWechat && req.user?.role !== 'admin' && req.user?.role !== 'super_admin') {
     throw Errors.forbidden('平台助手模型仅管理员可修改');
   }
 
-  const resolvedAgentId = AgentService.resolveId(req.params.id, (req as any).user?.id);
+  const resolvedAgentId = AgentService.resolveId(req.params.id, req.user?.id);
   if (!resolvedAgentId) {
     throw Errors.notFound('智能体');
   }
@@ -359,7 +359,7 @@ export const updateAgent = asyncHandler(async (req: Request, res: Response) => {
  * 删除智能体
  */
 export const deleteAgent = asyncHandler(async (req: Request, res: Response) => {
-  const agent = AgentService.getByIdOrCode(req.params.id, (req as any).user?.id);
+  const agent = AgentService.getByIdOrCode(req.params.id, req.user?.id);
   if (!agent) {
     throw Errors.notFound('智能体');
   }
@@ -376,7 +376,7 @@ export const deleteAgent = asyncHandler(async (req: Request, res: Response) => {
  * 全量同步：确保所有 agent 都已注册到 OpenClaw
  */
 export const syncAgents = asyncHandler(async (req: Request, res: Response) => {
-  const userRole = (req as any).user?.role;
+  const userRole = req.user?.role;
   if (userRole !== 'super_admin' && userRole !== 'admin') {
     throw Errors.forbidden('需要管理员权限');
   }
@@ -390,7 +390,7 @@ export const syncAgents = asyncHandler(async (req: Request, res: Response) => {
  * 查看 Agent 注册/注销日志（管理员）
  */
 export const registryLog = asyncHandler(async (req: Request, res: Response) => {
-  const userRole = (req as any).user?.role;
+  const userRole = req.user?.role;
   if (userRole !== 'super_admin' && userRole !== 'admin') {
     throw Errors.forbidden('需要管理员权限');
   }
@@ -418,7 +418,7 @@ export const registryLog = asyncHandler(async (req: Request, res: Response) => {
  * 查看单个智能体的 OpenClaw 注册状态
  */
 export const registryStatus = asyncHandler(async (req: Request, res: Response) => {
-  const agent = AgentService.getByIdOrCode(req.params.id, (req as any).user?.id);
+  const agent = AgentService.getByIdOrCode(req.params.id, req.user?.id);
   if (!agent) {
     throw Errors.notFound('智能体');
   }

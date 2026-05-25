@@ -68,7 +68,7 @@ function applyMiddleware(
 
   // 添加角色权限中间件
   if (config.roles && config.roles.length > 0) {
-    middlewares.push(requireRole(config.roles as any));
+    middlewares.push(requireRole(config.roles as import('../services/UserService').UserRole[]));
   }
 
   // 注册路由

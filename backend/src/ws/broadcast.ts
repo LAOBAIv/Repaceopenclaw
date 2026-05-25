@@ -19,7 +19,7 @@ export function createBroadcastFn(clients: Map<WebSocket, { ws: WebSocket; userI
 
 /** 供路由调用的广播函数(setupWebSocket 后初始化) */
 export function broadcastToConversation(conversationId: string, data: Record<string, any>): void {
-  const fn = (globalThis as any).__broadcastToConversation;
+  const fn = (globalThis as Record<string, unknown>).__broadcastToConversation as Function | undefined;
   if (fn) {
     fn(conversationId, data);
   }

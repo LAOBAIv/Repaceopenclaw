@@ -69,14 +69,14 @@ export function createRateLimiter(options: RateLimitOptions) {
 export const apiLimiter = createRateLimiter({
   windowMs: 60_000,  // 1 分钟
   max: 120,
-  keyGenerator: (req) => (req as any).userId || req.ip || "anonymous",
+  keyGenerator: (req) => req.userId || req.ip || "anonymous",
   message: "接口请求过于频繁，请稍后再试",
 });
 
 export const chatLimiter = createRateLimiter({
   windowMs: 60_000,  // 1 分钟
   max: 30,           // 每分钟最多 30 次对话
-  keyGenerator: (req) => (req as any).userId || req.ip || "anonymous",
+  keyGenerator: (req) => req.userId || req.ip || "anonymous",
   message: "对话次数已达上限，请稍后再试",
 });
 

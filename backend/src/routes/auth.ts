@@ -71,7 +71,7 @@ router.post("/register", async (req: Request, res: Response) => {
       detail: { username, email },
       ipAddress: req.ip,
       userAgent: req.headers['user-agent'],
-      requestId: (req as any).requestId,
+      requestId: req.requestId,
     });
     res.status(201).json(result);
   } catch (err: unknown) {
@@ -100,7 +100,7 @@ router.post("/login", async (req: Request, res: Response) => {
       detail: { identifier: loginIdentifier },
       ipAddress: req.ip,
       userAgent: req.headers['user-agent'],
-      requestId: (req as any).requestId,
+      requestId: req.requestId,
     });
     res.json(result);
   } catch (err: unknown) {
@@ -111,7 +111,7 @@ router.post("/login", async (req: Request, res: Response) => {
 
 // GET /api/auth/me — 获取当前用户信息
 router.get("/me", authenticate, (req: Request, res: Response) => {
-  const user = UserService.getUserById((req as any).user.id);
+  const user = UserService.getUserById(req.user.id);
   if (!user) return res.status(404).json({ error: "用户不存在" });
   // [2026-05-19] 微信扫码登录用户需要补全信息
   const needSetup = user.email?.endsWith('@wechat.local') || false;
@@ -122,7 +122,7 @@ router.get("/me", authenticate, (req: Request, res: Response) => {
 router.put("/me", authenticate, (req: Request, res: Response) => {
   try {
     const { username, avatar, nickname } = req.body;
-    const user = UserService.updateProfile((req as any).user.id, { username, avatar, nickname });
+    const user = UserService.updateProfile(req.user.id, { username, avatar, nickname });
     if (!user) return res.status(404).json({ error: "用户不存在" });
     res.json(user);
   } catch (err: unknown) {
@@ -138,7 +138,7 @@ router.put("/password", authenticate, async (req: Request, res: Response) => {
     if (!oldPassword || !newPassword) {
       return res.status(400).json({ error: "原密码和新密码不能为空" });
     }
-    await UserService.changePassword((req as any).user.id, oldPassword, newPassword);
+    await UserService.changePassword(req.user.id, oldPassword, newPassword);
     res.json({ message: "密码修改成功" });
   } catch (err: unknown) {
     // [2026-05-24] 类型安全：any → unknown
@@ -195,7 +195,7 @@ router.put("/users/:id/reset-password", authenticate, requireRole(["super_admin"
 
 // [2026-05-19] POST /api/auth/complete-setup — 微信扫码用户补全账号信息
 router.post("/complete-setup", authenticate, async (req: Request, res: Response) => {
-  const userId = (req as any).user.id;
+  const userId = req.user.id;
   const { username, email, password } = req.body;
 
   if (!username || !email || !password) {

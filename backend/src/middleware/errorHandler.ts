@@ -40,7 +40,7 @@ export function errorHandler(
       '参数验证失败',
       ErrorCode.VALIDATION_ERROR,
       400,
-      (err as any).errors || err.message
+      (err as import('zod').ZodError).errors || err.message
     );
     return;
   }

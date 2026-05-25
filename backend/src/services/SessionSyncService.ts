@@ -89,7 +89,7 @@ function parseSessionFile(filePath: string): { title?: string; agentName?: strin
 export function scanOpenClawSessions(): OpenClawSessionMeta[] {
   if (!fs.existsSync(SESSIONS_INDEX_FILE)) return [];
   
-  let index: Record<string, any>;
+  let index: Record<string, { sessionFile: string; sessionId: string }>;
   try {
     index = JSON.parse(fs.readFileSync(SESSIONS_INDEX_FILE, 'utf-8'));
   } catch {
@@ -98,8 +98,7 @@ export function scanOpenClawSessions(): OpenClawSessionMeta[] {
 
   const sessions: OpenClawSessionMeta[] = [];
 
-  for (const [sessionKey, entry] of Object.entries(index)) {
-    const e = entry as any;
+  for (const [sessionKey, e] of Object.entries(index)) {
     const filePath = e.sessionFile;
     const meta = parseSessionFile(filePath);
 

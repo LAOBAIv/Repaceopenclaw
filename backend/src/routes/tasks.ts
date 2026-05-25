@@ -38,13 +38,13 @@ const ReorderSchema = z.object({
 
 /** GET /api/tasks — 所有任务，按列分组 */
 router.get("/", authenticate, (req: Request, res: Response) => {
-  const userId = (req as any).user?.id;
+  const userId = req.user?.id;
   res.json({ data: TaskService.listGrouped(userId) });
 });
 
 /** GET /api/tasks/column/:columnId — 获取单列任务 */
 router.get("/column/:columnId", authenticate, (req: Request, res: Response) => {
-  const userId = (req as any).user?.id;
+  const userId = req.user?.id;
   const col = req.params.columnId as TaskColumn;
   if (!COLUMNS.includes(col)) return res.status(400).json({ error: "Invalid column" });
   res.json({ data: TaskService.listByColumn(col, userId) });
@@ -68,7 +68,7 @@ router.get("/:id", authenticate, (req: Request, res: Response) => {
 
 /** POST /api/tasks */
 router.post("/", authenticate, (req: Request, res: Response) => {
-  const userId = (req as any).user?.id;
+  const userId = req.user?.id;
   const parsed = TaskCreateSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
   const task = TaskService.create({ ...parsed.data, userId } as Parameters<typeof TaskService.create>[0]);
@@ -84,7 +84,7 @@ router.put("/:id", authenticate, ensureOwnership("task"), (req: Request, res: Re
   const resolvedTaskId = TaskService.resolveId(req.params.id);
   if (!resolvedTaskId) return res.status(404).json({ error: "Task not found" });
 
-  const updated = TaskService.update(resolvedTaskId, parsed.data as any);
+  const updated = TaskService.update(resolvedTaskId, parsed.data);
   if (!updated) return res.status(404).json({ error: "Task not found" });
   res.json({ data: updated });
 });

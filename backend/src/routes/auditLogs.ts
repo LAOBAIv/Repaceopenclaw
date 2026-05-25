@@ -6,7 +6,7 @@ const router = Router();
 
 // GET /api/audit-logs — 获取审计日志（管理员）
 router.get("/", authenticate, (req: Request, res: Response) => {
-  const user = (req as any).user;
+  const user = req.user;
   if (user.role !== "super_admin" && user.role !== "admin") {
     return res.status(403).json({ error: "仅管理员可访问审计日志" });
   }

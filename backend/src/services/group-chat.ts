@@ -97,8 +97,8 @@ async function callLLM(
     }),
   });
 
-  const data = await response.json() as any;
-  return data.choices?.[0]?.message?.content || '...';
+  const data = await response.json() as Record<string, unknown>;
+  return (data.choices as Array<{ message: { content: string } }>)?.[0]?.message?.content || '...';
 }
 
 // ==================== 消息路由逻辑 ====================

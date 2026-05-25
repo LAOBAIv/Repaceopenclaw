@@ -15,7 +15,7 @@ router.use(authenticate);
  * 查询当前用户的微信 bot 绑定状态
  */
 router.get("/binding", (req: Request, res: Response) => {
-  const userId = (req as any).user?.id;
+  const userId = req.user?.id;
   if (!userId) return res.status(401).json({ error: "未认证" });
 
   const row = getDb().queryOne<Record<string, unknown>>( // [2026-05-24] 类型安全
@@ -47,7 +47,7 @@ router.get("/binding", (req: Request, res: Response) => {
  * Body: { botId: string, botName?: string }
  */
 router.post("/binding", (req: Request, res: Response) => {
-  const userId = (req as any).user?.id;
+  const userId = req.user?.id;
   if (!userId) return res.status(401).json({ error: "未认证" });
 
   const { botId, botName } = req.body;
@@ -91,7 +91,7 @@ router.post("/binding", (req: Request, res: Response) => {
  * 解绑微信 bot
  */
 router.delete("/binding", (req: Request, res: Response) => {
-  const userId = (req as any).user?.id;
+  const userId = req.user?.id;
   if (!userId) return res.status(401).json({ error: "未认证" });
 
   getDb().run(
@@ -124,7 +124,7 @@ export function getBindingCodes() { return bindingCodes; }
  * 获取当前用户的微信绑定状态
  */
 router.get("/user-binding", (req: Request, res: Response) => {
-  const userId = (req as any).user?.id;
+  const userId = req.user?.id;
   try {
     const rows = getDb().exec(
       `SELECT id, bot_id, wechat_openid, bound_at FROM user_wechat_bindings WHERE user_id = ?`,
@@ -149,7 +149,7 @@ router.get("/user-binding", (req: Request, res: Response) => {
  * body: { wechatOpenid, botId }
  */
 router.post("/user-binding", (req: Request, res: Response) => {
-  const userId = (req as any).user?.id;
+  const userId = req.user?.id;
   const { wechatOpenid, botId } = req.body;
   if (!wechatOpenid) {
     return res.status(400).json({ error: "缺少 wechatOpenid" });
@@ -195,7 +195,7 @@ router.post("/user-binding", (req: Request, res: Response) => {
  * 解绑当前用户的微信
  */
 router.delete("/user-binding", (req: Request, res: Response) => {
-  const userId = (req as any).user?.id;
+  const userId = req.user?.id;
   try {
     getDb().run(
       `DELETE FROM user_wechat_bindings WHERE user_id = ?`,
@@ -216,7 +216,7 @@ router.delete("/user-binding", (req: Request, res: Response) => {
  * [2026-05-16] 生成绑定验证码，用户在微信中发送此验证码完成绑定
  */
 router.post("/user-binding/code", (req: Request, res: Response) => {
-  const userId = (req as any).user?.id;
+  const userId = req.user?.id;
   if (!userId) return res.status(401).json({ error: "未认证" });
 
   cleanupBindingCodes();
