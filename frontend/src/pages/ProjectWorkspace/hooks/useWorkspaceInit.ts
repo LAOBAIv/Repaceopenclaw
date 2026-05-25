@@ -5,7 +5,7 @@
  */
 import { useState, useEffect, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
-import { useConversationStore } from '@/stores/conversationStore';
+import { useConversationStore } from '@/stores/conversation';
 import { useTaskStore } from '@/stores/taskStore';
 import { useProjectKanbanStore } from '@/stores/projectKanbanStore';
 

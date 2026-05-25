@@ -9,7 +9,7 @@
 import MobileChatPanelContainer from '../../components/mobile/MobileChatPanelContainer';
 import { COLORS } from './constants';
 import type { Agent } from '../../types';
-import type { ConversationPanel } from '../../stores/conversationStore';
+import type { ConversationPanel } from '../../stores/conversation';
 
 interface MobileChatAreaProps {
   activePanel: ConversationPanel | null;

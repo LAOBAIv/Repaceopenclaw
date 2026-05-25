@@ -13,7 +13,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useConversationStore } from '../../../stores/conversationStore';
+import { useConversationStore } from '../../../stores/conversation';
 import { useAgentStore } from '../../../stores/agentStore';
 import { useAuthStore } from '../../../stores/authStore';
 import apiClient from '../../../api/client';

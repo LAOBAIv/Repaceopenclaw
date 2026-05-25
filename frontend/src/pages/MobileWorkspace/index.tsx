@@ -21,7 +21,7 @@
 
 import { useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useConversationStore } from '../../stores/conversationStore';
+import { useConversationStore } from '../../stores/conversation';
 import { MobileAgentLibrary } from '../MobileAgentLibrary';
 import { MobileAgentManager } from '../MobileAgentManager';
 import { MobileAgentCreate } from '../MobileAgentCreate';

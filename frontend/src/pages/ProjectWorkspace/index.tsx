@@ -10,7 +10,7 @@ import React, { useState, useCallback } from 'react';
 import { useLocation } from 'react-router-dom';
 import '../ProjectWorkspace.css';
 
-import { useConversationStore } from '@/stores/conversationStore';
+import { useConversationStore } from '@/stores/conversation';
 import { useAgentStore } from '@/stores/agentStore';
 import { useProjectStore } from '@/stores/projectStore';
 import { useTaskStore } from '@/stores/taskStore';

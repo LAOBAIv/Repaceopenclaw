@@ -1,5 +1,5 @@
 import { useEffect, useRef, useCallback } from "react";
-import { useConversationStore } from "../stores/conversationStore";
+import { useConversationStore } from '../stores/conversation';
 
 // Use relative WebSocket URL so Vite proxy (/ws → ws://localhost:3001/ws) handles routing.
 // This also works correctly in production when WS is served from the same host.

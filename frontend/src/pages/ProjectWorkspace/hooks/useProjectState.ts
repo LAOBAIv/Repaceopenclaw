@@ -9,7 +9,7 @@ import { useProjectStore } from '@/stores/projectStore';
 import { useTaskStore } from '@/stores/taskStore';
 import { useProjectKanbanStore, type ProjectPriority } from '@/stores/projectKanbanStore';
 import { useAgentStore } from '@/stores/agentStore';
-import { useConversationStore } from '@/stores/conversationStore';
+import { useConversationStore } from '@/stores/conversation';
 import { makeFlowNode, type FlowNode } from '../types';
 
 export function useProjectState(

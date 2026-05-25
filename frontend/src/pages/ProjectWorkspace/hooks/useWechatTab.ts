@@ -4,7 +4,7 @@
  * 封装微信助手 Tab 的创建、面板绑定、消息加载等逻辑。
  */
 import { useCallback } from 'react';
-import { useConversationStore } from '@/stores/conversationStore';
+import { useConversationStore } from '@/stores/conversation';
 import type { Message } from '@/types';
 
 export function useWechatTab(

@@ -8,7 +8,7 @@ import { useState } from 'react';
 import { showToast } from '@/components/Toast';
 import { useAgentStore } from '@/stores/agentStore';
 import { useTaskStore } from '@/stores/taskStore';
-import { useConversationStore } from '@/stores/conversationStore';
+import { useConversationStore } from '@/stores/conversation';
 import type { ProjectPriority } from '@/stores/projectKanbanStore';
 import { CreateTaskModalProps } from './types';
 import { TaskForm } from './TaskForm';

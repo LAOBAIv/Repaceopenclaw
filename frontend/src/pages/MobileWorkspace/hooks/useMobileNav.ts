@@ -13,7 +13,7 @@
 
 import { useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useConversationStore } from '../../../stores/conversationStore';
+import { useConversationStore } from '../../../stores/conversation';
 import { useAgentStore } from '../../../stores/agentStore';
 import apiClient from '../../../api/client';
 import type { MobileNavItem, MobileView } from '../constants';

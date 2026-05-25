@@ -5,7 +5,7 @@
 import { useState } from 'react';
 import { showToast } from '@/components/Toast';
 import { useAgentStore } from '@/stores/agentStore';
-import { useConversationStore } from '@/stores/conversationStore';
+import { useConversationStore } from '@/stores/conversation';
 import { useProjectKanbanStore } from '@/stores/projectKanbanStore';
 import { conversationsApi } from '@/api/conversations';
 import { sessionTabsApi } from '@/api/sessionTabs';

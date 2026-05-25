@@ -7,7 +7,7 @@
 import { X, Plus } from 'lucide-react';
 import { COLORS } from './constants';
 import { MobileSessionList } from './MobileSessionList';
-import type { SessionTab } from '../../stores/conversationStore';
+import type { SessionTab } from '../../stores/conversation';
 
 interface MobileRightDrawerProps {
   isOpen: boolean;

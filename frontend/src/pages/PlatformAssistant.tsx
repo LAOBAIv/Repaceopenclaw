@@ -13,7 +13,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Send, Bot, Loader2, Wifi, WifiOff } from 'lucide-react';
 import apiClient from '@/api/client';
-import { sendConversationMessageOverWs, subscribeConversationWs, useConversationStore } from '@/stores/conversationStore';
+import { sendConversationMessageOverWs, subscribeConversationWs, useConversationStore } from '@/stores/conversation';
 import { MessageBubble } from '@/components/conversation/MessageBubble';
 import type { Message } from '@/types';
 

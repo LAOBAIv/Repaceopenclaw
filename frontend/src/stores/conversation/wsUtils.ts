@@ -56,12 +56,13 @@ export function subscribeConversationWs(
 }
 
 /**
- * 确保 WS 连接已打开。
- * @param connectFn 用于触发重连的回调(避免循环依赖)
+ * 确保 WS 连接已打开。使用动态 import 避免循环依赖。
  */
-export async function ensureWsOpen(connectFn: () => void, timeoutMs = 5000): Promise<boolean> {
+export async function ensureWsOpen(timeoutMs = 5000): Promise<boolean> {
   if (wsInstance?.readyState === WebSocket.OPEN) return true;
-  connectFn();
+  // 动态 import 避免循环依赖
+  const { useConversationStore } = await import('./store');
+  useConversationStore.getState().connect();
   const start = Date.now();
   return new Promise((resolve) => {
     const timer = setInterval(() => {
@@ -85,8 +86,8 @@ export async function sendConversationMessageOverWs(payload: {
   agentId: string;
   agentIds?: string[];
   content: string;
-}, connectFn: () => void): Promise<void> {
-  const ok = await ensureWsOpen(connectFn);
+}): Promise<void> {
+  const ok = await ensureWsOpen();
   if (!ok || !wsInstance || wsInstance.readyState !== WebSocket.OPEN) {
     throw new Error("WS not connected");
   }

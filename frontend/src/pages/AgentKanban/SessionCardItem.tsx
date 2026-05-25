@@ -8,7 +8,7 @@ import { useNavigate } from 'react-router-dom';
 import { Loader2, CheckCircle2, Trash2, RotateCcw, MessageSquare, Clock } from 'lucide-react';
 import { useSessionKanbanStore } from '@/stores/sessionKanbanStore';
 import { useAgentStore } from '@/stores/agentStore';
-import { useConversationStore } from '@/stores/conversationStore';
+import { useConversationStore } from '@/stores/conversation';
 import { conversationsApi } from '@/api/conversations';
 import type { SessionCardItemProps } from './types';
 import { getTagColor, relativeTime } from './utils';

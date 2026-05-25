@@ -5,7 +5,7 @@
  * 从原 ProjectWorkspace.tsx 中提取。
  */
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { useConversationStore } from '@/stores/conversationStore';
+import { useConversationStore } from '@/stores/conversation';
 import { useAgentStore } from '@/stores/agentStore';
 import { showToast } from '@/components/Toast';
 

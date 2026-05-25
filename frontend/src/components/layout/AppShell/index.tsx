@@ -11,11 +11,11 @@ import {
 import { useAuthStore } from '../../../stores/authStore';
 import { getOrCreateTabId, clearAllSessionData, clearAllRcStorage } from '../../../lib/storageScope';
 import { getBroadcastSync, destroyBroadcastSync, getWsSync, destroyWsSync, syncEventBus } from '../../../lib/sync';
-import { getWsInstance } from '../../../stores/conversationStore';
+import { getWsInstance } from '../../../stores/conversation';
 import { useSessionKanbanStore } from '../../../stores/sessionKanbanStore';
 import { useTaskStore } from '../../../stores/taskStore';
 import { useProjectKanbanStore } from '../../../stores/projectKanbanStore';
-import { useConversationStore } from '../../../stores/conversationStore';
+import { useConversationStore } from '../../../stores/conversation';
 import { UserHeader } from './UserHeader';
 import { PAGE_TITLE_MAP, NAV_ITEMS, CURRENT_PROJECT } from './constants';
 

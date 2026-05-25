@@ -10,7 +10,7 @@ import remarkGfm from 'remark-gfm';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import type { Agent, Message } from '../../types';
-import type { ConversationPanel } from '../../stores/conversationStore';
+import type { ConversationPanel } from '../../stores/conversation';
 
 // [2026-05-24] 类型安全
 interface CodeProps {

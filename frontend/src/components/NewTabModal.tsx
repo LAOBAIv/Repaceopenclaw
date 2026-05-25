@@ -5,7 +5,7 @@
 import { useState } from 'react';
 import { showToast } from '@/components/Toast';
 import { useAgentStore } from '@/stores/agentStore';
-import { useConversationStore } from '@/stores/conversationStore';
+import { useConversationStore } from '@/stores/conversation';
 import { conversationsApi } from '@/api/conversations';
 
 interface NewTabModalProps {

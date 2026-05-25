@@ -5,7 +5,7 @@
  * 从原 ProjectWorkspace.tsx 中提取聊天相关的状态和回调。
  */
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { useConversationStore } from '@/stores/conversationStore';
+import { useConversationStore } from '@/stores/conversation';
 import { useAgentStore } from '@/stores/agentStore';
 import { useTaskStore } from '@/stores/taskStore';
 
