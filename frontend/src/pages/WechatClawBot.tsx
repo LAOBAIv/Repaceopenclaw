@@ -33,9 +33,9 @@ export function WechatClawBot() {
   const [pushText, setPushText] = useState('');
   const [pushLoading, setPushLoading] = useState(false);
   const [pushResult, setPushResult] = useState<string | null>(null);
-  const [syncStates, setSyncStates] = useState<any>({});
+  const [syncStates, setSyncStates] = useState<{ running?: boolean; startedAt?: string; lastPollAt?: string; lastMessageAt?: string; pollCycleCount?: number; pollMessageCount?: number; lastError?: string }>({});
   const [syncing, setSyncing] = useState(false);
-  const [stats, setStats] = useState<any>(null);
+  const [stats, setStats] = useState<{ total?: number; wechatBot?: { received?: number; replied?: number }; rcAssistant?: { sent?: number; replied?: number } } | null>(null);
   const eventSourceRef = useRef<EventSource | null>(null);
 
   const fetchStatus = useCallback(async () => {
@@ -409,32 +409,32 @@ export function WechatClawBot() {
             <div style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 12 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid #f3f4f6' }}>
                 <span style={{ fontSize: 13, color: '#6b7280' }}>运行状态</span>
-                <span style={{ fontSize: 13, fontWeight: 600, color: (syncStates as any)?.running ? '#16a34a' : '#dc2626' }}>{(syncStates as any)?.running ? '✅ 运行中' : '❌ 已停止'}</span>
+                <span style={{ fontSize: 13, fontWeight: 600, color: syncStates?.running ? '#16a34a' : '#dc2626' }}>{syncStates?.running ? '✅ 运行中' : '❌ 已停止'}</span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid #f3f4f6' }}>
                 <span style={{ fontSize: 13, color: '#6b7280' }}>启动时间</span>
-                <span style={{ fontSize: 13, color: '#374151' }}>{(syncStates as any)?.startedAt ? new Date((syncStates as any).startedAt).toLocaleString() : '-'}</span>
+                <span style={{ fontSize: 13, color: '#374151' }}>{syncStates?.startedAt ? new Date(syncStates.startedAt).toLocaleString() : '-'}</span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid #f3f4f6' }}>
                 <span style={{ fontSize: 13, color: '#6b7280' }}>最后轮询</span>
-                <span style={{ fontSize: 13, color: '#374151' }}>{(syncStates as any)?.lastPollAt ? new Date((syncStates as any).lastPollAt).toLocaleString() : '-'}</span>
+                <span style={{ fontSize: 13, color: '#374151' }}>{syncStates?.lastPollAt ? new Date(syncStates.lastPollAt).toLocaleString() : '-'}</span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid #f3f4f6' }}>
                 <span style={{ fontSize: 13, color: '#6b7280' }}>最后收到消息</span>
-                <span style={{ fontSize: 13, color: '#374151' }}>{(syncStates as any)?.lastMessageAt ? new Date((syncStates as any).lastMessageAt).toLocaleString() : '暂无'}</span>
+                <span style={{ fontSize: 13, color: '#374151' }}>{syncStates?.lastMessageAt ? new Date(syncStates.lastMessageAt).toLocaleString() : '暂无'}</span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid #f3f4f6' }}>
                 <span style={{ fontSize: 13, color: '#6b7280' }}>轮询次数</span>
-                <span style={{ fontSize: 13, fontWeight: 600, color: '#374151' }}>{(syncStates as any)?.pollCycleCount ?? 0}</span>
+                <span style={{ fontSize: 13, fontWeight: 600, color: '#374151' }}>{syncStates?.pollCycleCount ?? 0}</span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid #f3f4f6' }}>
                 <span style={{ fontSize: 13, color: '#6b7280' }}>累计收到消息</span>
-                <span style={{ fontSize: 13, fontWeight: 600, color: '#374151' }}>{(syncStates as any)?.pollMessageCount ?? 0} 条</span>
+                <span style={{ fontSize: 13, fontWeight: 600, color: '#374151' }}>{syncStates?.pollMessageCount ?? 0} 条</span>
               </div>
-              {(syncStates as any)?.lastError && (
+              {syncStates?.lastError && (
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0' }}>
                   <span style={{ fontSize: 13, color: '#6b7280' }}>最后错误</span>
-                  <span style={{ fontSize: 12, color: '#dc2626', maxWidth: 300, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{(syncStates as any).lastError}</span>
+                  <span style={{ fontSize: 12, color: '#dc2626', maxWidth: 300, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{syncStates.lastError}</span>
                 </div>
               )}
             </div>
