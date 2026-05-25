@@ -18,7 +18,7 @@ export function setupWebSocket(server: http.Server) {
 
   // 创建广播函数并挂载到 wss 和 globalThis
   const broadcastFn = createBroadcastFn(clients);
-  (wss as Record<string, unknown>).broadcastToConversation = broadcastFn;
+  (wss as unknown as Record<string, unknown>).broadcastToConversation = broadcastFn;
   (globalThis as Record<string, unknown>).__broadcastToConversation = broadcastFn;
 
   wss.on("connection", (ws: WebSocket, req: http.IncomingMessage) => {

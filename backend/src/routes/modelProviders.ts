@@ -27,7 +27,7 @@ const ProviderSchema = z.object({
 router.post("/", (req: Request, res: Response) => {
   const parsed = ProviderSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
-  const provider = ModelService.createProvider(parsed.data);
+  const provider = ModelService.createProvider(parsed.data as Parameters<typeof ModelService.createProvider>[0]);
   res.status(201).json({ data: provider });
 });
 

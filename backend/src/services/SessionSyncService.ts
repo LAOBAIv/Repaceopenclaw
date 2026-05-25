@@ -89,7 +89,7 @@ function parseSessionFile(filePath: string): { title?: string; agentName?: strin
 export function scanOpenClawSessions(): OpenClawSessionMeta[] {
   if (!fs.existsSync(SESSIONS_INDEX_FILE)) return [];
   
-  let index: Record<string, { sessionFile: string; sessionId: string }>;
+  let index: Record<string, { sessionFile: string; sessionId: string; updatedAt?: number }>;
   try {
     index = JSON.parse(fs.readFileSync(SESSIONS_INDEX_FILE, 'utf-8'));
   } catch {

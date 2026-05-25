@@ -97,7 +97,7 @@ export async function handleMessage(
     return;
   }
 
-  ws.send(JSON.stringify({ type: "error", message: `Unknown message type: ${(msg as Record<string, unknown>).type}` }));
+  ws.send(JSON.stringify({ type: "error", message: `Unknown message type: ${(msg as unknown as Record<string, unknown>).type}` }));
 }
 
 /**

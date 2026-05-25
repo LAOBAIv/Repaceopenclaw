@@ -133,7 +133,7 @@ router.get("/:id", authenticate, (req: Request, res: Response) => {
   if (!p) return res.status(404).json({ error: "Project not found" });
   // 越权检查
   if (p.createdBy && req.user?.role !== "admin" && req.user?.role !== "super_admin") {
-    if (p.createdBy !== userId && (p as Record<string, unknown>).user_id && (p as Record<string, unknown>).user_id !== userId) {
+    if (p.createdBy !== userId && (p as unknown as Record<string, unknown>).user_id && (p as unknown as Record<string, unknown>).user_id !== userId) {
       return res.status(403).json({ error: "无权限访问此项目" });
     }
   }
@@ -143,7 +143,7 @@ router.get("/:id", authenticate, (req: Request, res: Response) => {
 router.put("/:id", authenticate, ensureOwnership("project"), (req: Request, res: Response) => {
   const parsed = ProjectSchema.partial().safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
-  const p = ProjectService.update(req.params.id, parsed.data);
+  const p = ProjectService.update(req.params.id, parsed.data as Parameters<typeof ProjectService.update>[1]);
   if (!p) return res.status(404).json({ error: "Project not found" });
   res.json({ data: p });
 });
