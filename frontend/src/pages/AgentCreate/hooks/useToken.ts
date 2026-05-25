@@ -67,7 +67,7 @@ export function useToken(
   const hasBackendKey = useCallback(() => {
     if (!selectedChannel) return false;
     const bc = dynamicChannels.find(ch => ch.id === selectedChannel.id);
-    return !!(bc as any)?.hasBackendKey;
+    return !!bc?.hasBackendKey;
   }, [selectedChannel, dynamicChannels]);
 
   const openTokenModal = useCallback((selChannel: CodeChannel, selModel: CodeModel | null) => {

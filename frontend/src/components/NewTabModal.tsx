@@ -28,7 +28,7 @@ export function NewTabModal({ open, onClose, onCreated }: NewTabModalProps) {
       || a.id === 'platform-assistant'
       || a.id === 'repaceclaw-platform-assistant'
       || a.id === 'rc-wechat-agent'
-      || (a as any).agentCode === 'rc-wechat-agent')
+      || a.agentCode === 'rc-wechat-agent')
   );
 
   if (!open) return null;
@@ -65,7 +65,7 @@ export function NewTabModal({ open, onClose, onCreated }: NewTabModalProps) {
           || a.id === 'platform-assistant'
           || a.id === 'repaceclaw-platform-assistant'
           || a.id === 'rc-wechat-agent'
-          || (a as any).agentCode === 'rc-wechat-agent')
+          || a.agentCode === 'rc-wechat-agent')
       );
 
       if (selectedAgentIds.length === 1 && (mainAgent.id === '24cf6cc5-da0d-48df-814e-11582e398007' || mainAgent.id === 'platform-assistant' || mainAgent.id === 'repaceclaw-platform-assistant')) {
@@ -110,7 +110,8 @@ export function NewTabModal({ open, onClose, onCreated }: NewTabModalProps) {
       }
     } catch (err: unknown) { // [2026-05-24] 类型安全
       console.error('[NewTabModal] 创建失败:', err);
-      showToast('创建失败：' + ((err as any)?.response?.data?.error || (err as Error)?.message || '未知错误'), 'error');
+      const apiErr = err as { response?: { data?: { error?: string } } };
+      showToast('创建失败：' + (apiErr?.response?.data?.error || (err as Error)?.message || '未知错误'), 'error');
     } finally {
       setCreating(false);
     }

@@ -21,7 +21,7 @@ interface UseAgentCreateEventsParams {
   selModel: CodeModel | null;
   tValue: string;
   cBaseUrl: string;
-  presetChannel: any;
+  presetChannel: TokenChannel | null;
 }
 
 export interface UseAgentCreateEventsReturn {

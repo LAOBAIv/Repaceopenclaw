@@ -53,7 +53,8 @@ export default function AccountSettings() {
       setUser(updated);
       setMsg('昵称保存成功');
     } catch (e: unknown) { // [2026-05-24] 类型安全
-      setMsg((e as any)?.response?.data?.error || '保存失败');
+      const apiErr = e as { response?: { data?: { error?: string } } };
+      setMsg(apiErr?.response?.data?.error || '保存失败');
     } finally {
       setSaving(false);
     }
@@ -69,7 +70,8 @@ export default function AccountSettings() {
       setPwdMsg('密码修改成功');
       setOldPwd(''); setNewPwd(''); setConfirmPwd('');
     } catch (e: unknown) { // [2026-05-24] 类型安全
-      setPwdMsg((e as any)?.response?.data?.error || '修改失败');
+      const apiErr = e as { response?: { data?: { error?: string } } };
+      setPwdMsg(apiErr?.response?.data?.error || '修改失败');
     }
   }
 

@@ -15,12 +15,12 @@ import { TOKEN_CACHE_PREFIX } from '../utils';
 
 export interface UseDynamicChannelsReturn {
   dynamicChannels: CodeChannel[];
-  presetChannel: any;
+  presetChannel: CodeChannel | null;
 }
 
 export function useDynamicChannels(): UseDynamicChannelsReturn {
   const [dynamicChannels, setDynamicChannels] = useState<CodeChannel[]>([]);
-  const [presetChannel, setPresetChannel] = useState<any>(null);
+  const [presetChannel, setPresetChannel] = useState<CodeChannel | null>(null);
 
   /* ═══════════════════════════════════════════════════════════
    * 动态渠道加载：从后台 /api/token-channels 拉取已配置渠道
@@ -88,8 +88,8 @@ export function useDynamicChannels(): UseDynamicChannelsReturn {
         const defaultCh = presetCh || channels[0];
         if (defaultCh) {
           // 注意：这里暂存到 ref，等 hooks 初始化后由 useEffect 处理
-          (window as any).__ac_defaultChannel = defaultCh;
-          (window as any).__ac_defaultModel = defaultCh.models.find((m: CodeModel) => m.id === defaultBc.modelName) || defaultCh.models[0];
+          (window as unknown as Record<string, unknown>).__ac_defaultChannel = defaultCh;
+          (window as unknown as Record<string, unknown>).__ac_defaultModel = defaultCh.models.find((m: CodeModel) => m.id === defaultBc.modelName) || defaultCh.models[0];
         }
       })
       .catch(() => { setDynamicChannels([]); });

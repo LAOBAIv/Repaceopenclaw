@@ -60,7 +60,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
   setCurrentProject: (project) => set({ currentProject: project }),
 
   createProject: async (data) => {
-    const project = await projectsApi.create(data as any);
+    const project = await projectsApi.create(data);
     set((s) => ({ projects: [project, ...s.projects] }));
     return project;
   },
@@ -92,7 +92,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
 
   createDocument: async (input) => {
     const { projectId, ...data } = input;
-    const doc = await projectsApi.createDocument(projectId, data as any);
+    const doc = await projectsApi.createDocument(projectId, { title: data.title, parentId: data.parentId ?? undefined });
     await get().fetchDocumentTree(projectId);
     return doc;
   },

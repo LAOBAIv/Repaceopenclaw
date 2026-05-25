@@ -16,6 +16,8 @@ export interface ConversationChange {
   agentIds: string[];
   currentAgentId: string;
   agentId: string;
+  sessionCode?: string;
+  currentAgentCode?: string;
 }
 
 /** SessionAgentBar 组件 Props */

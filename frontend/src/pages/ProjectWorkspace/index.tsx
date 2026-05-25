@@ -154,17 +154,17 @@ export function ProjectWorkspace() {
                 useConversationStore.setState((state) => ({
                   openPanels: state.openPanels.map((panel) =>
                     panel.conversationId === chat.activePanel!.conversationId || panel.id === chat.activePanel!.conversationId
-                      ? { ...panel, sessionCode: (updatedConversation as any).sessionCode || panel.sessionCode,
+                      ? { ...panel, sessionCode: updatedConversation.sessionCode || panel.sessionCode,
                           agentId: updatedConversation.currentAgentId || panel.agentId,
-                          currentAgentCode: (updatedConversation as any).currentAgentCode || panel.currentAgentCode,
+                          currentAgentCode: updatedConversation.currentAgentCode || panel.currentAgentCode,
                           agentIds: updatedConversation.agentIds?.length ? updatedConversation.agentIds : panel.agentIds }
                       : panel
                   ),
                   sessionTabs: state.sessionTabs.map((tab) =>
                     tab.conversationId === chat.activePanel!.conversationId || tab.panelId === chat.activePanel!.conversationId
-                      ? { ...tab, sessionCode: (updatedConversation as any).sessionCode || tab.sessionCode,
+                      ? { ...tab, sessionCode: updatedConversation.sessionCode || tab.sessionCode,
                           agentId: updatedConversation.currentAgentId || tab.agentId,
-                          currentAgentCode: (updatedConversation as any).currentAgentCode || tab.currentAgentCode }
+                          currentAgentCode: updatedConversation.currentAgentCode || tab.currentAgentCode }
                       : tab
                   ),
                 }));

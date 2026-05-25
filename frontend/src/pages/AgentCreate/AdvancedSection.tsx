@@ -15,7 +15,7 @@ interface AdvancedSectionProps {
   setTempOverride: (v: string) => void;
   visibility: 'private' | 'public' | 'template';
   setVisibility: (v: 'private' | 'public' | 'template') => void;
-  skillsConfig: Record<string, boolean>;
+  skillsConfig: Record<string, boolean | undefined>;
   setSkillsConfig: (v: Record<string, boolean> | ((p: Record<string, boolean>) => Record<string, boolean>)) => void;
   // 样式
   inputStyle: React.CSSProperties;
@@ -113,14 +113,14 @@ export function AdvancedSection({
               key={key}
               style={{
                 display: 'flex', alignItems: 'center', gap: 6, padding: '4px 8px',
-                borderRadius: 6, background: (skillsConfig as any)[key] ? '#f0fdf4' : '#fef2f2',
-                border: `1px solid ${(skillsConfig as any)[key] ? '#bbf7d0' : '#fecaca'}`,
+                borderRadius: 6, background: skillsConfig[key] ? '#f0fdf4' : '#fef2f2',
+                border: `1px solid ${skillsConfig[key] ? '#bbf7d0' : '#fecaca'}`,
                 cursor: 'pointer', fontSize: 12, userSelect: 'none',
               }}
             >
               <input
                 type="checkbox"
-                checked={(skillsConfig as any)[key] ?? false}
+                checked={skillsConfig[key] ?? false}
                 onChange={e => setSkillsConfig(prev => ({ ...prev, [key]: e.target.checked }))}
                 style={{ accentColor: RISK_COLORS[risk] }}
               />

@@ -32,6 +32,7 @@ interface ConversationStoreState {
   activeTabId: string | null;
   currentAgentId: string;
   closedSessionIds: string[];
+  _restoring?: boolean;
 }
 
 type SetState = (partial: Partial<ConversationStoreState> | ((s: ConversationStoreState) => Partial<ConversationStoreState>)) => void;
@@ -837,7 +838,7 @@ export function createCreateSessionTabAction(set: SetState, get: GetState) {
             agentColor: opts.agentColor,
             messages,
             isStreaming: false,
-            conversationType: (conv as any)?.conversationType || 'general',
+            conversationType: conv?.conversationType || 'general',
           };
           set(s => ({
             openPanels: s.openPanels.some(p => p.id === panel.id)
@@ -980,8 +981,8 @@ export function createSyncTabStreamingStateAction(set: SetState, get: GetState) 
 
 export function createRestoreFromPersistAction(set: SetState, get: GetState) {
   return async () => {
-    if ((get() as any)._restoring) return;
-    set({ _restoring: true } as any);
+    if (get()._restoring) return;
+    set({ _restoring: true });
     try {
       const { useAgentStore } = await import('@/stores/agentStore');
       const agents = useAgentStore.getState().agents;
@@ -999,13 +1000,13 @@ export function createRestoreFromPersistAction(set: SetState, get: GetState) {
 
       if (result.panels.length > 0) {
         set({
-          openPanels: result.panels as any,
-          sessionTabs: result.tabs as any,
+          openPanels: result.panels,
+          sessionTabs: result.tabs,
           activeTabId: result.activeTabId,
         });
       }
     } finally {
-      set({ _restoring: false } as any);
+      set({ _restoring: false });
     }
   };
 }

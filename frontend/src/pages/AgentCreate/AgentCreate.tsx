@@ -54,13 +54,14 @@ export function AgentCreate() {
 
   // 渠道加载完成后，自动选中预设渠道
   useEffect(() => {
-    const dc = (window as any).__ac_defaultChannel;
-    const dm = (window as any).__ac_defaultModel;
+    const win = window as unknown as Record<string, unknown>;
+    const dc = win.__ac_defaultChannel as CodeChannel | undefined;
+    const dm = win.__ac_defaultModel as CodeModel | undefined;
     if (dc && dm) {
       setSelChannel(dc);
       setSelModel(dm);
-      delete (window as any).__ac_defaultChannel;
-      delete (window as any).__ac_defaultModel;
+      delete win.__ac_defaultChannel;
+      delete win.__ac_defaultModel;
     }
   }, [dynamicChannels]);
 
@@ -278,7 +279,7 @@ export function AgentCreate() {
               onClick={() => form.navigate('/agents')} disabled={form.saving}>
               取消
             </button>
-            <button type="button" className="ac-btn-create" onClick={events.handleSubmit as any} disabled={form.saving}>
+            <button type="button" className="ac-btn-create" onClick={(e: React.FormEvent) => events.handleSubmit(e)} disabled={form.saving}>
               {form.saving
                 ? (form.isEdit && !form.isDefaultAgent ? '保存中...' : '创建中...')
                 : (form.isDefaultAgent ? '基于此模板创建' : form.isEdit ? '保存' : '创建')}

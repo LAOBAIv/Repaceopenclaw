@@ -33,7 +33,8 @@ export function ProjectModal({
       });
       onClose();
     } catch (e: unknown) { // [2026-05-24] 类型安全
-      alert((e as any)?.response?.data?.error || '保存失败');
+      const apiError = e as { response?: { data?: { error?: string } } };
+      alert(apiError?.response?.data?.error || '保存失败');
     } finally {
       setLoading(false);
     }
@@ -101,7 +102,7 @@ export function ProjectModal({
             <span style={{ fontSize: 13, fontWeight: 600, color: '#374151' }}>优先级</span>
             <select
               value={priority}
-              onChange={e => setPriority(e.target.value as any)}
+              onChange={e => setPriority(e.target.value as 'high' | 'mid' | 'low')}
               style={{
                 width: '100%', marginTop: 6, padding: '8px 12px',
                 border: '1px solid #d1d5db', borderRadius: 8, fontSize: 14, outline: 'none',
@@ -116,7 +117,7 @@ export function ProjectModal({
             <span style={{ fontSize: 13, fontWeight: 600, color: '#374151' }}>状态</span>
             <select
               value={status}
-              onChange={e => setStatus(e.target.value as any)}
+              onChange={e => setStatus(e.target.value as 'active' | 'archived')}
               style={{
                 width: '100%', marginTop: 6, padding: '8px 12px',
                 border: '1px solid #d1d5db', borderRadius: 8, fontSize: 14, outline: 'none',
