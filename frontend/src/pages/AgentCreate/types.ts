@@ -45,3 +45,18 @@ export interface TokenCache {
   baseUrl: string;
   modelId?: string;
 }
+
+/* ─── 后台模型数据 ─── */
+export interface BackendModel {
+  name: string;
+  providerId: string;
+  enabled: boolean;
+  contextWindow?: string;
+  maxTokens?: number;
+}
+
+/* ─── 后台模型提供商数据 ─── */
+export interface BackendProvider {
+  id: string;
+  baseUrl: string;
+}

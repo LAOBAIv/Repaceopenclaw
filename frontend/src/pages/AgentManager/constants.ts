@@ -1,7 +1,15 @@
 /**
  * AgentManager 常量定义
- * 包含有效模型白名单和 Skill 配置项
+ * 包含系统智能体 ID、有效模型白名单和 Skill 配置项
  */
+
+/** 需要过滤的系统智能体 ID */
+export const SYSTEM_AGENT_IDS = [
+  '24cf6cc5-da0d-48df-814e-11582e398007',
+  'platform-assistant',
+  'repaceclaw-platform-assistant',
+  'rc-wechat-agent',
+];
 
 /** 有效模型名称白名单 */
 export const VALID_MODELS = [
