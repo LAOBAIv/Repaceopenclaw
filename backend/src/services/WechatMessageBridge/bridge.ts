@@ -16,16 +16,17 @@ import http from 'http';
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
-import { logger } from '../utils/logger';
-import { ILinkResponse, isError, getErrorMessage } from '../types/ilink';
-import { resolveOpenClawGateway } from '../utils/openclawGateway';
-import { getDb } from '../db/client';
+import { logger } from '../../utils/logger';
+import { ILinkResponse, isError, getErrorMessage } from '../../types/ilink';
+import { resolveOpenClawGateway } from '../../utils/openclawGateway';
+import { getDb } from '../../db/client';
+import { loadSyncState, saveSyncState, type SyncState } from './sync';
+import { extractMessageText, extractMessageTimestamp } from './transform';
 
 // ─── 配置 ────────────────────────────────────────────────────────────────
 
 const ILINK_BASE = 'https://ilinkai.weixin.qq.com';
 const WECHAT_ACCOUNTS_DIR = '/root/.openclaw/openclaw-weixin/accounts';
-const BRIDGE_STATE_DIR = '/root/.openclaw/workspace/RepaceClaw/backend/data/wechat-bridge';
 const DEFAULT_POLL_INTERVAL_MS = 30_000; // 30 秒轮询
 
 // 链路 B 专用的 session key 前缀（区别于链路 A 的 openclaw-weixin）
@@ -38,13 +39,6 @@ interface WechatAccount {
   botId: string;
   userId: string;
   baseUrl: string;
-}
-
-interface SyncState {
-  ilinkUserId: string;
-  getUpdatesBuf: string;
-  lastSyncAt: string;
-  conversationId: string;
 }
 
 // ─── HTTP 请求 ───────────────────────────────────────────────────────────
@@ -170,7 +164,7 @@ async function callGateway(
 
 // ─── 账号加载 ────────────────────────────────────────────────────────────
 
-function loadWechatAccounts(): WechatAccount[] {
+export function loadWechatAccounts(): WechatAccount[] {
   const accounts: WechatAccount[] = [];
   try {
     if (!fs.existsSync(WECHAT_ACCOUNTS_DIR)) return accounts;
@@ -199,37 +193,9 @@ function loadWechatAccounts(): WechatAccount[] {
   return accounts;
 }
 
-// ─── 同步状态管理 ─────────────────────────────────────────────────────────
-
-function loadSyncState(): Map<string, SyncState> {
-  const states = new Map<string, SyncState>();
-  try {
-    if (!fs.existsSync(BRIDGE_STATE_DIR)) return states;
-    const files = fs.readdirSync(BRIDGE_STATE_DIR);
-    for (const file of files) {
-      if (!file.endsWith('.json')) continue;
-      try {
-        const data = JSON.parse(fs.readFileSync(path.join(BRIDGE_STATE_DIR, file), 'utf8'));
-        if (data.ilinkUserId) states.set(data.ilinkUserId, data);
-      } catch { /* skip */ }
-    }
-  } catch { /* skip */ }
-  return states;
-}
-
-function saveSyncState(state: SyncState): void {
-  try {
-    if (!fs.existsSync(BRIDGE_STATE_DIR)) fs.mkdirSync(BRIDGE_STATE_DIR, { recursive: true });
-    const file = path.join(BRIDGE_STATE_DIR, `${state.ilinkUserId}.json`);
-    fs.writeFileSync(file, JSON.stringify(state, null, 2));
-  } catch (err: unknown) {
-    logger.warn('[WechatBridge] Failed to save sync state', { error: getErrorMessage(err) });
-  }
-}
-
 // ─── RC 数据库操作 ──────────────────────────────────────────────────────
 
-function getOrCreateConversation(ilinkUserId: string): string {
+export function getOrCreateConversation(ilinkUserId: string): string {
   const db = getDb();
   const ocSessionKey = `${BRIDGE_SESSION_PREFIX}:direct:${ilinkUserId}`;
   const conversationId = `wechat-bridge-${ilinkUserId}`;
@@ -360,24 +326,10 @@ async function processUserMessage(
   msg: unknown,
   conversationId: string
 ): Promise<void> {
-  // 提取用户消息文本
-  const msgObj = msg as Record<string, unknown>;
-  let userText = '';
-  const items = (msgObj.item_list as Record<string, unknown>[]) || [];
-  for (const item of items) {
-    const itemObj = item as Record<string, unknown>;
-    if ((itemObj.type as number) === 1 && (itemObj.text_item as Record<string, unknown>)?.text) {
-      userText += (itemObj.text_item as Record<string, unknown>).text as string;
-    } else if ((itemObj.type as number) === 2) {
-      userText += '[图片]';
-    }
-  }
-
+  const userText = extractMessageText(msg);
   if (!userText) return;
 
-  const createdAt = (msgObj.create_time_ms as number)
-    ? new Date(msgObj.create_time_ms as number).toISOString()
-    : new Date().toISOString();
+  const createdAt = extractMessageTimestamp(msg);
 
   // 1. 存用户消息
   saveMessage(conversationId, 'user', userText, createdAt);
@@ -541,4 +493,3 @@ class WechatMessageBridge {
 // ─── 单例导出 ────────────────────────────────────────────────────────────
 
 export const wechatMessageBridge = new WechatMessageBridge();
-export { loadWechatAccounts, getOrCreateConversation };
