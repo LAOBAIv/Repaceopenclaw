@@ -132,7 +132,7 @@ export function TagSessionModal({ open, tag, onClose, onCreated }: TagSessionMod
       onClose();
     } catch (err: unknown) { // [2026-05-24] 类型安全
       console.error('[TagSessionModal] 创建失败:', err);
-      showToast('创建失败：' + ((err as any)?.response?.data?.error || (err as Error)?.message || '未知错误'), 'error');
+      showToast('创建失败：' + ((err as { response?: { data?: { error?: string } } })?.response?.data?.error || (err as Error)?.message || '未知错误'), 'error');
     } finally {
       setCreating(false);
     }

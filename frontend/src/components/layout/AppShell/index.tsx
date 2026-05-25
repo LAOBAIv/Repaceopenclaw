@@ -8,7 +8,7 @@ import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom';
 import {
   ChevronLeft, ChevronRight, MessageCircle, ShieldCheck,
 } from 'lucide-react';
-import { useAuthStore } from '../../../stores/authStore';
+import { useAuthStore, type AuthUser } from '../../../stores/authStore';
 import { getOrCreateTabId, clearAllSessionData, clearAllRcStorage } from '../../../lib/storageScope';
 import { getBroadcastSync, destroyBroadcastSync, getWsSync, destroyWsSync, syncEventBus } from '../../../lib/sync';
 import { getWsInstance } from '../../../stores/conversation';
@@ -31,7 +31,7 @@ export function AppShell() {
   useEffect(() => {
     if (!isAuthenticated || !user?.id) return;
     // 检测是否需要补全信息（微信登录未设置账号，或未设置昵称）
-    if ((user as any).needSetup || (user as any).email?.endsWith('@wechat.local') || !user.nickname) {
+    if ((user as AuthUser & { needSetup?: boolean }).needSetup || user.email?.endsWith('@wechat.local') || !user.nickname) {
       setNeedSetup(true);
     }
   }, [isAuthenticated, user]);

@@ -250,7 +250,7 @@ export function EditUserModal({
                     alert('密码重置成功');
                     input.value = '';
                   } catch (e: unknown) { // [2026-05-24] 类型安全
-                    alert(`重置失败: ${(e as any)?.response?.data?.error || (e as Error).message}`);
+                    alert(`重置失败: ${(e as { response?: { data?: { error?: string } } })?.response?.data?.error || (e as Error).message}`);
                   }
                 }}
                 style={{ padding: '8px 14px', borderRadius: 8, background: '#a16207', color: '#fff', border: 'none', fontSize: 13, cursor: 'pointer', whiteSpace: 'nowrap' }}

@@ -36,7 +36,7 @@ export function useMobileNav(
 
   // ── 智能体创建/管理Sheet状态 ──
   const [editingAgentId, setEditingAgentId] = useState<string | null>(null);
-  const [agentCreateTemplateState, setAgentCreateTemplateState] = useState<any>(null);
+  const [agentCreateTemplateState, setAgentCreateTemplateState] = useState<{ templateId?: string; category?: string } | null>(null);
 
   // ── 智能体创建表单状态 ──
   const [newAgentName, setNewAgentName] = useState('');

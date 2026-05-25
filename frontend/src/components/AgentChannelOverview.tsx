@@ -53,7 +53,7 @@ export function AgentChannelOverview() {
       await apiClient.put(`/agents/channel/${ocAgentId}/model`, { model: editModel || 'auto' });
       setEditId(null);
       await load();
-    } catch (err: unknown) { alert('保存失败: ' + ((err as any)?.response?.data?.error || (err as Error).message)); } // [2026-05-24] 类型安全
+    } catch (err: unknown) { alert('保存失败: ' + ((err as { response?: { data?: { error?: string } } })?.response?.data?.error || (err as Error).message)); } // [2026-05-24] 类型安全
     finally { setSaving(false); }
   }
 

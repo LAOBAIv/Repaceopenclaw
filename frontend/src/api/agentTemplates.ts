@@ -24,7 +24,7 @@ export const agentTemplatesApi = {
   },
 
   /** 基于模板创建 Agent */
-  async createFromTemplate(templateId: string, overrides?: Record<string, any>): Promise<any> {
+  async createFromTemplate(templateId: string, overrides?: Record<string, unknown>): Promise<unknown> {
     const res = await apiClient.post(`${BASE}/${templateId}/create`, overrides || {});
     return res.data.data;
   },

@@ -60,7 +60,7 @@ export function ChannelModal({ form, setForm, editingProvider, hint, showApiKey,
           </div>
           <div>
             <label style={lbl}>认证类型</label>
-            <select value={form.authType} onChange={e => setForm(f => ({ ...f, authType: e.target.value as any }))} style={inp}>
+            <select value={form.authType} onChange={e => setForm(f => ({ ...f, authType: e.target.value as 'Bearer' | 'ApiKey' | 'Basic' }))} style={inp}>
               <option value="Bearer">Bearer Token</option>
               <option value="ApiKey">ApiKey Header</option>
               <option value="Basic">Basic Auth</option>

@@ -87,7 +87,7 @@ class GroupChatApiService {
           avatar: '🤖' 
         }))
       ],
-      mode: mode as any,
+      mode: mode as GroupChatProject['mode'],
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
     };

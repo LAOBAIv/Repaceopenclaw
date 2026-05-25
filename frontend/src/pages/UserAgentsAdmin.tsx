@@ -43,7 +43,7 @@ const ALL_COLUMNS = [
 
 export function UserAgentsAdmin() {
   const [data, setData] = useState<any[]>([]);
-  const [stats, setStats] = useState<any>(null);
+  const [stats, setStats] = useState<Record<string, unknown> | null>(null);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [filterUser, setFilterUser] = useState('');

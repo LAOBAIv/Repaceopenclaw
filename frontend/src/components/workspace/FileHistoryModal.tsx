@@ -120,7 +120,7 @@ export function FileHistoryModal({ visible, onClose, onConfirm, excludeIds = [] 
           <input value={search} onChange={e => setSearch(e.target.value)} placeholder="搜索文件名..." style={{ width: '100%', padding: '8px 12px', border: '1px solid #e5e7eb', borderRadius: 8, fontSize: 13, outline: 'none', boxSizing: 'border-box' }} />
           <div style={{ display: 'flex', gap: 6, marginTop: 10, flexWrap: 'wrap' }}>
             {TYPE_FILTERS.map(t => (
-              <button key={t.value} onClick={() => setTypeFilter(t.value as any)} style={{ padding: '4px 10px', borderRadius: 6, border: '1px solid ' + (typeFilter === t.value ? '#3b82f6' : '#e5e7eb'), background: typeFilter === t.value ? '#eff6ff' : '#fff', color: typeFilter === t.value ? '#3b82f6' : '#6b7280', fontSize: 12, cursor: 'pointer' }}>{t.label}</button>
+              <button key={t.value} onClick={() => setTypeFilter(t.value as '' | 'image' | 'document')} style={{ padding: '4px 10px', borderRadius: 6, border: '1px solid ' + (typeFilter === t.value ? '#3b82f6' : '#e5e7eb'), background: typeFilter === t.value ? '#eff6ff' : '#fff', color: typeFilter === t.value ? '#3b82f6' : '#6b7280', fontSize: 12, cursor: 'pointer' }}>{t.label}</button>
             ))}
             <span style={{ width: 1, background: '#e5e7eb', margin: '0 4px' }} />
             {TIME_FILTERS.map(t => (

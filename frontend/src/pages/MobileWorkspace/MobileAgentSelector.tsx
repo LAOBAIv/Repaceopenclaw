@@ -72,7 +72,7 @@ export function MobileAgentSelector({
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               {/* [2026-05-21] 过滤系统助手，用户不可选 */}
-              {agents.filter((a) => !(a as any).isSystem).map((agent) => (
+              {agents.filter((a) => !a.isSystem).map((agent) => (
                 <button
                   key={agent.id}
                   onClick={() => onSelectAgent(agent.id, agent.name, agent.color || COLORS.accent)}

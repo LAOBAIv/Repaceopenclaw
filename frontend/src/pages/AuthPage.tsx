@@ -9,7 +9,7 @@ type Mode = "login" | "register";
 
 export function AuthPage() {
   const navigate = useNavigate();
-  const fromPath = (window.history.state?.usr as any)?.fromPath || '/workspace';
+  const fromPath = (window.history.state?.usr as { fromPath?: string } | null)?.fromPath || '/workspace';
   const { login } = useAuthStore();
   const [mode, setMode] = useState<Mode>("login");
   const [loading, setLoading] = useState(false);
