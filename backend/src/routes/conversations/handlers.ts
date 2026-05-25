@@ -9,7 +9,7 @@ import { AgentService } from "../../services/AgentService";
 import { TaskService } from "../../services/TaskService";
 import { MemoryService } from "../../services/memory/MemoryService";
 import { z } from "zod";
-import { broadcastToConversation } from "../../ws/wsHandler";
+import { broadcastToConversation } from "../../ws";
 import { logger } from "../../utils/logger";
 import { getErrorMessage } from "../../types/ilink";
 import {

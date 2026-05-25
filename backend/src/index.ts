@@ -25,7 +25,7 @@ import { authenticate } from './middleware/auth';
 import { requestIdMiddleware } from './middleware/requestId';
 import { requestLogger } from './middleware/requestLogger';
 import { apiLimiter, authLimiter } from './middleware/rateLimiter';
-import { setupWebSocket } from './ws/wsHandler';
+import { setupWebSocket } from './ws';
 import * as AgentBridge from './services/AgentBridge';
 import { clawBotClient } from './services/ClawBotGatewayClient';
 import { wechatMessageService, loadWechatAccountsFromFile } from './services/WechatMessageService';

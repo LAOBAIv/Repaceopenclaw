@@ -19,7 +19,7 @@ import { getDb, saveDb } from "../db/client";
 import { logger } from "../utils/logger";
 import { resolveOpenClawGateway } from "../utils/openclawGateway";
 import { getBindingCodes } from "./wechat"; // [2026-05-16] 绑定验证码缓存
-import { broadcastToConversation } from "../ws/wsHandler"; // [2026-05-16] 推送消息到前端
+import { broadcastToConversation } from "../ws"; // [2026-05-16] 推送消息到前端
 import http from "http";
 import https from "https";
 import crypto from "crypto";
