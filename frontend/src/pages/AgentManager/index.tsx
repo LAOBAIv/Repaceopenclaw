@@ -6,27 +6,25 @@ import { useEffect } from 'react';
 import { Bot, Plus } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { agentManagerStyles } from './styles';
-import { useAgentList, useRouting, useDeleteConfirm, useSkillConfig, useVisibility, useAgentNavigation } from './hooks';
+import { useAgentList, useRouting, useDeleteConfirm, useSkillConfig, useVisibility, useAgentNavigation, useIsAdmin } from './hooks';
 import { AgentCard } from './components/AgentCard';
 import { DeleteConfirmDialog } from './components/DeleteConfirmDialog';
 import { SkillConfigDialog } from './components/SkillConfigDialog';
 
 export function AgentManager() {
+  const isAdmin = useIsAdmin();
   const { agents: agentList, loading, fetchAgents } = useAgentList();
   const { getRouting, refreshRouting } = useRouting(fetchAgents);
-  const { deleteTarget, deleting, handleDeleteClick, handleDeleteConfirm, handleDeleteCancel } = useDeleteConfirm(() => {
+
+  const doRefresh = () => {
     fetchAgents();
     refreshRouting();
-  });
-  const { skillAgent, tempSkills, setTempSkills, savingSkills, openSkillModal, closeSkillModal, saveSkillConfig } = useSkillConfig(() => {
-    fetchAgents();
-    refreshRouting();
-  });
-  const { updatingVisibility, handleVisibilityChange } = useVisibility(() => {
-    fetchAgents();
-    refreshRouting();
-  });
-  const { handleEditClick, handleCardClick } = useAgentNavigation();
+  };
+
+  const { deleteTarget, deleting, handleDeleteClick, handleDeleteConfirm, handleDeleteCancel } = useDeleteConfirm(doRefresh);
+  const { skillAgent, tempSkills, setTempSkills, savingSkills, openSkillModal, closeSkillModal, saveSkillConfig } = useSkillConfig(isAdmin, doRefresh);
+  const { updatingVisibility, handleVisibilityChange } = useVisibility(doRefresh);
+  const { handleEditClick, handleCardClick } = useAgentNavigation(isAdmin);
 
   const navigate = useNavigate();
 
@@ -67,7 +65,7 @@ export function AgentManager() {
                   key={agent.id}
                   agent={agent}
                   routing={getRouting(agent.id)}
-                  isAdmin={false}
+                  isAdmin={isAdmin}
                   onCardClick={handleCardClick}
                   onEditClick={handleEditClick}
                   onDeleteClick={handleDeleteClick}
