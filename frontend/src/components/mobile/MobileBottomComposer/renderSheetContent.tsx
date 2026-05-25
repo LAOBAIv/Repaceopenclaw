@@ -155,8 +155,9 @@ export function renderSheetContent(
           {/* [2026-05-19] 从历史文件添加入口 */}
           <div
             onClick={() => {
-              if ((window as any).__showFileHistory) {
-                (window as any).__showFileHistory();
+              const win = window as typeof window & { __showFileHistory?: () => void };
+              if (win.__showFileHistory) {
+                win.__showFileHistory();
               }
             }}
             style={{ marginTop: 14, padding: '10px 0', textAlign: 'center', cursor: 'pointer', borderTop: '1px dashed #404040', fontSize: 13, color: '#6366f1', fontWeight: 500 }}
